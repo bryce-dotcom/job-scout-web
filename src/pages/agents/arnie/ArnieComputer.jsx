@@ -544,6 +544,15 @@ function GetTheAgent() {
                 : 'Windows may also show a blue "protected your PC" box — choose More info, then Run anyway.'}
             </>}
         </div>
+
+        {/* THE ONE THAT CANNOT BE BLOCKED.
+            Nobody at this company has ever completed a connect, and one
+            person reported clicking the button and nothing happening.
+            Browsers quietly refuse to keep a downloaded .cmd — Chrome marks
+            it dangerous and the file never lands — which looks exactly like
+            "nothing happened". A command is text, so nothing can block it,
+            and on a locked-down work machine it is often the only way in. */}
+        {!mine.signed && !mac && <PasteInstead />}
       </Step>
 
       <Step n={2} title="Open it">
@@ -635,4 +644,68 @@ const btn = (bg, fg, border) => ({
 const input = {
   flex: 1, minWidth: 180, background: '#fff', border: `1px solid ${t.line}`,
   borderRadius: 8, padding: '8px 10px', fontSize: 13, color: t.ink, minHeight: 38,
+}
+
+/**
+ * For when the download never arrives.
+ *
+ * Alayda clicked the button and nothing happened, and nobody at the company
+ * has ever completed a connect. The likeliest reason is the quietest one: a
+ * browser refusing to keep a downloaded .cmd. Chrome marks that file type
+ * dangerous and discards it, and from the person's side there is no error —
+ * the file simply is not there.
+ *
+ * A command is text. Nothing blocks text. It is the same launcher, fetched
+ * and run in one line, and on a work machine with downloads locked down it is
+ * often the only way in. Hidden behind a link because it IS a terminal, which
+ * is the thing the whole download flow exists to avoid — it is the fallback,
+ * not the path.
+ */
+function PasteInstead() {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  // The backslashes matter: a single one here is an escape and the path comes
+  // out as $env:TEMPJobScoutAgent.cmd, which fails in a way nobody could debug.
+  const cmd = `irm "${releaseBase}/JobScout%20Agent.cmd" -OutFile "$env:TEMP\\JobScoutAgent.cmd"; & "$env:TEMP\\JobScoutAgent.cmd"`
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          background: 'none', border: 'none', padding: '6px 0 0', cursor: 'pointer',
+          color: t.accent, fontSize: 12, fontWeight: 600, textDecoration: 'underline',
+          textUnderlineOffset: 2,
+        }}
+      >
+        Download blocked, or nothing happened?
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10, background: t.card2, borderRadius: 9, padding: '10px 12px' }}>
+      <div style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.5, marginBottom: 8 }}>
+        Some work computers refuse to keep a downloaded program, and say nothing about it.
+        This does the same job and cannot be blocked: open <strong>PowerShell</strong> on that
+        computer — press Start, type powershell, press enter — then paste this and press enter.
+      </div>
+      <code style={{
+        display: 'block', background: '#fff', border: `1px solid ${t.line}`, borderRadius: 7,
+        padding: '8px 10px', fontSize: 11, color: t.ink, overflowX: 'auto', whiteSpace: 'nowrap',
+      }}>{cmd}</code>
+      <button
+        onClick={async () => {
+          try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1800) } catch { /* select it by hand */ }
+        }}
+        style={{ ...btn(t.accent, '#fff'), marginTop: 8 }}
+      >
+        {copied ? 'Copied' : 'Copy the command'}
+      </button>
+      <div style={{ fontSize: 11.5, color: t.muted, marginTop: 8, lineHeight: 1.45 }}>
+        It downloads the same file and runs it. The browser still opens and you still press
+        Connect — nothing is typed and no token is pasted.
+      </div>
+    </div>
+  )
 }

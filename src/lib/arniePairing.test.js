@@ -192,7 +192,15 @@ describe('nobody is asked to copy anything', () => {
     const page = stripProse(read('../pages/agents/arnie/ArnieComputer.jsx'))
     expect(page).not.toMatch(/refresh_token/)
     expect(page).not.toMatch(/JOBSCOUT_AGENT_TOKEN/)
-    expect(page).not.toMatch(/clipboard/)
+    // The page may put something on the clipboard again — it offers a command
+    // to paste when a browser refuses to keep the download, which is how one
+    // person got "nothing happened". What it must never copy is a CREDENTIAL.
+    // So the ban is on the secret, not on the verb.
+    const copied = page.match(/writeText\(([^)]*)\)/g) || []
+    for (const c of copied) {
+      expect(c, 'nothing token-shaped may reach the clipboard').not.toMatch(/token|secret|key|session/i)
+    }
+    expect(page).toMatch(/writeText\(cmd\)/)
     // Where the download lives moved into lib/agentRelease when the staleness
     // check needed the same answer. The page still offers it.
     expect(page).toMatch(/releaseBase/)
@@ -381,5 +389,61 @@ describe('a stale agent is visible', () => {
     // agent too old to report a build is left alone rather than accused.
     expect(lib).toMatch(/if \(!running \|\| !published\) return false/)
     expect(lib).toMatch(/return running !== published/)
+  })
+})
+
+describe('the download that cannot be blocked', () => {
+  const page = read('../pages/agents/arnie/ArnieComputer.jsx')
+
+  it('offers a pasteable command when the file will not download', () => {
+    // Nobody at the company had ever completed a connect, and one person
+    // clicked the button and nothing happened. A browser refusing to keep a
+    // downloaded .cmd looks exactly like that: no error, no file.
+    expect(page).toMatch(/function PasteInstead\(\)/)
+    expect(page).toMatch(/Download blocked, or nothing happened\?/)
+  })
+
+  it('and the command actually works', () => {
+    // A single backslash here is a JS escape, and the path silently becomes
+    // $env:TEMPJobScoutAgent.cmd — broken in a way nobody could debug from
+    // the error.
+    // Two literal backslashes in the SOURCE, which is one at runtime.
+    expect(page).toMatch(/\$env:TEMP\\\\JobScoutAgent\.cmd/)
+    // And never just one, which is the broken form.
+    expect(page).not.toMatch(/[^\\]\\JobScoutAgent\.cmd/)
+  })
+
+  it('it is the fallback, not the path', () => {
+    // It IS a terminal, which is the thing the download flow exists to
+    // avoid — so it stays behind a link, and disappears entirely once there
+    // is a signed installer that browsers do not fight.
+    expect(page).toMatch(/\{!mine\.signed && !mac && <PasteInstead \/>\}/)
+  })
+})
+
+describe('he talks while he thinks', () => {
+  const chat = read('../pages/agents/arnie/ArnieChat.jsx')
+
+  it('speech follows the stream instead of waiting for the end', () => {
+    // He used to write the WHOLE answer and only then start speaking: a long
+    // silence, then a wall of speech, to somebody holding a phone in a truck.
+    expect(chat).toMatch(/speakAsItArrives\(partialText\)/)
+    expect(chat).not.toMatch(/Speak the full response after streaming completes/)
+  })
+
+  it('only complete sentences are spoken', () => {
+    // Half a sentence read aloud and continued a second later sounds broken,
+    // and "Dr" and "$1.5" both look like the end of one until the next word.
+    expect(chat).toMatch(/for \(const m of fresh\.matchAll\(/)
+    expect(chat).toMatch(/speakAsItArrives\(fullResponse, true\)/)
+  })
+
+  it('stopping stops all of it, not just the sentence playing', () => {
+    const stop = chat.slice(chat.indexOf('const handleStopSpeaking'))
+    expect(stop.slice(0, 400)).toMatch(/speechQueue\.current = \[\]/)
+  })
+
+  it('and a new answer speaks from its own beginning', () => {
+    expect(chat).toMatch(/resetSpeech\(\)/)
   })
 })

@@ -372,8 +372,72 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     )
   }, [voiceOn, selectedVoice, resumeMic])
 
+  // ── talking while he thinks ──────────────────────────────────────────
+  //
+  // He used to write the WHOLE answer and only then start speaking it, which
+  // is the single worst thing you can do to a person holding a phone in a
+  // truck: a long silence, then a wall of speech. "When you talk to Arnie he
+  // is slow — he types out his response then speaks it."
+  //
+  // Nothing got faster here. He starts talking at the end of his first
+  // sentence instead of his last, which is the whole of the difference
+  // between feeling slow and feeling present.
+  const speechQueue = useRef([])
+  const spokenUpTo = useRef(0)
+
+  /** Play the next sentence; the mic comes back only when the queue empties. */
+  const drainSpeech = useCallback(() => {
+    if (speakingLockRef.current) return
+    const next = speechQueue.current.shift()
+    if (!next) { resumeMic(); return }
+    speakingLockRef.current = true
+    speak(next, selectedVoice,
+      () => setSpeaking(true),
+      () => {
+        speakingLockRef.current = false
+        setSpeaking(false)
+        drainSpeech()
+      },
+    )
+  }, [selectedVoice, resumeMic])
+
+  /**
+   * Queue whatever COMPLETE sentences have arrived since last time.
+   *
+   * Only complete ones: half a sentence read aloud and then continued a
+   * second later sounds broken, and worse, it mispronounces — "Dr" and "$1.5"
+   * both end in something that looks like a full stop until the next word
+   * arrives. `final` flushes whatever is left when the stream ends.
+   */
+  const speakAsItArrives = useCallback((full, final = false) => {
+    if (!voiceOn) return
+    const fresh = String(full || '').slice(spokenUpTo.current)
+    if (!fresh) return
+    let cut = 0
+    if (final) {
+      cut = fresh.length
+    } else {
+      for (const m of fresh.matchAll(/[.!?…]["'’”)\]]*(?:\s|$)/g)) cut = m.index + m[0].length
+    }
+    if (cut <= 0) return
+    const chunk = fresh.slice(0, cut).trim()
+    spokenUpTo.current += cut
+    if (!chunk) return
+    speechQueue.current.push(chunk)
+    drainSpeech()
+  }, [voiceOn, drainSpeech])
+
+  const resetSpeech = useCallback(() => {
+    speechQueue.current = []
+    spokenUpTo.current = 0
+  }, [])
+
   const handleStopSpeaking = () => {
+    // Everything queued, not just what is playing — otherwise "stop" stops
+    // one sentence and the next starts a moment later.
+    speechQueue.current = []
     stopSpeaking()
+    speakingLockRef.current = false
     setSpeaking(false)
     resumeMic()
   }
@@ -511,6 +575,9 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
     unlockAudio()
     pauseMic()
+    // A fresh answer speaks from its own beginning, not from where the last
+    // one got to.
+    resetSpeech()
     setInput('')
     if (files.length) setAttachments([])
     setAttachError('')
@@ -569,12 +636,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             }
             : m
         ))
+        // He starts talking at the end of his first sentence, not his last.
+        speakAsItArrives(partialText)
       }, files)
 
       await saveMessage(sid, 'assistant', fullResponse)
 
-      // Speak the full response after streaming completes
-      speakText(fullResponse)
+      // Whatever is left after the last full stop — usually nothing, because
+      // he has been talking the whole way down.
+      speakAsItArrives(fullResponse, true)
 
       if (messagesRef.current.length <= 1) {
         await updateSessionTitle(sid, title)
@@ -593,7 +663,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       sendingRef.current = false
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
-  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic])
+  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, resetSpeech, speakAsItArrives])
 
   // An attached file is enough on its own — a screenshot with no caption is a
   // perfectly clear question.
