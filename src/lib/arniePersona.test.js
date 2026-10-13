@@ -211,7 +211,7 @@ describe('the same assistant everywhere', () => {
     // Found by doing it: picking Jenny assigns edge_jenny, and switching back
     // used to carry it over, because the rule only protected a voice that was
     // already set — it could not tell a preference from a default.
-    expect(picker).toMatch(/wasAutoAssigned = Object\.values\(DEFAULT_VOICE\)\.includes\(current\)/)
+    expect(picker).toMatch(/wasAutoAssigned = \[\.\.\.Object\.values\(DEFAULT_VOICE\), 'edge_jenny'\]\.includes\(current\)/)
     expect(picker).toMatch(/\(!current \|\| wasAutoAssigned\)/)
   })
 

@@ -1,45 +1,118 @@
 // Arnie TTS.
 //
-// Three engines, best first:
+// Two engines, best first:
 //   eleven   ElevenLabs — Arnie's own voice (a voice named "Arnie" in the
 //            company's ElevenLabs My Voices, or any voice there). Goes
 //            through the arnie-tts function, which holds the key and lets
 //            only the platform company / opted-in tenants spend credits.
 //            Loaded at runtime by loadArnieVoices(); absent until then.
-//   edge     Microsoft's free neural voices over Bing's read-aloud WebSocket,
-//            straight from the browser (no CORS on WebSockets).
 //   browser  speechSynthesis — the fallback of last resort.
 //
-// The chosen voice is remembered per browser (localStorage arnie_voice);
-// the default is Arnie's own voice when the account has one.
+// WHAT WENT WRONG, AND THE RULE THAT CAME OUT OF IT (2026-10-13). There used
+// to be a third engine: eight free Microsoft neural voices (edge_andrew …
+// edge_jenny) spoken over Bing's read-aloud WebSocket. That socket no longer
+// opens from a browser at all — checked live against production, it fails
+// before the handshake. So all eight of those names were dead, and every one
+// of them fell through a fallback that ignored which voice had been asked for
+// and spoke with the single built-in male system voice. Cole picked Jenny and
+// got Arnie, and so would anyone picking any of the eight.
+//
+// Hence the rule: A VOICE IS NEVER SILENTLY SWAPPED FOR ONE THAT SOUNDS
+// DIFFERENT. Only voices that can actually speak are offered; if the engine
+// for a chosen voice fails anyway, the substitute has to match the gender
+// that was asked for, and resolveVoice() — one function, used by the pickers
+// and by speak() alike — is the only place that decides.
+//
+// The chosen voice is saved on the person's account (arnie_personas.voice_id)
+// so it follows them to their phone, with localStorage as a local echo.
 
 import { supabase } from '../../../lib/supabase'
 
 // ── Voice options ───────────────────────────────────────────────────────
-
-const EDGE_VOICES = [
-  { id: 'edge_andrew',  name: 'Andrew',  desc: 'Warm American male',       engine: 'edge', msVoice: 'en-US-AndrewNeural' },
-  { id: 'edge_brian',   name: 'Brian',   desc: 'Friendly American male',   engine: 'edge', msVoice: 'en-US-BrianNeural' },
-  { id: 'edge_guy',     name: 'Guy',     desc: 'Casual American male',     engine: 'edge', msVoice: 'en-US-GuyNeural' },
-  { id: 'edge_davis',   name: 'Davis',   desc: 'Calm American male',       engine: 'edge', msVoice: 'en-US-DavisNeural' },
-  { id: 'edge_eric',    name: 'Eric',    desc: 'Confident American male',  engine: 'edge', msVoice: 'en-US-EricNeural' },
-  { id: 'edge_steffan', name: 'Steffan', desc: 'Professional male',        engine: 'edge', msVoice: 'en-US-SteffanNeural' },
-  { id: 'edge_jenny',   name: 'Jenny',   desc: 'Warm American female',     engine: 'edge', msVoice: 'en-US-JennyNeural' },
-  { id: 'edge_aria',    name: 'Aria',    desc: 'Friendly American female', engine: 'edge', msVoice: 'en-US-AriaNeural' },
-]
 
 const BROWSER_VOICES = [
   { id: 'browser_male_1', name: 'System Male', desc: 'Built-in voice (lower quality)', engine: 'browser', gender: 'male', priority: ['google uk english male', 'david', 'mark', 'daniel', 'james', 'alex'] },
   { id: 'browser_female_1', name: 'System Female', desc: 'Built-in voice (lower quality)', engine: 'browser', gender: 'female', priority: ['google uk english female', 'samantha', 'karen', 'zira', 'victoria'] },
 ]
 
-export const ARNIE_VOICES = [...EDGE_VOICES, ...BROWSER_VOICES]
+// Ids that are not voices but a WISH for one, resolved against whatever the
+// account can actually speak with. Two kinds live here:
+//   voice_female / voice_male  what a persona asks for (Jenny wants a woman's
+//                              voice); storing the wish rather than one
+//                              account's voice id means it still resolves on
+//                              a tenant with an entirely different voice list.
+//   edge_*                     the eight retired Microsoft voices. Someone
+//                              picked one of these before today and it is
+//                              saved on their account; mapping it to the
+//                              gender they chose is the whole point.
+const VOICE_WISH = {
+  voice_female: 'female', voice_male: 'male',
+  edge_jenny: 'female', edge_aria: 'female',
+  edge_andrew: 'male', edge_brian: 'male', edge_guy: 'male',
+  edge_davis: 'male', edge_eric: 'male', edge_steffan: 'male',
+}
+
+// Which voices are women. ElevenLabs gives a display name and no gender, so
+// this is the only way to honour "a female voice" — by first name, matched
+// against the name as listed ("Jessica - Playful, Bright, Warm"). A name that
+// is not in either list counts as unknown, never as a match, so an unknown
+// name is never handed out as the female voice.
+const FEMALE_NAMES = ['alice', 'bella', 'jessica', 'laura', 'lily', 'matilda', 'sarah', 'rachel', 'domi', 'charlotte', 'dorothy', 'elli', 'freya', 'gigi', 'glinda', 'grace', 'jenny', 'aria', 'emily', 'nicole', 'serena', 'mimi', 'joanne']
+const MALE_NAMES = ['adam', 'antoni', 'arnold', 'arnie', 'bill', 'brian', 'callum', 'charlie', 'chris', 'clyde', 'daniel', 'dave', 'drew', 'eric', 'ethan', 'george', 'giovanni', 'harry', 'james', 'jeremy', 'joseph', 'josh', 'liam', 'michael', 'patrick', 'paul', 'roger', 'sam', 'thomas', 'will', 'bryce', 'jay']
+
+// Closest in character to the voices that were retired, best first. Nothing
+// breaks when none of these is on an account — it falls through to any voice
+// of the right gender.
+const PREFERRED = {
+  female: ['jessica', 'bella', 'sarah', 'laura', 'lily'],
+  male: ['brian', 'eric', 'chris', 'roger', 'bill'],
+}
+
+function genderOfName(name) {
+  const first = String(name || '').trim().toLowerCase().split(/[^a-z]+/)[0]
+  if (FEMALE_NAMES.includes(first)) return 'female'
+  if (MALE_NAMES.includes(first)) return 'male'
+  return null
+}
 
 const VOICE_PREF_KEY = 'arnie_voice'
 let elevenVoices = []          // filled by loadArnieVoices()
 let elevenArnieId = null       // 'eleven:<id>' of the voice named Arnie, when the account has one
 
-export function getVoices() { return [...elevenVoices, ...EDGE_VOICES, ...BROWSER_VOICES] }
+export function getVoices() { return [...elevenVoices, ...BROWSER_VOICES] }
+
+// The one rule for turning a saved voice id into the voice that will speak.
+// Exact match wins. Failing that, a wish (voice_female, or a retired edge_*)
+// becomes the first voice of that gender the account really has, and only
+// then the built-in system voice of that gender. Nothing here can return a
+// voice of the other gender than the one asked for.
+export function resolveVoice(voiceId) {
+  const all = getVoices()
+  const exact = all.find((v) => v.id === voiceId)
+  if (exact) return exact
+
+  const want = VOICE_WISH[voiceId] || null
+  if (want) {
+    // Of the right gender, prefer the ones that sound like what was retired —
+    // Jenny was a warm American woman, and resolving her to a clipped British
+    // narrator is technically correct and still the wrong voice. Alphabetical
+    // order is not a judgement about how a voice sounds.
+    const pool = elevenVoices.filter((v) => v.gender === want)
+    for (const liked of PREFERRED[want] || []) {
+      const hit = pool.find((v) => genderOfName(v.name) === want && v.name.trim().toLowerCase().startsWith(liked))
+      if (hit) return hit
+    }
+    if (pool.length) return pool[0]
+    return BROWSER_VOICES.find((v) => v.gender === want) || BROWSER_VOICES[0]
+  }
+
+  // No id, or one nobody recognises: Arnie's own voice, else anything real.
+  return all.find((v) => v.id === elevenArnieId) || all[0] || BROWSER_VOICES[0]
+}
+
+// Is this a voice the account can actually speak with? The pickers use it to
+// avoid showing a saved-but-retired id as if it were a live choice.
+export function voiceExists(voiceId) { return getVoices().some((v) => v.id === voiceId) }
 export function savedVoiceId() { try { return localStorage.getItem(VOICE_PREF_KEY) } catch { return null } }
 export function rememberVoice(id) { try { localStorage.setItem(VOICE_PREF_KEY, id) } catch { /* private mode */ } }
 
@@ -52,6 +125,7 @@ export async function loadArnieVoices() {
     const list = Array.isArray(data?.voices) ? data.voices : []
     elevenVoices = list.map((v) => ({
       id: `eleven:${v.id}`, name: v.name, engine: 'eleven', elevenId: v.id,
+      gender: genderOfName(v.name),
       desc: v.id === data?.arnie ? "Arnie's own voice · ElevenLabs" : v.category && v.category !== 'premade' ? 'Your ElevenLabs voice' : 'ElevenLabs voice',
     }))
     elevenArnieId = data?.arnie ? `eleven:${data.arnie}` : null
@@ -59,7 +133,14 @@ export async function loadArnieVoices() {
   } catch { elevenVoices = []; elevenArnieId = null }
   const voices = getVoices()
   const saved = savedVoiceId()
-  const defaultId = (saved && voices.some((v) => v.id === saved) && saved) || elevenArnieId || EDGE_VOICES[0].id
+  // A saved pick that no longer exists (one of the retired Microsoft voices)
+  // must not be handed back as the default — that is how a dead voice stayed
+  // selected for weeks. It goes through resolveVoice like everything else.
+  const defaultId = (saved && voices.some((v) => v.id === saved) && saved)
+    || (saved && VOICE_WISH[saved] && resolveVoice(saved).id)
+    || elevenArnieId
+    || voices[0]?.id
+    || BROWSER_VOICES[0].id
   return { voices, defaultId }
 }
 
@@ -104,7 +185,6 @@ function uuid() {
 let currentAudio = null
 let currentUtterance = null
 let audioUnlocked = false
-let edgeTTSBroken = false // sticky: if Edge TTS fails repeatedly, stop trying
 let currentSpeakId = 0 // used to cancel chunked playback
 
 export function unlockAudio() {
@@ -138,146 +218,6 @@ export function stopSpeaking() {
 }
 
 export function isAvailable() { return true }
-
-// ── Edge TTS via WebSocket (client-side, no CORS issues) ───────────────
-
-let edgeFailCount = 0
-
-// Microsoft's read-aloud socket refuses to open without this token since
-// late 2024: sha256 of the Windows-epoch time in 100ns ticks, rounded down to
-// five minutes, followed by the trusted client token; upper-case hex.
-const EDGE_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
-const EDGE_GEC_VERSION = '1-130.0.2849.68'
-async function edgeGecQuery() {
-  let ticks = Math.floor(Date.now() / 1000) + 11644473600
-  ticks -= ticks % 300
-  const text = String(ticks) + '0000000' + EDGE_TOKEN
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  const hex = [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
-  return `&Sec-MS-GEC=${hex}&Sec-MS-GEC-Version=${EDGE_GEC_VERSION}`
-}
-
-async function edgeTTS(text, msVoice) {
-  const gec = await edgeGecQuery()
-  return new Promise((resolve, reject) => {
-    const connId = uuid()
-    const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${EDGE_TOKEN}&ConnectionId=${connId}${gec}`
-
-    let ws
-    try {
-      ws = new WebSocket(url)
-    } catch (e) {
-      reject(new Error('WebSocket create failed'))
-      return
-    }
-
-    const audioChunks = []
-    let resolved = false
-    const done = (err) => {
-      if (resolved) return
-      resolved = true
-      try { ws.close() } catch {}
-      if (err) { reject(err); return }
-      if (audioChunks.length === 0) { reject(new Error('No audio')); return }
-      const blob = new Blob(audioChunks, { type: 'audio/mpeg' })
-      resolve(blob)
-    }
-
-    ws.onopen = () => {
-      const ts = new Date().toISOString()
-      // Config
-      ws.send(
-        `X-Timestamp:${ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n` +
-        JSON.stringify({ context: { synthesis: { audio: { metadataoptions: { sentenceBoundaryEnabled: 'false', wordBoundaryEnabled: 'false' }, outputFormat: 'audio-24khz-48kbitrate-mono-mp3' } } } })
-      )
-      // SSML
-      const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='en-US'><voice name='${msVoice}'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>${escapeXml(text)}</prosody></voice></speak>`
-      ws.send(`X-RequestId:${uuid()}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${ts}\r\nPath:ssml\r\n\r\n${ssml}`)
-    }
-
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        if (event.data.includes('Path:turn.end')) done(null)
-      } else if (event.data instanceof Blob) {
-        // Binary blob — audio data after header. Read it.
-        event.data.arrayBuffer().then(buf => {
-          const view = new Uint8Array(buf)
-          // Find "Path:audio\r\n" header separator
-          const str = String.fromCharCode(...view.slice(0, Math.min(view.length, 500)))
-          const idx = str.indexOf('Path:audio\r\n')
-          if (idx >= 0) {
-            const start = idx + 'Path:audio\r\n'.length
-            const audio = view.slice(start)
-            if (audio.length > 0) audioChunks.push(audio)
-          }
-        }).catch(() => {})
-      } else if (event.data instanceof ArrayBuffer) {
-        const view = new Uint8Array(event.data)
-        const str = String.fromCharCode(...view.slice(0, Math.min(view.length, 500)))
-        const idx = str.indexOf('Path:audio\r\n')
-        if (idx >= 0) {
-          const start = idx + 'Path:audio\r\n'.length
-          const audio = view.slice(start)
-          if (audio.length > 0) audioChunks.push(audio)
-        }
-      }
-    }
-
-    ws.onerror = () => done(new Error('WebSocket error'))
-    ws.onclose = () => done(audioChunks.length > 0 ? null : new Error('Closed without audio'))
-
-    // 15s timeout
-    setTimeout(() => done(audioChunks.length > 0 ? null : new Error('Timeout')), 15000)
-  })
-}
-
-// Speaks a single chunk and returns a promise that resolves when audio finishes playing
-// Returns { ok: true } on success or { ok: false } on failure
-async function speakEdgeChunk(text, voiceDef, onStart) {
-  try {
-    const blob = await edgeTTS(text, voiceDef.msVoice)
-    const audioUrl = URL.createObjectURL(blob)
-    const audio = new Audio(audioUrl)
-    audio._blobUrl = audioUrl
-
-    return new Promise((resolve) => {
-      let ended = false
-      const finish = () => {
-        if (!ended) { ended = true; URL.revokeObjectURL(audioUrl); currentAudio = null; resolve({ ok: true }) }
-      }
-      audio.onended = finish
-      audio.onerror = () => { console.error('[Arnie Voice] Edge playback error'); finish() }
-
-      audio.play().then(() => {
-        currentAudio = audio
-        onStart?.()
-        edgeFailCount = 0
-      }).catch(() => {
-        ended = true
-        resolve({ ok: false })
-      })
-    })
-  } catch (err) {
-    console.error('[Arnie Voice] Edge TTS failed:', err.message)
-    edgeFailCount++
-    if (edgeFailCount >= 3) {
-      edgeTTSBroken = true
-      console.warn('[Arnie Voice] Edge TTS disabled after 3 failures')
-    }
-    return { ok: false }
-  }
-}
-
-// Legacy wrapper for single-shot speak (used by browser fallback path)
-async function speakEdge(text, voiceDef, onStart, onEnd) {
-  stopSpeaking()
-  const result = await speakEdgeChunk(text, voiceDef, onStart)
-  if (result.ok) {
-    onEnd?.()
-    return true
-  }
-  return false
-}
 
 // ── Browser Speech Synthesis (fallback) ─────────────────────────────────
 
@@ -434,18 +374,18 @@ export async function speak(text, voiceId, onStart, onEnd) {
   const clean = stripMarkdown(text)
   if (!clean) { onEnd?.(); return }
   const truncated = clean.length > 3000 ? clean.slice(0, 3000) + '...' : clean
-  const voiceDef = getVoices().find(v => v.id === voiceId) || EDGE_VOICES[0]
+  const voiceDef = resolveVoice(voiceId)
 
   console.log(`[Arnie Voice] speak #${callId} engine=${voiceDef.engine} voice=${voiceDef.name} len=${truncated.length}`)
 
-  // For ElevenLabs and Edge: split into chunks, start playing the first
-  // immediately; while it plays, pre-download the next for a seamless handoff.
+  // ElevenLabs: split into chunks, start playing the first immediately; while
+  // it plays, pre-download the next for a seamless handoff.
   const isEleven = voiceDef.engine === 'eleven'
-  const fetchChunk = isEleven ? (t) => elevenTTS(t, voiceDef.elevenId) : (t) => edgeTTS(t, voiceDef.msVoice)
-  if (isEleven || (voiceDef.engine === 'edge' && !edgeTTSBroken)) {
+  const fetchChunk = (t) => elevenTTS(t, voiceDef.elevenId)
+  if (isEleven) {
     stopSpeaking()
     currentSpeakId = callId // restore after stopSpeaking clears it
-    const chunks = splitIntoChunks(truncated, isEleven ? 420 : 200)
+    const chunks = splitIntoChunks(truncated, 420)
     let started = false
     let failed = false
 
@@ -491,7 +431,6 @@ export async function speak(text, voiceId, onStart, onEnd) {
 
         audio.play().then(() => {
           currentAudio = audio
-          edgeFailCount = 0
           if (!started) { started = true; onStart?.() }
         }).catch(() => { ended = true; resolve(false) })
       })
@@ -500,26 +439,28 @@ export async function speak(text, voiceId, onStart, onEnd) {
     }
 
     if (!failed && started) {
-      console.log(`[Arnie Voice] speak #${callId} → ${isEleven ? 'ElevenLabs' : 'Edge TTS'} complete (${chunks.length} chunks)`)
+      console.log(`[Arnie Voice] speak #${callId} → ElevenLabs complete (${chunks.length} chunks)`)
       onEnd?.()
       return
     }
-
-    if (failed && isEleven) {
-      // His own voice is unavailable right now (credits, network): Andrew steps in.
-      if (currentSpeakId !== callId) return
-      console.warn(`[Arnie Voice] speak #${callId} → ElevenLabs failed, using Edge`)
-      return speak(text, EDGE_VOICES[0].id, onStart, onEnd)
-    }
-    if (failed) {
-      edgeFailCount++
-      if (edgeFailCount >= 1) edgeTTSBroken = true
-      console.warn(`[Arnie Voice] speak #${callId} → Edge TTS failed, using browser`)
-    }
+    if (currentSpeakId !== callId) return
+    console.warn(`[Arnie Voice] speak #${callId} → ElevenLabs failed, falling back to the built-in voice`)
+    lastFallback = { voice: voiceDef.name, at: Date.now() }
   }
 
-  // Browser fallback
-  const bDef = voiceDef.engine === 'browser' ? voiceDef : BROWSER_VOICES[0]
+  // Built-in voice. This is the one place a voice gets substituted, so it
+  // keeps the gender that was asked for: picking a woman's voice and being
+  // answered by a man is the bug this whole file was rewritten for. An
+  // unknown gender keeps the old behaviour rather than guessing.
+  const bDef = voiceDef.engine === 'browser'
+    ? voiceDef
+    : (BROWSER_VOICES.find((v) => v.gender === voiceDef.gender) || BROWSER_VOICES[0])
   speakBrowser(truncated, bDef, onStart, onEnd)
-  console.log(`[Arnie Voice] speak #${callId} → Browser TTS started`)
+  console.log(`[Arnie Voice] speak #${callId} → built-in ${bDef.name} started`)
 }
+
+// Set when a chosen voice could not speak and the built-in one stood in, so a
+// screen can say so instead of leaving someone to wonder why their pick made
+// no difference. Cleared by reading it.
+let lastFallback = null
+export function takeVoiceFallback() { const f = lastFallback; lastFallback = null; return f }

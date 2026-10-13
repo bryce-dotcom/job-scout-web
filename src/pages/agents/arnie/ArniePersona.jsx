@@ -15,12 +15,17 @@ import { useStore } from '../../../lib/store'
 import { UserRound, Check, Volume2, Loader2 } from 'lucide-react'
 import { loadPersona, savePersona, PERSONA_LIST, personaFor } from '../../../lib/arniePersonaClient'
 import AssistantAvatar from '../../../components/AssistantAvatar'
-import { getVoices, savedVoiceId, rememberVoice, speak, unlockAudio } from './arnieVoice'
+import { getVoices, loadArnieVoices, savedVoiceId, rememberVoice, resolveVoice, voiceExists, speak, unlockAudio } from './arnieVoice'
 
 // Switching persona without having chosen a voice should sound right straight
-// away. edge_jenny already existed in the voice list — "Warm American female"
-// — so Jenny has one waiting for her.
-const DEFAULT_VOICE = { arnie: null, jenny: 'edge_jenny' }
+// away: Jenny asks for a woman's voice.
+//
+// What is stored is the WISH, not one account's voice id. The first attempt at
+// this stored edge_jenny, a specific Microsoft voice — and when that engine
+// died the wish died with it, leaving Jenny speaking as a man. 'voice_female'
+// is resolved against whatever the account can really speak with, every time
+// it is used, so it cannot go stale. See resolveVoice in arnieVoice.js.
+const DEFAULT_VOICE = { arnie: null, jenny: 'voice_female' }
 
 const t = {
   card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52', muted: '#7d8a7f',
@@ -46,10 +51,28 @@ export default function ArniePersona({ onChanged }) {
   }, [user?.id])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { try { setVoices(getVoices() || []) } catch { setVoices([]) } }, [])
+
+  // getVoices() on its own only knows the built-in system voices — the real
+  // ones have to be fetched from the account first. This screen used to skip
+  // that, so the Voice list here held nothing but the retired Microsoft names
+  // and two system voices: every pick sounded identical, and the twenty-odd
+  // voices the account actually has never appeared. That is the whole of
+  // "can't switch to Jenny".
+  useEffect(() => {
+    let live = true
+    try { setVoices(getVoices() || []) } catch { setVoices([]) }
+    loadArnieVoices()
+      .then(({ voices: list }) => { if (live) setVoices(list || []) })
+      .catch(() => { /* keep the built-in voices */ })
+    return () => { live = false }
+  }, [])
 
   const current = personaFor(row?.persona)
-  const chosenVoice = row?.voice_id || savedVoiceId() || ''
+  // What is saved may be a wish ('voice_female') or a retired id, neither of
+  // which is in the list — the dropdown would then show "Default", which is
+  // how a dead voice hid in plain sight. Show the voice it really resolves to.
+  const savedVoice = row?.voice_id || savedVoiceId() || ''
+  const chosenVoice = !savedVoice || voiceExists(savedVoice) ? savedVoice : (resolveVoice(savedVoice)?.id || '')
 
   const commit = async (patch) => {
     setBusy(true); setErr(''); setSaved(false)
@@ -78,8 +101,11 @@ export default function ArniePersona({ onChanged }) {
     // voice when they switch back — which is exactly what happened the first
     // time this was tried. So: an auto-assigned one is recognised by matching
     // the persona default it came from, and replaced.
+    // 'edge_jenny' is in this list because it is what Jenny used to be
+    // auto-assigned; without it, a persona set up before today would keep a
+    // retired voice on switching back to Arnie.
     const current = row?.voice_id || null
-    const wasAutoAssigned = Object.values(DEFAULT_VOICE).includes(current)
+    const wasAutoAssigned = [...Object.values(DEFAULT_VOICE), 'edge_jenny'].includes(current)
     const voice = (!current || wasAutoAssigned) ? (DEFAULT_VOICE[key] || null) : current
     if (voice !== current) { try { rememberVoice(voice || '') } catch { /* private mode */ } }
     await commit({ persona: key, display_name: row?.display_name || null, voice_id: voice })
