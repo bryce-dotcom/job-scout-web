@@ -1759,10 +1759,16 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: H })
       return r.ok ? await r.json() : []
     }
-    const [sessions, grants, skills] = await Promise.all([
+    const since = new Date(Date.now() - 12 * 3600_000).toISOString()
+    const [sessions, grants, skills, recent] = await Promise.all([
       get(`arnie_computer_sessions?select=device_label,platform,status,last_seen_at&employee_id=eq.${employeeId}&order=id.desc&limit=1`),
       get(`arnie_computer_grants?select=app,host,tier,duration&employee_id=eq.${employeeId}&revoked_at=is.null&order=app`),
       get(`arnie_skills?select=name,outcome&company_id=eq.${companyId}&status=eq.published&order=name&limit=25`),
+      // What has ACTUALLY been done on that machine. Every action ever sent to
+      // an agent is a row here, so an empty list is proof that nothing has
+      // been done — which is the one fact that stops "I'm sending clicks to
+      // Chrome" when no click was ever sent.
+      get(`arnie_computer_actions?select=kind,app,decision,created_at&employee_id=eq.${employeeId}&created_at=gte.${since}&order=id.desc&limit=6`),
     ])
     const session = Array.isArray(sessions) ? sessions[0] : null
     const live = session?.status === 'live' &&
@@ -1773,6 +1779,14 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
       lines.push('They have NO computer connected right now, so use_my_computer will come back and tell you so. If they ask you to do something in a program on their machine, say the agent is not running and that Arnie → Computer has the one file to download. Do not pretend to have done it, and do not describe the steps as though you had.')
     } else {
       lines.push(`Connected: ${session.device_label || 'their computer'} (${session.platform || 'unknown'}), checking in now.`)
+      // The warning used to live only in the "no computer" branch above. So
+      // the one person who HAD a working agent — connected, Chrome allowed —
+      // was the one person never told that talking is not doing. She was
+      // asked to watch her screen while nothing happened, and then given
+      // three invented reasons why: Google blocking it, lag, clicks landing
+      // in the wrong place. Not one action had been sent.
+      lines.push('NOTHING happens on that computer unless use_my_computer returns a result to you. You cannot see their screen, move a mouse or type a key any other way. So: never say you are clicking, typing, opening something or taking a screenshot unless the tool just did it and told you so — and never ask them whether they can see you working. Call the tool, or say you have not.')
+      lines.push('If the tool DOES come back with a problem, report what it actually said. Do not invent a cause — not the website blocking automation, not lag, not clicks landing in the wrong place. Those are real-sounding reasons that send people hunting a fault that is not there.')
       if (!Array.isArray(grants) || !grants.length) {
         lines.push('Nothing is allowed on it yet, so the first thing you try in any program will come back asking for permission. That is the normal way in: ask for what the job needs, and they get one tap to allow it.')
       } else {
@@ -1780,6 +1794,16 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
           `${g.app}${g.host && g.host !== '*' ? ` on ${g.host}` : ''} (${g.tier}${g.duration === 'once' ? ', once' : ''})`).join('; ') + '.')
       }
     }
+    // The receipts. Stated either way, because "nothing yet" is exactly the
+    // sentence that is needed when someone asks "are you doing it?" and the
+    // honest answer is no.
+    if (live) {
+      const acts = Array.isArray(recent) ? recent : []
+      lines.push(acts.length
+        ? `What you have actually done on it in the last 12 hours, newest first: ${acts.map((a: any) => `${a.kind}${a.app ? ` in ${a.app}` : ''} (${a.decision || 'queued'})`).join('; ')}.`
+        : 'You have done NOTHING on that computer in the last 12 hours — no screenshot, no click, no keystroke. If you have just told them otherwise, correct it.')
+    }
+
     if (Array.isArray(skills) && skills.length) {
       lines.push('Jobs somebody has shown you how to do, in their words. Follow the steps as written and look at the screen between them rather than working from memory:')
       for (const k of skills) lines.push(`- ${k.name}${k.outcome && k.outcome !== k.name ? `: ${String(k.outcome).replace(/\s+/g, ' ').trim()}` : ''}`)

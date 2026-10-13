@@ -76,3 +76,44 @@ describe('the no-fabrication rail', () => {
     expect(thisRule).toBeLessThan(tools)
   })
 })
+
+describe('the computer is the easiest rail to break', () => {
+  const chat = readFileSync(resolve(here, '../../supabase/functions/arnie-chat/index.ts'), 'utf8')
+  const block = chat.slice(chat.indexOf('async function computerBlock'), chat.indexOf('function toolContent'))
+
+  it('the warning reaches the people who actually HAVE a computer', () => {
+    // It used to sit only in the "no computer connected" branch. So the one
+    // person with a working agent — connected, Chrome allowed at full tier —
+    // was the one person never told that talking is not doing. She was asked
+    // to watch her screen while nothing was sent, then given three invented
+    // reasons why nothing moved.
+    const liveHalf = block.slice(block.indexOf('Connected: '))
+    expect(liveHalf).toMatch(/NOTHING happens on that computer unless use_my_computer returns a result/)
+    expect(liveHalf).toMatch(/never ask them whether they can see you working/)
+  })
+
+  it('invented causes are named so they cannot come back', () => {
+    expect(block).toMatch(/not the website blocking automation, not lag, not clicks landing in the wrong place/)
+  })
+
+  it('every turn carries what was really done on that machine', () => {
+    // A fact he cannot talk around — and, when the answer is "nothing", the
+    // exact sentence he needs for "are you doing it?".
+    expect(block).toMatch(/arnie_computer_actions\?select=kind,app,decision,created_at/)
+    expect(block).toMatch(/You have done NOTHING on that computer in the last 12 hours/)
+    expect(block).toMatch(/If you have just told them otherwise, correct it/)
+  })
+
+  it('the general rail names the computer too, not only cards', () => {
+    expect(section).toMatch(/Their computer is the same rule/)
+    expect(section).toMatch(/can you see me doing it/)
+  })
+
+  it('and names invented failures, not just invented limits', () => {
+    expect(section).toMatch(/do not invent FAILURES/)
+    for (const excuse of ['blocking automation', "there's a lag", 'landing in the wrong spot']) {
+      expect(section, excuse).toContain(excuse)
+    }
+    expect(section).toMatch(/If you did not call it, say that/)
+  })
+})
