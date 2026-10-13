@@ -7,6 +7,7 @@ import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
+import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -1965,12 +1966,40 @@ you are the one who knows where everything is.`
   } catch { return '' }
 }
 
+/**
+ * Is a card actually waiting for this person? Only asked when a reply claims
+ * one and no propose_ tool ran, so a legitimate reference to a card drafted in
+ * an earlier turn is never treated as a lie. Returns null when it cannot tell,
+ * which counts as "leave it alone".
+ */
+async function cardPendingFor(caller: Caller): Promise<boolean | null> {
+  if (caller.companyId == null || !caller.email) return null
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/arnie_proposals?select=id&company_id=eq.${caller.companyId}&created_by=eq.${encodeURIComponent(caller.email)}&status=eq.pending&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    if (!r.ok) return null
+    return ((await r.json()) as unknown[]).length > 0
+  } catch { return null }
+}
+
+/** One line in the logs each time the check fires, so we can see whether it is working. */
+function logFabrication(kind: Fabrication, caller: Caller) {
+  console.warn(`[arnie-truth] caught a ${kind} claim with no tool call — company ${caller.companyId}, ${caller.email}`)
+}
+
 async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '', coords: Coords = null): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]
   const setup = agentSetup(agent, caller, cards, messages, bearer, coords)
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId && setup.tools.length > 0
+  // Every tool called anywhere in this turn, and whether the truth check has
+  // already had its one go. Once only: a model that will not correct itself
+  // twice would otherwise loop.
+  const used = new Set<string>()
+  let corrected = false
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
     const ai = await callAnthropic(
       { feature: setup.feature, companyId: companyId ?? null },
@@ -1992,11 +2021,25 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
     const blocks = data.content || []
     const toolUses = blocks.filter((b: any) => b.type === 'tool_use')
     if (toolUses.length === 0) {
-      return blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      const text = blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      // He is finished talking. Did he claim something he never did?
+      if (!corrected) {
+        const claim = fabricationIn(text, used, null)
+          || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
+        if (claim) {
+          corrected = true
+          logFabrication(claim, caller)
+          convo.push({ role: 'assistant', content: blocks })
+          convo.push({ role: 'user', content: correctionFor(claim) })
+          continue
+        }
+      }
+      return text
     }
     convo.push({ role: 'assistant', content: blocks })
     const toolResults = []
     for (const tu of toolUses) {
+      used.add(tu.name)
       const result = await setup.exec(tu.name, tu.input)
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: toolContent(result) })
     }
@@ -2019,6 +2062,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         let convo = [...messages]
         const includeTools = !!companyId && setup.tools.length > 0
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
+        const used = new Set<string>()
+        let corrected = false
         for (let round = 0; round < 5; round++) {
           const res = await fetch(ANTHROPIC_URL, {
             method: 'POST',
@@ -2110,6 +2155,33 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
 
           const toolUses = blocks.filter((b: any) => b?.type === 'tool_use')
           if (stopReason !== 'tool_use' || toolUses.length === 0) {
+            // The words are already on their screen — this is a stream, and
+            // holding every reply back until it could be vetted would cost
+            // every honest answer its speed. So the claim cannot be prevented
+            // here; it can be stopped from being the LAST thing said. One more
+            // round, with the truth in front of him, streams straight after.
+            const text = blocks.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('\n')
+            if (!corrected) {
+              const claim = fabricationIn(text, used, null)
+                || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
+              if (claim) {
+                corrected = true
+                logFabrication(claim, caller)
+                // Tells the client a correction follows. Unknown events are
+                // ignored by older bundles, so this is safe to send to a phone
+                // running last week's build.
+                send('correcting', { kind: claim })
+                // A break, or the retraction runs into the end of the
+                // sentence it is retracting: "…can you see me doing it?I said
+                // I was clicking, but…"
+                send('text', { delta: '\n\n' })
+                convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
+                // `true`: this is a stream, so they have already read it and
+                // it has to be taken back in words.
+                convo.push({ role: 'user', content: correctionFor(claim, true) })
+                continue
+              }
+            }
             send('done', {})
             controller.close()
             return
@@ -2120,6 +2192,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
           const toolResults = []
           for (const tu of toolUses) {
+            used.add(tu.name)
             const result = await setup.exec(tu.name, tu.input)
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
