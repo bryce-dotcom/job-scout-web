@@ -81,29 +81,83 @@ public static class JsFront {
 }
 
 // ── the screen ──────────────────────────────────────────────────────────
+/**
+ * A picture of the program in FRONT — not of everything you have open.
+ *
+ * This used to capture the whole virtual screen, every monitor, every window.
+ * Once Arnie could actually look at the result, that turned the permission
+ * model into a lie: a person allows him "notepad" and gets handed a
+ * photograph of their email, their bank tab and whatever else was on the
+ * other monitor. The grant says one program, so the picture has to BE one
+ * program, or the grant is decoration.
+ *
+ * The frontmost check upstream has already confirmed the window in front is
+ * the program that was allowed, so the foreground rectangle is exactly the
+ * thing he was given permission to see. If that rectangle cannot be found we
+ * fail rather than falling back to the whole screen — a failure is
+ * recoverable, a silent over-capture is not.
+ */
 export async function screenshot() {
   const path = join(tmpdir(), `jobscout-shot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.png`)
   if (WIN) {
     const escaped = path.replace(/\\/g, '\\\\')
     const r = await ps(`
       Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-      $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
-      $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+      Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public struct JsRect { public int Left, Top, Right, Bottom; }
+public static class JsWin {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out JsRect r);
+}
+"@
+      $h = [JsWin]::GetForegroundWindow()
+      $r = New-Object JsRect
+      if (-not [JsWin]::GetWindowRect($h, [ref]$r)) { throw 'no foreground window' }
+      $w = $r.Right - $r.Left; $hgt = $r.Bottom - $r.Top
+      if ($w -le 0 -or $hgt -le 0) { throw 'foreground window has no size' }
+      $bmp = New-Object System.Drawing.Bitmap $w, $hgt
       $g = [System.Drawing.Graphics]::FromImage($bmp)
-      $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+      $g.CopyFromScreen((New-Object System.Drawing.Point $r.Left, $r.Top), [System.Drawing.Point]::Empty, (New-Object System.Drawing.Size $w, $hgt))
       $bmp.Save('${escaped}', [System.Drawing.Imaging.ImageFormat]::Png)
       $g.Dispose(); $bmp.Dispose()`)
     return r.ok ? { path } : { error: r.err || 'screenshot failed' }
   }
   if (MAC) {
-    // -x is silent (no shutter sound); needs the Screen Recording grant,
-    // which the person gives once in System Settings and we cannot script.
-    const r = await run('screencapture', ['-x', '-t', 'png', path])
+    // -o drops the window shadow, -l targets ONE window by id rather than the
+    // desktop. -x is silent (no shutter sound). All of it needs the Screen
+    // Recording grant, which the person gives once in System Settings and we
+    // cannot script.
+    const id = await ps_frontWindowIdMac()
+    const args = id
+      ? ['-x', '-o', '-l', String(id), '-t', 'png', path]
+      : ['-x', '-t', 'png', path]
+    if (!id) return { error: 'could not find the window in front, so nothing was captured' }
+    const r = await run('screencapture', args)
     if (!r.ok) return { error: r.err || 'screenshot failed — is Screen Recording allowed for this app?' }
     try { if (statSync(path).size > 0) return { path } } catch { /* nothing written */ }
     return { error: 'screenshot produced nothing — Screen Recording is probably not allowed yet' }
   }
   return { error: `no screenshot on ${process.platform}` }
+}
+
+/** The window id of whatever is in front, for screencapture -l. */
+async function ps_frontWindowIdMac() {
+  const r = await osa(
+    'tell application "System Events" to tell (first application process whose frontmost is true) ' +
+    'to get value of attribute "AXIdentifier" of front window',
+  )
+  if (r.ok && /^\d+$/.test(r.out.trim())) return r.out.trim()
+  // AXIdentifier is not a window id on every app. Ask Quartz instead.
+  const q = await run('python3', ['-c',
+    'import Quartz,sys\n'
+    + 'w=Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly|Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID)\n'
+    + 'f=[x for x in w if x.get("kCGWindowLayer")==0]\n'
+    + 'print(f[0]["kCGWindowNumber"] if f else "")',
+  ])
+  const id = (q.out || '').trim()
+  return /^\d+$/.test(id) ? id : null
 }
 
 // ── pointer ─────────────────────────────────────────────────────────────

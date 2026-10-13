@@ -615,7 +615,7 @@ const USE_COMPUTER_TOOL = {
         enum: ['screenshot', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
         description: 'What to do. screenshot is how you LOOK — the picture comes straight back to you. (read_text is deliberately not offered: the agent cannot do it, and advertising an action that always fails just burns a turn.)',
       },
-      app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, excel, outlook.' },
+      app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, excel, outlook. ALWAYS required, screenshots included — you look at one program, never at their whole desktop. If they have not said which, ask.' },
       host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
       target: {
         type: 'object',
@@ -624,7 +624,12 @@ const USE_COMPUTER_TOOL = {
       value: { type: 'string', description: 'For kind=type, the text to type. Never a password or a code.' },
       why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
     },
-    required: ['kind'],
+    // app is required, INCLUDING for a screenshot. A look with no program
+    // named is "show me your whole desktop", which is precisely what the
+    // per-program permission exists to prevent — and it refused as a dead
+    // end with no offer, because an offer is per program and there was none
+    // to name.
+    required: ['kind', 'app'],
   },
 }
 
