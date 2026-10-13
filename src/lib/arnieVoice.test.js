@@ -136,3 +136,43 @@ describe('gender by name', () => {
     expect(pick('')).toBe(null)
   })
 })
+
+describe('spoken instructions are read back before they are carried out', () => {
+  const promptSrc = readFileSync(resolve(here, '../../supabase/functions/_shared/arniePrompt.ts'), 'utf8').replace(/\r\n/g, '\n')
+  const engine = read('pages/agents/arnie/arnieEngine.js')
+  const chat = read('pages/agents/arnie/ArnieChat.jsx')
+
+  it('the rule only applies when the instruction was spoken', () => {
+    // Typed input needs none of this — you can see what you asked for.
+    expect(promptSrc).toMatch(/opts\.spoken \? SPOKEN_READBACK : ''/)
+    expect(promptSrc).toMatch(/opts: \{ spoken\?: boolean \} = \{\}/)
+  })
+
+  it('it repeats back AND acts, in one reply', () => {
+    // A confirm step would be a second round trip and a tap, on a phone, for
+    // every instruction. That is how a feature stops being used.
+    expect(promptSrc).toMatch(/then do it\s*\n?\s*in the same reply/)
+    expect(promptSrc).toMatch(/Not a question/)
+  })
+
+  it('it reads back the parts recognition actually gets wrong', () => {
+    expect(promptSrc).toMatch(/\*\*names, numbers,\n\s*quantities, addresses, dates\*\*/)
+    expect(promptSrc).toMatch(/Say the numbers as words/)
+  })
+
+  it('a misheard number is admitted, never filled in', () => {
+    expect(promptSrc).toMatch(/Never fill a gap with a plausible guess/)
+  })
+
+  it('it does not loosen any confirmation that already exists', () => {
+    expect(promptSrc).toMatch(/This replaces nothing/)
+  })
+
+  it('the microphone says so, and the keyboard does not', () => {
+    expect(chat).toMatch(/handleSend\(text, \{ spoken: true \}\)/)
+    expect(chat).toMatch(/\{ canned = false, spoken = false \} = \{\}/)
+    expect(chat).toMatch(/\}, files, \{ spoken \}\)/)
+    expect(engine).toMatch(/\{ spoken = false \} = \{\}/)
+    expect(engine).toMatch(/buildSystemPrompt\(user, company, role, detectMode\(role, userId\), spoken\)/)
+  })
+})

@@ -48,10 +48,11 @@ export function detectMode(role, userId) {
 let personaRow = null
 export function setPersona(row) { personaRow = row || null }
 
-function buildSystemPrompt(user, company, role, mode = 'office') {
+function buildSystemPrompt(user, company, role, mode = 'office', spoken = false) {
   return buildArniePrompt(
     user, company, role, mode, JOBSCOUT_KNOWLEDGE,
     personaRow?.persona, personaRow?.display_name,
+    { spoken },
   )
 }
 
@@ -273,7 +274,10 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
 
 // Send a message through the full pipeline with streaming.
 // `attachments` are screenshots/photos/PDFs the user added to THIS turn.
-export async function sendMessageStream(message, history = [], onChunk, attachments = []) {
+// `spoken` says the message came off the microphone rather than the keyboard.
+// It only changes how the answer OPENS — see SPOKEN_READBACK in arniePrompt —
+// because somebody talking cannot see what was heard.
+export async function sendMessageStream(message, history = [], onChunk, attachments = [], { spoken = false } = {}) {
   let role, userId
   try {
     const ur = getUserRole()
@@ -288,7 +292,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
 
   let systemPrompt
   try {
-    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId))
+    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId), spoken)
   } catch (e) {
     console.error('[Arnie] buildSystemPrompt failed:', e)
     throw new Error('Failed to build prompt: ' + e.message)

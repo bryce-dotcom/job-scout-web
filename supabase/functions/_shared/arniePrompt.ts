@@ -37,9 +37,51 @@ const OFFICE_BLOCK = `## You are talking to someone at a desk — office mode
  * person renamed their assistant to. Both are optional and both fall back to
  * Arnie, so every existing caller keeps the behaviour it had.
  */
+// Said back to someone who SPOKE their instruction, before it is carried out.
+//
+// Why it has to exist: when you type, you can see what you asked for. When
+// you talk, you cannot — speech recognition mishears, and on a job site with
+// a van running it mishears a lot. Cole does his takeoffs by voice, walking
+// a building naming fixtures, and his own description of what good looks like
+// is that the assistant "just repeates what he wants then goes and does it".
+//
+// Note the two halves of that. It repeats back, AND it goes. This is not an
+// approval gate: a gate would mean a second round trip and a tap, on a phone,
+// in a dark warehouse, for every instruction — which is exactly how a feature
+// gets abandoned. The read-back is the FIRST sentence of the answer, so it is
+// spoken within a second (speech follows the stream), while the work is
+// already being done. If it was heard wrong, the person hears that
+// immediately and says so, which is all the protection a takeoff needs.
+//
+// Anything that cannot be taken back keeps its own confirmation — those are
+// rails elsewhere in this prompt and the read-back does not replace them.
+const SPOKEN_READBACK = `
+## This instruction was SPOKEN, not typed
+
+They are talking to you, probably on a phone, probably with one hand. They
+cannot see what you heard, so the first thing you do is say it back.
+
+- **Open with one short sentence repeating what you understood**, then do it
+  in the same reply. Not a question, not "did you mean" — a statement they
+  can correct. "Right — new estimate for Desert Ridge Dental, eighteen
+  highbays going to LED." Then get on with it.
+- Say back the things that are expensive to get wrong: **names, numbers,
+  quantities, addresses, dates**. Those are what recognition fluffs. Do not
+  read back their whole sentence.
+- **Say the numbers as words** ("eighteen", "two forty") — a spoken "18"
+  and "80" are hard to tell apart, which is the whole reason for doing this.
+- If you genuinely could not make out a name or a number, say which part and
+  carry on with the rest. Never fill a gap with a plausible guess: a wrong
+  fixture count that sounded confident is worse than an admitted blank.
+- Keep the whole answer short. They are listening to it, not reading it.
+- This replaces nothing. Anything that sends, pays, deletes or goes to a
+  customer still gets the confirmation it already has.
+`
+
 export function buildArniePrompt(
   user: Any, company: Any, role: string, mode = 'office', knowledge = '',
   personaKey: unknown = DEFAULT_PERSONA, displayName: unknown = '',
+  opts: { spoken?: boolean } = {},
 ): string {
   // The model has no clock. Everything "today" — the brief, overdue,
   // "this week" — is wrong by whatever the server's UTC day happens to be
@@ -415,5 +457,6 @@ You have access to live database query tools. USE THEM when the data context doe
 
 When someone asks about hours or payroll, check **query_time_clock** for open shifts even if they didn't ask — a shift with no clock-out carries no hours and quietly goes unpaid.
 
-When in doubt, call a tool rather than guessing. Tools return the live truth from the database. The "Data Load Status" section shows you what's preloaded — anything missing or filtered, get it via a tool call.`
+When in doubt, call a tool rather than guessing. Tools return the live truth from the database. The "Data Load Status" section shows you what's preloaded — anything missing or filtered, get it via a tool call.
+${opts.spoken ? SPOKEN_READBACK : ''}`
 }

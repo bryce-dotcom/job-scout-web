@@ -484,7 +484,9 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           try { recognition.stop() } catch {}
           setInput('')
           transcriptRef.current = ''
-          handleSend(text)
+          // Off the microphone, so the answer opens by saying back what was
+          // heard — they cannot see it to check it themselves.
+          handleSend(text, { spoken: true })
         }
       }, 3000)
     }
@@ -567,7 +569,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   // `canned` marks a quick-action chip — a fixed prompt that shouldn't swallow
   // a photo the user is still composing around. Voice does carry it: on a job
   // site "what is this?" spoken over a snapshot is the normal way to ask.
-  const handleSend = useCallback(async (text, { canned = false } = {}) => {
+  const handleSend = useCallback(async (text, { canned = false, spoken = false } = {}) => {
     const msg = (text || input).trim()
     const files = canned ? [] : attachments
     if ((!msg && !files.length) || loading || reading || sendingRef.current) return
@@ -638,7 +640,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         ))
         // He starts talking at the end of his first sentence, not his last.
         speakAsItArrives(partialText)
-      }, files)
+      }, files, { spoken })
 
       await saveMessage(sid, 'assistant', fullResponse)
 
