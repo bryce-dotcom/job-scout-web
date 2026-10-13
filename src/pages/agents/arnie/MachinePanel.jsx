@@ -46,7 +46,7 @@ const ago = (iso) => {
   return new Date(iso).toLocaleDateString()
 }
 
-export default function MachinePanel({ session, status, connected, busy, onRefresh, onStop, onGetAgent }) {
+export default function MachinePanel({ session, status, connected, busy, outOfDate, onRefresh, onStop, onGetAgent }) {
   const st = STATE[status?.state] || STATE.idle
   const live = session?.status === 'live'
 
@@ -108,6 +108,18 @@ export default function MachinePanel({ session, status, connected, busy, onRefre
         {live && session?.last_seen_at && (
           <p style={{ margin: '3px 0 0', color: c.faint, fontSize: 11.5 }}>
             checked in {ago(session.last_seen_at)}
+          </p>
+        )}
+
+        {/* AN AGENT THAT IS BEHIND. The launcher re-fetches on every start,
+            so restarting it is the whole fix — but a copy left running for
+            weeks never does, and nobody was told. A live session was taking
+            screenshots it was allowed to take, which came back with no
+            picture, because its agent predated them. */}
+        {connected && outOfDate && (
+          <p style={{ margin: '12px 0 0', color: c.amber, fontSize: 12.5, lineHeight: 1.45 }}>
+            This agent is an older build. Close its window on that computer and open
+            JobScout Agent again — it updates itself on the way up.
           </p>
         )}
 

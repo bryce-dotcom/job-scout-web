@@ -193,7 +193,10 @@ describe('nobody is asked to copy anything', () => {
     expect(page).not.toMatch(/refresh_token/)
     expect(page).not.toMatch(/JOBSCOUT_AGENT_TOKEN/)
     expect(page).not.toMatch(/clipboard/)
-    expect(page).toMatch(/agent-releases/)
+    // Where the download lives moved into lib/agentRelease when the staleness
+    // check needed the same answer. The page still offers it.
+    expect(page).toMatch(/releaseBase/)
+    expect(read('./agentRelease.js')).toMatch(/agent-releases/)
   })
 
   it('a vanished session is recovered once, not printed forever', () => {
@@ -336,7 +339,11 @@ describe('the page offers what is really published', () => {
   })
 
   it('and the page reads it, so signing needs no deploy', () => {
-    expect(page).toMatch(/fetch\(`\$\{base\}\/release\.json`/)
+    // The fetch moved into lib/agentRelease when the staleness check needed
+    // the same answer — two fetches would be two answers about what is
+    // published. The page still reads it and still picks from it.
+    expect(read('./agentRelease.js')).toMatch(/fetch\(`\$\{BASE\}\/release\.json`/)
+    expect(page).toMatch(/useRelease\(\)/)
     expect(page).toMatch(/r\?\.installer \|\| r\?\.launcher \|\| fallback/)
   })
 
@@ -349,5 +356,30 @@ describe('the page offers what is really published', () => {
     // trouble.
     expect(page).toMatch(/mine\.signed/)
     expect(page).toMatch(/It is signed by Hollow Hills Holdings, so it opens normally\./)
+  })
+})
+
+describe('a stale agent is visible', () => {
+  const lib = read('./agentRelease.js')
+  const builder = read('../../scripts/build-agent-release.mjs')
+  const agent = read('../../scripts/jobscout-agent.mjs')
+
+  it('what is compared is derived, not typed by a person', () => {
+    // A version only changes when somebody remembers, and somebody did not: a
+    // build WITH eyes and one without both called themselves 0.4.0, so a
+    // person running the old one had allowed screenshots coming back with no
+    // picture and nothing could say why.
+    expect(builder).toMatch(/const AGENT_BUILD = createHash\('sha256'\)/)
+    expect(builder).toMatch(/'scripts\/agent\/hands\.mjs'/)
+    expect(builder).toMatch(/agent_build: AGENT_BUILD/)
+    expect(agent).toMatch(/typeof __AGENT_BUILD__ === 'string'/)
+    expect(agent).toMatch(/agent_build: BUILD/)
+  })
+
+  it('and it says nothing unless it is sure', () => {
+    // Nagging somebody whose agent is fine is worse than silence, and an
+    // agent too old to report a build is left alone rather than accused.
+    expect(lib).toMatch(/if \(!running \|\| !published\) return false/)
+    expect(lib).toMatch(/return running !== published/)
   })
 })

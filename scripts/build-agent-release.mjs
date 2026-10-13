@@ -53,7 +53,27 @@ const publicBase = `${URL_BASE}/storage/v1/object/public/${BUCKET}`
 // that stay a STATIC import of the one real file: the rules are compiled in
 // from source, not fetched, not re-typed, not stubbed.
 mkdirSync(OUT, { recursive: true })
+// WHAT THIS BUILD IS, derived rather than typed.
+//
+// A version number only changes when somebody remembers to change it, and
+// somebody did not: an agent reporting "0.4.0" with no eyes and a build
+// reporting "0.4.0" WITH them were indistinguishable, so a person running a
+// stale copy had allowed screenshots coming back with no picture and nothing
+// anywhere could tell them why. A hash of the sources cannot be forgotten.
+const SOURCES = [
+  'scripts/jobscout-agent.mjs',
+  'scripts/agent/hands.mjs',
+  'scripts/agent/recorder.ps1',
+  'scripts/agent/recorder.jxa.js',
+  'supabase/functions/_shared/computerGrants.ts',
+]
+const { createHash } = await import('node:crypto')
+const AGENT_BUILD = createHash('sha256')
+  .update(SOURCES.map((f) => readFileSync(join(ROOT, f))).reduce((a, b) => Buffer.concat([a, b])))
+  .digest('hex').slice(0, 10)
+
 const bundle = await build({
+  define: { __AGENT_BUILD__: JSON.stringify(AGENT_BUILD) },
   entryPoints: [join(ROOT, 'scripts/jobscout-agent.mjs')],
   outfile: join(OUT, 'agent.mjs'),
   bundle: true,
@@ -75,7 +95,7 @@ if (/await import\(/.test(bundled)) {
   die('the bundle still resolves something at runtime — a downloaded agent has no checkout to resolve it from')
 }
 if (!/decideAction/.test(bundled)) die('the leash is not in the bundle')
-console.log(`  agent.mjs      ${(bundled.length / 1024).toFixed(0)} KB`)
+console.log(`  agent.mjs      ${(bundled.length / 1024).toFixed(0)} KB  build ${AGENT_BUILD}`)
 
 // ── 2. the launchers, made concrete ─────────────────────────────────────
 const fill = (src) => {
@@ -301,6 +321,9 @@ if (macWanted) {
 const has = (key) => files.some((f) => f.key === key)
 const manifest = {
   version: AGENT_VERSION,
+  // What a running agent compares itself against. The version is for people;
+  // this is what actually tells a stale copy from a current one.
+  agent_build: AGENT_BUILD,
   published_at: new Date().toISOString(),
   windows: {
     // The one to offer, best first.

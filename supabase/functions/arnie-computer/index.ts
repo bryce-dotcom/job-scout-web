@@ -125,6 +125,9 @@ Deno.serve(async (req) => {
           device_label: String(body.device_label || '').slice(0, 120) || null,
           platform: String(body.platform || '').slice(0, 60) || null,
           agent_version: String(body.agent_version || '').slice(0, 40) || null,
+          // A hash of the agent's own sources. The version is for people;
+          // this is what tells a stale copy from a current one.
+          agent_build: String(body.agent_build || '').slice(0, 40) || null,
           // What this machine can actually do, in its own words. Without it a
           // Mac that cannot watch a screen looks identical to one that can,
           // and the only place the difference was ever stated was a terminal

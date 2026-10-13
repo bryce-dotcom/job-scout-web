@@ -143,7 +143,15 @@ const pair = async () => {
 
 const APP_URL = process.env.JOBSCOUT_APP_URL || 'https://jobscout.appsannex.com'
 const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || process.env.COMPUTERNAME || process.env.HOSTNAME || 'this computer'
-const VERSION = '0.4.0'
+const VERSION = '0.5.0'
+// WHICH BUILD THIS IS, baked in at release time from a hash of the agent's
+// own sources. The version is for people and only changes when somebody
+// remembers — and somebody did not: a build with eyes and a build without
+// both called themselves 0.4.0, so a person running the old one had allowed
+// screenshots coming back empty with nothing able to explain why. This cannot
+// be forgotten, because it is derived.
+// eslint-disable-next-line no-undef
+const BUILD = typeof __AGENT_BUILD__ === 'string' ? __AGENT_BUILD__ : 'source'
 
 // ── the access token, kept fresh ────────────────────────────────────────
 // JOBSCOUT_AGENT_TOKEN is a REFRESH token. An access token lasts an hour,
@@ -446,6 +454,7 @@ const handshake = {
   device_label: DEVICE,
   platform: process.platform,
   agent_version: VERSION,
+  agent_build: BUILD,
   capabilities: { perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes },
 }
 const hello = await call('hello', handshake)

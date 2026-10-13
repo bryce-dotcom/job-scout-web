@@ -21,6 +21,7 @@ import {
 import { myComputer, myGrants, myOffers, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import MachinePanel from './MachinePanel'
+import { useRelease, agentIsStale, releaseBase } from '../../../lib/agentRelease'
 import { whatArnieCanDo, stateLabel, NEVER, READY } from '../../../lib/arnieCanDo'
 import { computerState, describeAction } from '../../../lib/agentStatus'
 
@@ -75,6 +76,7 @@ export default function ArnieComputer() {
   const [grants, setGrants] = useState([])
   const [offers, setOffers] = useState([])
   const [skills, setSkills] = useState([])
+  const release = useRelease()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [showConnect, setShowConnect] = useState(false)
@@ -155,6 +157,7 @@ export default function ArnieComputer() {
 
       {/* ── 1. The machine ───────────────────────────────────────────── */}
       <MachinePanel
+        outOfDate={agentIsStale(data.session, release)}
         session={data.session}
         status={status}
         connected={connected}
@@ -463,7 +466,7 @@ const Step = ({ n, title, children }) => (
 )
 
 function GetTheAgent() {
-  const base = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/agent-releases`
+  const base = releaseBase
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
   const mac = /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua)
   const phone = /iPhone|iPad|Android/i.test(ua)
@@ -472,14 +475,9 @@ function GetTheAgent() {
   // writes release.json naming the best download it really uploaded, so the
   // day a signed installer exists this offers it with no deploy and nobody to
   // remember — and until then it cannot link to a file that is not there.
-  const [release, setRelease] = useState(null)
-  useEffect(() => {
-    let alive = true
-    fetch(`${base}/release.json`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (alive) setRelease(j) }, () => {})
-    return () => { alive = false }
-  }, [base])
+  // One definition of "what is published", shared with the staleness check
+  // above — two fetches would be two answers.
+  const release = useRelease()
 
   // The launcher is the floor: it is what shipped before any of this and it
   // works, so a missing or unreadable manifest costs nobody their download.
