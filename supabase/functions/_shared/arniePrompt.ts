@@ -448,6 +448,7 @@ You have access to live database query tools. USE THEM when the data context doe
 - **query_inventory** — stock levels, low-stock alerts
 - **query_quotes** — quotes/estimates sent, won, still out, by rep or month — ADMIN+ ONLY
 - **query_expenses** — spend by category, vendor or job — OWNER ONLY
+- **where_i_am** — the building they are standing in: name, address, phone, website, and whether this company already knows them. For "who is this place", "use my location", "am I at a customer". Only works in the app with location allowed; when it says it has no location, say so and ask them to type the name — never work it out from the company address or a job they are on. The nearest hit is the likeliest, not the certain one: with two close together, say which you mean and let them confirm. A customer match is on NAME only, so "looks like" is the right word.
 - **query_appointments** — the calendar: what's booked, for whom, how it went
 - **query_time_clock** — hours worked, and shifts nobody clocked out of
 - **query_products** — catalogue: price, cost, manufacturer, model number. \`group_by\` audits the WHOLE set — use it before any claim about "all" or "every" product

@@ -6,6 +6,14 @@ import { recordTargetsSentence } from '../_shared/arnieRecords.ts'
 import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
+import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
+
+// Where the device says it is. Threaded explicitly from the request through
+// to the one tool that uses it, exactly as the bearer token is — agentSetup
+// and the two tool loops are top-level functions, so nothing in the request
+// handler is in scope for them.
+type Coords = { lat: number; lng: number; accuracy?: number } | null
+
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
@@ -215,6 +223,22 @@ const TOOLS = [
         start_date: { type: 'string' },
         end_date: { type: 'string' },
         group_by: { type: 'string', enum: ['status', 'salesperson', 'month', 'source', 'none'] },
+      },
+    },
+  },
+  {
+    name: 'where_i_am',
+    // NOTE the absence of lat/lng in the schema, and it is deliberate. The
+    // coordinates come from the browser, through the request body, and are
+    // never a tool argument — a model that can pass a position is a model
+    // that can invent one, and an invented position returns a real business
+    // with a real phone number for a place the rep has never been. The only
+    // knob here is how far to look.
+    description: "Where the person physically is right now, and what business is there — name, address, phone, website — cross-checked against this company's own customers and leads. Use it when they ask about where they are or the place they are at: \"who is this\", \"what's this business\", \"use my location\", \"am I at a customer\". It only works in the app on a device that has given location permission; if it reports no location, say so plainly and ask them to type the name instead. Never guess a location, and never call this to find somewhere they are NOT standing — use query_customers for that.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        radius_m: { type: 'integer', description: 'How far around them to look, in metres. Default 120 — about a car park. Raise it only if the first look found nothing.' },
       },
     },
   },
@@ -707,7 +731,7 @@ function lastImageOf(messages: any[] = []): { imageBase64: string; mediaType: st
   return null
 }
 
-async function execTool(name: string, input: any, caller: Caller, messages: any[] = [], bearer = '') {
+async function execTool(name: string, input: any, caller: Caller, messages: any[] = [], bearer = '', coords: Coords = null) {
   const { companyId, role, email, employeeId } = caller
   const sb = (path: string) => `${SUPABASE_URL}/rest/v1/${path}`
   const hdr = { 'apikey': SUPABASE_SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
@@ -718,6 +742,80 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
   const isManager = isAdmin || role === 'manager'
 
   try {
+    // ── where they are standing ────────────────────────────────────────
+    if (name === 'where_i_am') {
+      if (!coords || !validCoords(coords.lat, coords.lng)) {
+        // Said as a fact, not as a failure to work around. The alternative —
+        // guessing from the company address, or from a job they are assigned
+        // — would be confidently wrong in the one case this exists for.
+        return {
+          no_location: true,
+          say: 'I have not got your location. Open me in the app on your phone and allow location when it asks, and I can tell you whose building you are at.',
+        }
+      }
+      const key = Deno.env.get('GOOGLE_PLACES_API_KEY') || ''
+      if (!key) return { refused: 'Looking up a place needs the Google Places key, which is not set up on this install yet.' }
+
+      let places
+      try {
+        places = await nearbyPlaces(key, coords.lat, coords.lng, Number(input?.radius_m) || 120)
+      } catch (e) {
+        return { error: (e as Error).message }
+      }
+      if (!places.length) {
+        return {
+          nothing_nearby: true,
+          accuracy_m: coords.accuracy ?? null,
+          say: 'Nothing is registered at those coordinates. If it is a unit in a park or a house, there may be no listing — tell me the name and I will take it from there.',
+        }
+      }
+
+      // Does this company already know any of them? This is the difference
+      // between reading back a Google listing and being useful: "that is
+      // Desert Ridge Dental, already a customer, three jobs" is the answer
+      // somebody actually wants standing in the car park.
+      // Matched on BOTH the contact name and the trading name, because a
+      // Google listing is a business and `customers.name` is often a person.
+      // Note the column names: customers has no `city`, and leads call it
+      // `customer_name`, not `name`. Both of those were wrong in the first
+      // cut, each returned a 400, and the 400 was being swallowed into an
+      // empty list — so a broken lookup said "not a customer" about a
+      // customer that was sitting right there. Hence `lookup_failed` below:
+      // a cross-check that could not run must never read as a clean no.
+      let known: Record<string, unknown>[] = []
+      let knownLeads: Record<string, unknown>[] = []
+      let lookupFailed: string | null = null
+      if (companyId != null) {
+        const words = [...new Set(places.map((p) => matchWord(p.name)).filter(Boolean))] as string[]
+        if (words.length) {
+          const orFor = (cols: string[]) =>
+            cols.flatMap((c) => words.map((w) => `${c}.ilike.*${encodeURIComponent(w)}*`)).join(',')
+          const [cRes, lRes] = await Promise.all([
+            fetch(sb(`customers?select=id,name,business_name,phone,address,status&company_id=eq.${companyId}&or=(${orFor(['name', 'business_name'])})&limit=12`), { headers: hdr }),
+            fetch(sb(`leads?select=id,customer_name,business_name,phone,address,status&company_id=eq.${companyId}&or=(${orFor(['customer_name', 'business_name'])})&limit=12`), { headers: hdr }),
+          ])
+          if (cRes.ok) known = await cRes.json()
+          else lookupFailed = `customers: ${(await cRes.text()).slice(0, 200)}`
+          if (lRes.ok) knownLeads = await lRes.json()
+          else lookupFailed = `${lookupFailed ? lookupFailed + ' | ' : ''}leads: ${(await lRes.text()).slice(0, 200)}`
+        }
+      }
+
+      return {
+        // So Arnie can say "give or take 40 metres" rather than presenting a
+        // phone-GPS fix in a built-up area as a certainty.
+        accuracy_m: coords.accuracy ?? null,
+        searched_radius_m: Number(input?.radius_m) || 120,
+        nearby: places,
+        existing_customers: known,
+        existing_leads: knownLeads,
+        // Present only when the cross-check could not run. Arnie must then
+        // say he could not check — NOT that they are a new business.
+        ...(lookupFailed ? { lookup_failed: lookupFailed } : {}),
+        note: 'nearby is ordered by distance. The nearest is the LIKELIEST, not the certain one — a phone fix in a built-up area is often tens of metres out, so if two are close together say which you mean and let them confirm. existing_customers / existing_leads are matched on name alone: say "looks like" and let them confirm rather than stating it as fact. If lookup_failed is present you did NOT manage to check them against this company — say that plainly and do not say they are new.',
+      }
+    }
+
     // ── the one tool that reaches outside this building ────────────────
     if (name === 'use_my_computer') {
       if (!bearer || !employeeId) {
@@ -1478,6 +1576,22 @@ Deno.serve(async (req) => {
     const cards = cardsFor(body)
     const agent = agentFor(body)
 
+    // Where the device says it is. This one IS read from the body, unlike
+    // identity below, and that is safe for the opposite reason: a position is
+    // not a permission. The worst a forged one does is tell the sender about
+    // a street they are not on — it opens no door into another tenant, since
+    // the customer cross-check still runs against the JWT's company. It is
+    // validated rather than trusted: a swapped lat/lng, a stale zero or a
+    // string lands in the ocean and would otherwise be looked up in earnest.
+    const rawC = body?.coords
+    const coords = rawC && validCoords(Number(rawC.lat), Number(rawC.lng))
+      ? {
+        lat: Number(rawC.lat),
+        lng: Number(rawC.lng),
+        accuracy: Number.isFinite(Number(rawC.accuracy)) ? Number(rawC.accuracy) : undefined,
+      }
+      : null
+
     // Identity comes from the JWT — NEVER from the body. `companyId` and
     // `role` used to be read off the request and handed straight to the
     // service-role queries below, so any signed-in user could retarget them
@@ -1552,11 +1666,11 @@ Deno.serve(async (req) => {
 
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
-      return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken)
+      return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken, coords)
     }
 
     // === NON-STREAMING (with tool support) ===
-    const reply = await callWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken)
+    const reply = await callWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken, coords)
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -1585,7 +1699,7 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 // accepts no identity but a real session — no service key, no named employee.
 // Passing it explicitly keeps it visible at every hop instead of riding along
 // inside an identity object that gets logged and copied.
-function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = [], bearer = '') {
+function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = [], bearer = '', coords: Coords = null) {
   const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
   if (agent === 'frankie') {
     return {
@@ -1602,7 +1716,7 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     maxTokens: 4096,
     feature: 'arnie-chat',
     tools: toolsFor(caller.role, cards, { ownSession: !!bearer }),
-    exec: (name: string, input: any) => execTool(name, input, caller, messages, bearer),
+    exec: (name: string, input: any) => execTool(name, input, caller, messages, bearer, coords),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -1827,10 +1941,10 @@ you are the one who knows where everything is.`
   } catch { return '' }
 }
 
-async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = ''): Promise<string> {
+async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '', coords: Coords = null): Promise<string> {
   const { companyId } = caller
   let convo = [...messages]
-  const setup = agentSetup(agent, caller, cards, messages, bearer)
+  const setup = agentSetup(agent, caller, cards, messages, bearer, coords)
   // Only advertise tools if we have a companyId to scope queries safely
   const includeTools = !!companyId && setup.tools.length > 0
   for (let i = 0; i < 5; i++) { // up to 5 tool rounds
@@ -1868,10 +1982,10 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
 }
 
 // Streaming version with tool support — emits SSE
-async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '') {
+async function streamWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '', coords: Coords = null) {
   const { companyId } = caller
   const encoder = new TextEncoder()
-  const setup = agentSetup(agent, caller, cards, messages, bearer)
+  const setup = agentSetup(agent, caller, cards, messages, bearer, coords)
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {

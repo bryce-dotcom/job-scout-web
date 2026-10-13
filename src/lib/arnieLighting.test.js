@@ -80,13 +80,20 @@ describe('the photo comes off the conversation, not the tool call', () => {
     // `bearer` joined them for the one tool that acts AS the caller against
     // our own rail. Same reasoning as messages: threaded through the call,
     // never a request-scoped global in a shared isolate.
-    expect(chat).toMatch(/async function execTool\(name: string, input: any, caller: Caller, messages: any\[\] = \[\], bearer = ''\)/)
-    expect(chat).toMatch(/exec: \(name: string, input: any\) => execTool\(name, input, caller, messages, bearer\)/)
-    expect(chat).toMatch(/function agentSetup\(agent: Agent, caller: Caller, cards: string\[\], messages: any\[\] = \[\], bearer = ''\)/)
+    // What matters is that the conversation is PASSED IN rather than reached
+    // for globally — not the exact parameter list, which has grown since
+    // (bearer, then coords) and will again.
+    expect(chat).toMatch(/async function execTool\(name: string, input: any, caller: Caller, messages: any\[\] = \[\],/)
+    expect(chat).toMatch(/exec: \(name: string, input: any\) => execTool\(name, input, caller, messages, bearer/)
+    expect(chat).toMatch(/function agentSetup\(agent: Agent, caller: Caller, cards: string\[\], messages: any\[\] = \[\], bearer = ''/)
   })
 
   it('both turn runners pass their conversation in', () => {
-    expect(chat.split('agentSetup(agent, caller, cards, messages, bearer)').length - 1).toBe(2)
+    // The two runners — the definition carries type annotations and does not
+    // match this. Matched on the prefix, not the closing bracket, so adding
+    // another threaded argument does not fail a test that is about `messages`
+    // being passed at all.
+    expect(chat.split('agentSetup(agent, caller, cards, messages, bearer').length - 1).toBe(2)
   })
 
   it('the newest image wins, because "what is this" means the one just sent', () => {

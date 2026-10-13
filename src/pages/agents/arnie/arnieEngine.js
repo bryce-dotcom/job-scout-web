@@ -2,6 +2,7 @@ import { getUserRole, assembleDataContext, getDataLoadStatus, isClockedIn } from
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledge'
+import { asksAboutHere, getPosition } from '../../../lib/arnieLocation'
 import { buildArniePrompt } from '../../../../supabase/functions/_shared/arniePrompt.ts'
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
@@ -195,7 +196,7 @@ export function detectIntent(message) {
 }
 
 // Call Claude via Supabase edge function — streams responses via SSE
-async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk) {
+async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk, coords = null) {
   const contextMessage = dataContext
     ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here AND no tool can fetch it, you do NOT have it. This governs facts about THIS COMPANY only — it does not limit your trade, technical or general knowledge, which you should use freely when helping someone diagnose or fix something.\n\n${dataContext}`
     : '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.'
@@ -228,6 +229,11 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
       // can deploy in either order. Add to this list in the SAME commit that
       // adds the card — never ahead of it.
       supports: RENDERABLE_CARDS,
+      // Only present when the message was actually about where they are —
+      // see arnieLocation. The server validates it, and the cross-check
+      // against this company's customers still runs off the JWT, so a
+      // position in the body cannot reach another tenant's data.
+      ...(coords ? { coords } : {}),
     }),
   })
 
@@ -364,7 +370,14 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
 
   const conversationHistory = withCurrentTurn(history, message, attachments)
 
-  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk)
+  // A GPS fix, but only when the question is about where they are standing.
+  // Taking one for "how many overdue invoices" would cost battery and, worse,
+  // raise a permission prompt with no visible reason — which is a prompt
+  // people deny. null when refused or unavailable: Arnie then says he has not
+  // got it rather than guessing an address.
+  const coords = asksAboutHere(message) ? await getPosition() : null
+
+  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk, coords)
   return response
 }
 
