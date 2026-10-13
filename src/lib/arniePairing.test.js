@@ -399,7 +399,7 @@ describe('the download that cannot be blocked', () => {
     // Nobody at the company had ever completed a connect, and one person
     // clicked the button and nothing happened. A browser refusing to keep a
     // downloaded .cmd looks exactly like that: no error, no file.
-    expect(page).toMatch(/function PasteInstead\(\)/)
+    expect(page).toMatch(/function PasteInstead\(\{ open: openByDefault = false \}\)/)
     expect(page).toMatch(/Download blocked, or nothing happened\?/)
   })
 
@@ -417,7 +417,7 @@ describe('the download that cannot be blocked', () => {
     // It IS a terminal, which is the thing the download flow exists to
     // avoid — so it stays behind a link, and disappears entirely once there
     // is a signed installer that browsers do not fight.
-    expect(page).toMatch(/\{!mine\.signed && !mac && <PasteInstead \/>\}/)
+    expect(page).toMatch(/\{!mine\.signed && !mac && <PasteInstead open=\{dl === 'blocked'\} \/>\}/)
   })
 })
 
@@ -445,5 +445,52 @@ describe('he talks while he thinks', () => {
 
   it('and a new answer speaks from its own beginning', () => {
     expect(chat).toMatch(/resetSpeech\(\)/)
+  })
+})
+
+describe('the button can no longer fail in silence', () => {
+  const page = read('../pages/agents/arnie/ArnieComputer.jsx')
+
+  it('the download is fetched by us, not left to a cross-origin link', () => {
+    // Alayda clicked it and NOTHING happened — no file, no error, no network
+    // request. The download attribute is ignored on a cross-origin link (the
+    // file is on supabase.co, the page is not) and browsers quietly discard a
+    // .cmd. Between them the click produced nothing a person could read.
+    expect(page).toMatch(/const grab = async \(name\) => \{/)
+    expect(page).toMatch(/URL\.createObjectURL\(blob\)/)
+    expect(page).toMatch(/a\.download = name/)
+    expect(page).not.toMatch(/<a href=\{href\} download=\{file\}/)
+  })
+
+  it('and every outcome is said out loud', () => {
+    expect(page).toMatch(/dl === 'done' &&/)
+    expect(page).toMatch(/dl === 'blocked' &&/)
+    expect(page).toMatch(/would not keep that file/)
+  })
+
+  it('a refusal opens the fallback by itself', () => {
+    // Making somebody find the workaround after the thing already failed them
+    // once is how you lose them twice.
+    expect(page).toMatch(/<PasteInstead open=\{dl === 'blocked'\} \/>/)
+  })
+})
+
+describe('you can see when he is working', () => {
+  const panel = read('../pages/agents/arnie/MachinePanel.jsx')
+
+  it('the scout walks while an action is running', () => {
+    // "If Arnie is working there is no indication." The panel looked identical
+    // whether he was mid-action or idle, which is unnerving for a thing with
+    // hands on your machine.
+    expect(panel).toMatch(/import ScoutLoader from/)
+    expect(panel).toMatch(/status\?\.state === 'working' \?/)
+  })
+
+  it('and Check says it is checking', () => {
+    expect(panel).toMatch(/\{busy \? 'Checking…' : 'Check'\}/)
+    expect(panel).toMatch(/animation: 'jsSpin/)
+    // Declared in the component, because it renders in the drawer as well as
+    // the page and a keyframe defined elsewhere goes missing in one of them.
+    expect(panel).toMatch(/@keyframes jsSpin/)
   })
 })

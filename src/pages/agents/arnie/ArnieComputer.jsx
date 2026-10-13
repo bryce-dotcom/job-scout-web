@@ -466,6 +466,44 @@ const Step = ({ n, title, children }) => (
 )
 
 function GetTheAgent() {
+  // WHY THIS IS NOT JUST AN <a download>.
+  //
+  // It was, and Alayda clicked it and nothing happened at all — no file, no
+  // error, nothing. Two things stack up: the download ATTRIBUTE is ignored on
+  // a cross-origin link (the file is on supabase.co, the page is not), and
+  // browsers quietly discard a downloaded .cmd as a dangerous type. Between
+  // them the click produces no network request and no message, which is
+  // indistinguishable from a broken button — and from her side it WAS one.
+  //
+  // Fetching it ourselves and handing over a same-origin blob puts the
+  // filename and the outcome back under our control. The important part is
+  // not that this always succeeds — it is that it can no longer fail in
+  // silence: a refusal now says so and offers the command instead.
+  const [dl, setDl] = useState('idle')   // idle | working | done | blocked
+
+  const grab = async (name) => {
+    setDl('working')
+    try {
+      const res = await fetch(`${base}/${encodeURIComponent(name)}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error(String(res.status))
+      const blob = await res.blob()
+      if (!blob.size) throw new Error('empty')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Revoked late: a browser that is still writing the file needs the url
+      // to outlive the click.
+      setTimeout(() => URL.revokeObjectURL(url), 20000)
+      setDl('done')
+    } catch {
+      setDl('blocked')
+    }
+  }
+
   const base = releaseBase
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
   const mac = /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua)
@@ -489,7 +527,6 @@ function GetTheAgent() {
   const mine = pick(mac ? 'mac' : 'windows')
   const other = pick(mac ? 'windows' : 'mac')
   const file = mine.name
-  const href = `${base}/${encodeURIComponent(file)}`
 
   return (
     <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 14 }}>
@@ -520,9 +557,9 @@ function GetTheAgent() {
         One small file. It is what starts Arnie and keeps him up to date, so keep it
         somewhere you can find it again — the desktop is fine.
         <div style={{ marginTop: 9, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <a href={href} download={file} style={{ ...btn(t.accent, '#fff'), textDecoration: 'none' }}>
-            <Download size={14} /> {mac ? 'Download for Mac' : 'Download for Windows'}
-          </a>
+          <button onClick={() => grab(file)} disabled={dl === 'working'} style={btn(t.accent, '#fff')}>
+            <Download size={14} /> {dl === 'working' ? 'Fetching…' : (mac ? 'Download for Mac' : 'Download for Windows')}
+          </button>
           <a
             href={`${base}/${encodeURIComponent(other.name)}`}
             download
@@ -552,7 +589,21 @@ function GetTheAgent() {
             it dangerous and the file never lands — which looks exactly like
             "nothing happened". A command is text, so nothing can block it,
             and on a locked-down work machine it is often the only way in. */}
-        {!mine.signed && !mac && <PasteInstead />}
+        {/* Whatever happened, it is said. The old failure mode was silence,
+            which a person can only read as "the button is broken". */}
+        {dl === 'done' && (
+          <div style={{ fontSize: 12.5, color: t.add, marginTop: 8, lineHeight: 1.5 }}>
+            Saved — look in your Downloads folder for <strong>{file}</strong>, and open it.
+            Nothing there? Your browser may have removed it; use the command below.
+          </div>
+        )}
+        {dl === 'blocked' && (
+          <div style={{ fontSize: 12.5, color: t.amber, marginTop: 8, lineHeight: 1.5 }}>
+            Your browser would not keep that file. That is common on a work computer and it is
+            not something you did — use the command below instead.
+          </div>
+        )}
+        {!mine.signed && !mac && <PasteInstead open={dl === 'blocked'} />}
       </Step>
 
       <Step n={2} title="Open it">
@@ -661,8 +712,8 @@ const input = {
  * is the thing the whole download flow exists to avoid — it is the fallback,
  * not the path.
  */
-function PasteInstead() {
-  const [open, setOpen] = useState(false)
+function PasteInstead({ open: openByDefault = false }) {
+  const [open, setOpen] = useState(openByDefault)
   const [copied, setCopied] = useState(false)
   // The backslashes matter: a single one here is an escape and the path comes
   // out as $env:TEMPJobScoutAgent.cmd, which fails in a way nobody could debug.

@@ -20,6 +20,7 @@
 
 import { Monitor, Power, RefreshCw, Download } from 'lucide-react'
 import Contours from '../../../components/Contours'
+import ScoutLoader from '../../../components/ScoutLoader'
 
 const c = {
   ink: '#14181a', panel: '#1c2124', edge: '#2b3238',
@@ -57,6 +58,10 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
       border: `1px solid ${c.edge}`, borderRadius: 18, padding: 18, marginBottom: 14,
     }}>
       <Contours tint={st.tint} />
+      {/* Declared here so the panel is self-contained — it is rendered inside
+          the drawer as well as the page, and a keyframe defined somewhere
+          else is a keyframe that goes missing in one of them. */}
+      <style>{'@keyframes jsSpin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }'}</style>
 
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13 }}>
@@ -101,10 +106,27 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
           }}>{st.word}</span>
         </div>
 
-        {/* What he is doing, in his own words, big enough to read at a glance. */}
-        <p style={{ margin: '14px 0 0', color: c.dim, fontSize: 14.5, lineHeight: 1.5 }}>
-          {status?.detail || 'Put him on a computer and he can work in your programs with you.'}
-        </p>
+        {/* WHEN HE IS ACTUALLY DOING SOMETHING, the scout walks. There was
+            no sign at all that anything was happening — the panel looked the
+            same whether he was mid-action or idle, which is unnerving for a
+            thing with hands on your machine. */}
+        {status?.state === 'working' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '14px 0 0' }}>
+            <ScoutLoader
+              size={40}
+              label={null}
+              theme={{ text: c.text, textMuted: c.faint, border: c.edge, bgCard: c.panel }}
+              style={{ padding: 0 }}
+            />
+            <p style={{ margin: 0, color: c.text, fontSize: 14.5, lineHeight: 1.45 }}>
+              {status.detail}
+            </p>
+          </div>
+        ) : (
+          <p style={{ margin: '14px 0 0', color: c.dim, fontSize: 14.5, lineHeight: 1.5 }}>
+            {status?.detail || 'Put him on a computer and he can work in your programs with you.'}
+          </p>
+        )}
         {live && session?.last_seen_at && (
           <p style={{ margin: '3px 0 0', color: c.faint, fontSize: 11.5 }}>
             checked in {ago(session.last_seen_at)}
@@ -156,13 +178,19 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
               <Download size={16} /> Put Arnie on this computer
             </button>
           )}
+          {/* It used to look identical whether it was working or ignoring
+              you: "the Check button on BEES computer, it does nothing". It
+              spins while it is checking, and says so. */}
           <button onClick={onRefresh} disabled={busy} title="Check again" style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
             background: 'rgba(255,255,255,0.04)', color: c.dim, border: `1px solid ${c.edge}`,
             borderRadius: 12, padding: '12px 14px', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', minHeight: 48,
+            cursor: busy ? 'default' : 'pointer', minHeight: 48, opacity: busy ? 0.75 : 1,
           }}>
-            <RefreshCw size={15} /> Check
+            <RefreshCw
+              size={15}
+              style={busy ? { animation: 'jsSpin 0.9s linear infinite' } : undefined}
+            /> {busy ? 'Checking…' : 'Check'}
           </button>
           {live && (
             <button onClick={onGetAgent} title="Connect another computer" style={{
