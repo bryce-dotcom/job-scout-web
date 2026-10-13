@@ -183,7 +183,7 @@ const SWITCH = [
 
 const CSS = `
   .pr{--paper:#f4efe3;--paper2:#ece3d1;--card:#fffdf7;--ink:#191d15;--sub:#4f5a4a;--muted:#848a79;--line:#d9cfb6;--line2:#cabf9f;
-    --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#f26a12;--vizDk:#c9530a;--vizBg:rgba(242,106,18,0.12);
+    --grn:#54613a;--grnDk:#3a4526;--grnBg:rgba(84,97,58,0.10);--viz:#c99a2e;--vizDk:#8a6413;--vizBg:rgba(201,154,46,0.13);
     --night:#161b12;--nightGrn:#212819;--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     background:linear-gradient(rgba(244,239,227,.62),rgba(244,239,227,.62)),url(/topo-bg.png) center/cover no-repeat fixed;color:var(--ink);font-family:var(--sans);line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
   .pr *{box-sizing:border-box}
@@ -191,7 +191,7 @@ const CSS = `
   .pr .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
   .pr .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-weight:750;font-size:16px;padding:15px 24px;min-height:52px;border-radius:13px;border:2px solid transparent;cursor:pointer;letter-spacing:.01em;transition:transform .12s ease,box-shadow .2s ease,background .2s ease;white-space:nowrap;font-family:inherit}
   .pr .btn:active{transform:translateY(1px) scale(.99)}
-  .pr .btn-viz{background:var(--viz);color:#fff;box-shadow:0 6px 20px -6px rgba(242,106,18,.6)}
+  .pr .btn-viz{background:var(--viz);color:#fff;box-shadow:0 6px 20px -6px rgba(201,154,46,.6)}
   .pr .btn-viz:hover{background:var(--vizDk)}
   .pr .btn-grn{background:var(--grn);color:#fff}
   .pr .btn-ghost{background:transparent;color:var(--ink);border-color:var(--line2)}
@@ -204,11 +204,11 @@ const CSS = `
   .pr .hd-link{font-size:14px;font-weight:650;color:var(--sub);cursor:pointer;padding:8px 6px}
   .pr .hd-cta{font-size:14px;padding:9px 16px;min-height:40px;border-radius:10px}
   .pr .eb{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--vizDk);background:var(--vizBg);padding:6px 11px;border-radius:7px}
-  .pr .eb.on-dark{color:#ffb27a;background:rgba(242,106,18,.16)}
+  .pr .eb.on-dark{color:#f0d79a;background:rgba(201,154,46,.16)}
   .pr h1,.pr h2,.pr h3{margin:0;letter-spacing:-.03em;text-wrap:balance}
   .pr .kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--muted)}
   .pr .hero{background:linear-gradient(rgba(22,27,17,.76),rgba(22,27,17,.82)),url(/topo-bg.png) center/cover no-repeat fixed;color:#f4efe3;border-radius:0 0 30px 30px;overflow:hidden;position:relative;isolation:isolate}
-  .pr .hero::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 100% 0%,rgba(242,106,18,.17),transparent 55%)}
+  .pr .hero::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 100% 0%,rgba(201,154,46,.17),transparent 55%)}
   .pr .hero .wrap{padding:44px 20px 40px;position:relative;z-index:1}
   .pr .hero h1{font-size:clamp(37px,9.6vw,72px);font-weight:870;line-height:1.02;margin:20px 0 0}
   .pr .hero h1 .hl{position:relative;z-index:0;color:#fff;white-space:nowrap}
@@ -263,20 +263,20 @@ const CSS = `
   .pr .term .top{display:flex;gap:6px;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.08);align-items:center}
   .pr .term .top i{width:10px;height:10px;border-radius:50%;background:#3a4030;display:block}
   .pr .term .q{padding:14px;color:#9fe08a}
-  .pr .term .q .cur{display:inline-block;width:8px;height:15px;background:#f26a12;vertical-align:-2px;margin-left:3px;animation:prblink 1.1s steps(1) infinite}
+  .pr .term .q .cur{display:inline-block;width:8px;height:15px;background:#c99a2e;vertical-align:-2px;margin-left:3px;animation:prblink 1.1s steps(1) infinite}
   @keyframes prblink{50%{opacity:0}}
   .pr .term .res{padding:0 14px 14px;display:flex;flex-direction:column;gap:8px}
   .pr .term .row{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:#151a10;border:1px solid rgba(255,255,255,.07);border-radius:9px;color:#d6d2c2}
   .pr .term .row .cited{color:#7fae5c;font-size:10.5px;display:inline-flex;align-items:center;gap:4px}
   .pr .prospect .repl{font-family:var(--mono);font-size:11.5px;color:#9aa08c;margin-top:14px;position:relative}
-  .pr .prospect .repl b{color:#ffb27a}
+  .pr .prospect .repl b{color:#f0d79a}
   .pr .cmap{margin-top:18px;background:#0f130c;border:1px solid rgba(255,255,255,.12);border-radius:14px;overflow:hidden;position:relative}
   .pr .cmap-map{position:relative;height:184px;background:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px) 0 0/32px 32px,linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px) 0 0/32px 32px,radial-gradient(130% 130% at 26% 16%,#1b2214,#0c1008)}
   .pr .cmap-map svg{position:absolute;inset:0;width:100%;height:100%}
   .pr .cmap-map .pin{position:absolute;width:14px;height:14px;transform:translate(-50%,-50%);border:2px solid #0f130c;box-shadow:0 2px 6px rgba(0,0,0,.55)}
   .pr .cmap-map .pin.person{border-radius:50%;background:#8fb76a}
   .pr .cmap-map .pin.person.wait{background:#727868}
-  .pr .cmap-map .pin.equip{border-radius:3px;background:#f2913f}
+  .pr .cmap-map .pin.equip{border-radius:3px;background:#e0b24a}
   .pr .cmap-map .pin.person::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(143,183,106,.55);animation:cmpulse 2.6s ease-out infinite}
   .pr .cmap-map .pin.person.wait::after{display:none}
   @keyframes cmpulse{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.5);opacity:0}}
@@ -287,7 +287,7 @@ const CSS = `
   .pr .cmap-roster .mk{width:11px;height:11px;flex:none}
   .pr .cmap-roster .mk.person{border-radius:50%;background:#8fb76a}
   .pr .cmap-roster .mk.person.wait{background:#727868}
-  .pr .cmap-roster .mk.equip{border-radius:2px;background:#f2913f}
+  .pr .cmap-roster .mk.equip{border-radius:2px;background:#e0b24a}
   @media(prefers-reduced-motion:reduce){ .pr .cmap-map .pin.person::after{animation:none;opacity:0} }
   .pr .recur{margin-top:24px;background:var(--nightGrn);color:#eae6d7;border-radius:22px;padding:26px 22px;position:relative;overflow:hidden}
   .pr .recur::after{content:"";position:absolute;inset:0;opacity:.4;pointer-events:none;background:radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:18px 18px}
@@ -413,7 +413,7 @@ const CSS = `
   .pr .agout-av.free{background:var(--viz)}
   .pr .agout-head{font-size:15px;color:#f3efe2;font-weight:600;font-family:var(--sans);margin-top:2px}
   .pr .agout-row{font-size:12.5px;color:#cdd0c2;background:#151a10;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px;line-height:1.4}
-  .pr .agout-done{margin-top:auto;font-family:var(--sans);font-size:12.5px;font-weight:650;color:#ffcf8f;background:rgba(242,106,18,.12);border:1px solid rgba(242,106,18,.25);border-radius:9px;padding:10px 11px}
+  .pr .agout-done{margin-top:auto;font-family:var(--sans);font-size:12.5px;font-weight:650;color:#f0d79a;background:rgba(201,154,46,.12);border:1px solid rgba(201,154,46,.25);border-radius:9px;padding:10px 11px}
   .pr .coming{margin-top:16px;padding:16px 18px;border:1.5px dashed var(--line2);border-radius:16px;background:var(--card)}
   .pr .coming .lbl{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--grnDk)}
   .pr .coming .pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
@@ -440,14 +440,14 @@ const CSS = `
   .pr .stack-h{font-size:clamp(21px,5vw,28px);font-weight:840;color:#fff;margin-top:8px;position:relative}
   .pr .stack-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px;position:relative}
   .pr .stk{display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:9px 11px}
-  .pr .stk-n{font-size:12px;color:#a8ac9c;text-decoration:line-through;text-decoration-color:rgba(242,106,18,.55);line-height:1.25}
+  .pr .stk-n{font-size:12px;color:#a8ac9c;text-decoration:line-through;text-decoration-color:rgba(201,154,46,.55);line-height:1.25}
   .pr .stk-c{font-family:var(--mono);font-size:11px;color:#767b69;white-space:nowrap}
   .pr .stack-total{margin-top:20px;text-align:center;position:relative}
   .pr .stack-total .tot{font-size:15px;color:#cfcbba}
   .pr .stack-total .tot b{color:#fff;font-size:18px;font-variant-numeric:tabular-nums}
   .pr .stack-arrow{color:var(--viz);margin:4px 0;display:flex;justify-content:center}
   .pr .stack-js{font-size:clamp(18px,4.6vw,25px);font-weight:850;color:#fff;letter-spacing:-.02em}
-  .pr .stack-js b{color:#ffb27a}
+  .pr .stack-js b{color:#f0d79a}
   .pr .stack-save{margin-top:10px;display:inline-block;font-family:var(--mono);font-size:13px;font-weight:700;color:#8fbf6a;background:rgba(143,191,106,.12);border:1px solid rgba(143,191,106,.3);border-radius:8px;padding:6px 12px}
   .pr .stack-note{font-size:11px;color:#767b69;text-align:center;margin-top:14px;position:relative}
   .pr .onlyus{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
@@ -503,7 +503,7 @@ const CSS = `
   .pr .import{text-align:center;margin-top:16px;font-size:14px;color:var(--muted)}
   .pr .import b{color:var(--grnDk)}
   .pr .final{background:var(--night);color:#f4efe3;border-radius:26px;padding:44px 24px;text-align:center;position:relative;overflow:hidden;margin-top:20px}
-  .pr .final::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 90% at 50% 0%,rgba(242,106,18,.16),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
+  .pr .final::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;background:radial-gradient(120% 90% at 50% 0%,rgba(201,154,46,.16),transparent 55%),radial-gradient(rgba(255,255,255,.05) .6px,transparent .6px);background-size:auto,20px 20px}
   .pr .final h2{font-size:clamp(28px,6.6vw,46px);font-weight:850;line-height:1.05;max-width:18ch;margin:14px auto 0}
   .pr .final p{color:#d7d3c4;font-size:16px;margin:14px auto 0;max-width:42ch}
   .pr .final .cta-row{display:flex;flex-direction:column;gap:12px;margin-top:26px}
@@ -658,9 +658,9 @@ export default function Pricing() {
           <div className="wrap">
             <div className="hero-grid">
               <div className="hero-left">
-                <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> The business operating system, built by the people who do the work</span>
-                <h1>Not one AI you have to learn. <span className="hl">A dozen</span> that already know the job.</h1>
-                <p className="lede">Everyone else hands you one chatbot and a class on how to prompt it. JobScout is the whole operation — quotes, jobs, the books, the fleet — run by a crew of AIs that each already know the work. One login. Less than a single chatbot seat.</p>
+                <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Your AI executive team</span>
+                <h1>Don't rent a chatbot. Command a company of geniuses that <span className="hl">does the work</span>.</h1>
+                <p className="lede">One app runs your whole business — sales, jobs, books, payroll, the fleet — and every piece is a world-class AI expert. Arnie, the AI CEO, puts them to work, and even reaches onto your own computer to work the screen you're already signed into. You command it all from your phone.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
                   <button className="btn btn-ghost on-dark" onClick={() => navigate('/login?demo=1')}>Try the live demo <Icon id="i-arrow" /></button>
@@ -686,7 +686,7 @@ export default function Pricing() {
               </aside>
             </div>
             <div className="crewstrip">
-              <span className="lbl">The AI behind every step →</span>
+              <span className="lbl">Your AI executive team →</span>
               {CREW.map((a, i) => <span key={a.ab} className="chip" style={{ animationDelay: `${120 + i * 90}ms` }}>{a.ab}</span>)}
             </div>
           </div>
@@ -757,18 +757,38 @@ export default function Pricing() {
         <section>
           <div className="wrap">
             <div className="prospect rv">
-              <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Arnie · free on every plan</span>
+              <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Arnie · your AI CEO, free on every plan</span>
               <h3>Text him. He runs the business.</h3>
               <p className="say">Arnie lives in the app, your texts, and your email. Ask anything about your numbers; tell him to book the job, build the quote, schedule the crew — he drafts it, waits for your OK, and you can undo it. The few that can’t be pulled back — a message that went to a customer, an agenda you sent, a payment you recorded — he flags before you approve, not after. He shows only what your role may see; over text, money is drafted, never sent, until you approve it in the app. Set a routine in one sentence and it runs every morning.</p>
               <div className="term">
                 <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>text message · Arnie</span></div>
                 <div className="res">
                   <div className="row"><span>Every weekday 7am, text me the Rocks that slipped</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> routine set</span></div>
-                  <div className="row"><span>Book the Drinkle job Friday 8am, Mike’s crew</span><span style={{ color: '#f2913f', fontSize: 10.5 }}>drafted · reply YES</span></div>
+                  <div className="row"><span>Book the Drinkle job Friday 8am, Mike’s crew</span><span style={{ color: '#e0b24a', fontSize: 10.5 }}>drafted · reply YES</span></div>
                   <div className="row"><span>YES</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> booked · undo anytime</span></div>
                 </div>
               </div>
               <div className="repl">replaces <b>a business analyst, an office manager</b> — and the app you’d have to stop and open. Owners get an <b>Arnie at work</b> view: every draft, the approval rate, and what he cost.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="pr-computer">
+          <div className="wrap">
+            <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Arnie · on your computer</span>
+              <h3>He doesn’t just answer. He does it — on your computer.</h3>
+              <p className="say">Point Arnie at a program on your own machine and sign in once. He looks at the screen you’re already in — your Gmail, your utility portal, your supplier’s site — and works it one action at a time, each one you allow. He never types your password. And the final send or submit? He hands that back to you.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>your computer · Arnie working</span></div>
+                <div className="res">
+                  <div className="row"><span>Allow Arnie — Chrome · mail.google.com</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> you allowed</span></div>
+                  <div className="row"><span>Looks at the screen you’re signed into</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> no password</span></div>
+                  <div className="row"><span>Drafts the reply, fills the form — one step at a time</span><span style={{ color: '#e0b24a', fontSize: 10.5 }}>you approve each</span></div>
+                  <div className="row"><span>Hit send / submit?</span><span style={{ color: '#e0b24a', fontSize: 10.5 }}>your tap — handed back</span></div>
+                </div>
+              </div>
+              <div className="repl">No API keys, no OAuth, no password shared — he works the screen you already trust. Every look is <b>logged</b>, and you can <b>stop him from your phone</b> anytime. <span style={{ opacity: .75 }}>Windows today · one download, any teammate connects their own computer in a minute.</span></div>
             </div>
           </div>
         </section>
@@ -805,7 +825,7 @@ export default function Pricing() {
                 <div className="res">
                   <div className="row"><span>Item 3 · 2×4 LED troffer · 40 ea</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> catalog price</span></div>
                   <div className="row"><span>Item 7 · occupancy sensor · 12 ea</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> equivalent</span></div>
-                  <div className="row"><span>Item 9 · exit sign · 6 ea</span><span style={{ color: '#f2913f', fontSize: 10.5 }}>sourced · verify to send</span></div>
+                  <div className="row"><span>Item 9 · exit sign · 6 ea</span><span style={{ color: '#e0b24a', fontSize: 10.5 }}>sourced · verify to send</span></div>
                 </div>
               </div>
               <div className="repl">replaces <b>BidNet, GovWin</b>, a bid-finding service — and a day spent retyping someone else’s schedule.</div>
@@ -835,9 +855,9 @@ export default function Pricing() {
         <section id="pr-crew">
           <div className="wrap">
             <div className="sechead rv">
-              <span className="kicker">Not a chatbot on the side</span>
-              <h2>The AI is in the work, not in a window.</h2>
-              <p>Everywhere the job happens — the quote, the truck, the books — the AI’s already there, doing the thing and waiting for your OK. Included in your plan, not billed by the seat. Tap any one and watch it work.</p>
+              <span className="kicker">Your AI executive team</span>
+              <h2>A world-class expert for every part of the job.</h2>
+              <p>Each one is a specialist you could never afford to hire full-time — a CFO for the books, a bid desk, a marketer, an estimator — working right inside the app, doing the thing and waiting for your OK. Included in your plan, not billed by the seat. And Arnie, your AI CEO, puts the right one on each task.</p>
             </div>
             <div className="agshow rv">
               <div className="agrail" role="tablist" aria-label="AI specialists">
