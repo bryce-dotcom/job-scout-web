@@ -2,12 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { X, MapPin } from 'lucide-react'
 import L from 'leaflet'
+import { shiftOnSite, onSiteColor } from '../lib/onSite'
 
 export default function LocationTrailModal({ entry, employeeName, onClose, theme }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const [pings, setPings] = useState([])
   const [loading, setLoading] = useState(true)
+  // The job this shift was booked to. Without it the map is dots on a street
+  // with nothing to measure against — which is why "I can't really tell where
+  // he is" was the honest answer when HR went looking.
+  const [job, setJob] = useState(null)
 
   // Load Leaflet CSS
   useEffect(() => {
@@ -31,9 +36,19 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
         .eq('time_clock_id', entry.id)
         .order('pinged_at', { ascending: true })
       setPings(data || [])
+      if (entry.job_id) {
+        const { data: j } = await supabase
+          .from('jobs')
+          .select('id, job_id, job_title, job_address, latitude, longitude')
+          .eq('id', entry.job_id)
+          .maybeSingle()
+        setJob(j || null)
+      } else {
+        setJob(null)
+      }
       setLoading(false)
     })()
-  }, [entry.id])
+  }, [entry.id, entry.job_id])
 
   // Build map
   useEffect(() => {
@@ -125,8 +140,29 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
       }).addTo(map)
     }
 
-    // Fit bounds
-    const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]))
+    // The job itself — a square, so it reads as a place rather than another
+    // fix, with a ring at the quarter mile that counts as "at the job".
+    const jobLat = job && job.latitude != null ? Number(job.latitude) : null
+    const jobLng = job && job.longitude != null ? Number(job.longitude) : null
+    const hasJobPin = Number.isFinite(jobLat) && Number.isFinite(jobLng)
+    if (hasJobPin) {
+      L.marker([jobLat, jobLng], {
+        icon: L.divIcon({
+          className: '',
+          html: '<div style="width:16px;height:16px;background:#5a6349;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,0.4)"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        }),
+      }).addTo(map).bindPopup(`<b>${job.job_title || 'Job'}</b><br><small>${job.job_address || ''}</small>`)
+      L.circle([jobLat, jobLng], { radius: 402, color: '#5a6349', weight: 1, opacity: 0.5, fillOpacity: 0.06 }).addTo(map)
+    }
+
+    // Fit bounds — including the job. Fitting the dots alone is what made a
+    // tech twenty miles away look like he was standing on the site: the map
+    // just zoomed until his dots filled the frame.
+    const boundPoints = points.map(p => [p.lat, p.lng])
+    if (hasJobPin) boundPoints.push([jobLat, jobLng])
+    const bounds = L.latLngBounds(boundPoints)
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 })
 
     return () => {
@@ -135,11 +171,24 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
         mapInstance.current = null
       }
     }
-  }, [loading, pings, entry])
+  }, [loading, pings, entry, job])
 
   const clockIn = new Date(entry.clock_in)
   const clockOut = entry.clock_out ? new Date(entry.clock_out) : null
   const hasAnyLocation = entry.clock_in_lat || entry.clock_out_lat || pings.length > 0
+
+  // The answer in words, above the map. Everything the shift reported — the
+  // clock-in, every ping, the clock-out — measured against the job's own pin
+  // (lib/onSite). It says "cannot tell" rather than "away" when the job's
+  // address is too thin to have geocoded properly.
+  const verdict = shiftOnSite({
+    job,
+    points: [
+      ...(entry.clock_in_lat ? [{ lat: entry.clock_in_lat, lng: entry.clock_in_lng }] : []),
+      ...pings.map(p => ({ lat: p.lat, lng: p.lng })),
+      ...(entry.clock_out_lat ? [{ lat: entry.clock_out_lat, lng: entry.clock_out_lng }] : []),
+    ],
+  })
 
   return (
     <div style={{
@@ -171,11 +220,35 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
           }}><X size={20} /></button>
         </div>
 
+        {/* The answer, before the map. Reading a verdict off dots is what
+            nobody could do. */}
+        {!loading && (
+          <div style={{
+            padding: '10px 20px',
+            borderBottom: `1px solid ${theme.border}`,
+            backgroundColor: `${onSiteColor(verdict.status, theme)}14`,
+            borderLeft: `3px solid ${onSiteColor(verdict.status, theme)}`,
+          }}>
+            <div style={{ fontSize: '13.5px', fontWeight: 700, color: onSiteColor(verdict.status, theme) }}>
+              {verdict.headline}
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px', lineHeight: 1.45 }}>
+              {verdict.detail}
+              {job?.job_title ? ` — ${job.job_title}` : ''}
+            </div>
+          </div>
+        )}
+
         {/* Legend */}
         <div style={{
           padding: '8px 20px', display: 'flex', gap: '16px', fontSize: '11px', color: theme.textMuted,
           borderBottom: `1px solid ${theme.border}`,
         }}>
+          {job && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: 10, height: 10, background: '#5a6349', display: 'inline-block' }} /> Job site
+            </span>
+          )}
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} /> Clock In
           </span>

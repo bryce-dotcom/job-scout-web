@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { recordPing } from '../lib/locationPing'
 
 const PING_INTERVAL = 15 * 60 * 1000 // 15 minutes
 
@@ -20,28 +21,12 @@ export function useLocationTracking() {
     if (!emp) return
     const employeeId = emp.id
 
-    const sendPing = async (entryId) => {
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: false,
-            timeout: 10000,
-            maximumAge: 60000,
-          })
-        })
-        await supabase.from('location_pings').insert({
-          company_id: companyId,
-          employee_id: employeeId,
-          time_clock_id: entryId,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy ? Math.round(pos.coords.accuracy) : null,
-          pinged_at: new Date().toISOString(),
-        })
-        lastPingRef.current = Date.now()
-      } catch (_) {
-        // Geolocation may fail — silent
-      }
+    // One writer for every fix in the app (lib/locationPing), so a ping taken
+    // by this timer and one taken when a tech finishes a job are the same
+    // shape and carry why they happened.
+    const sendPing = async (entryId, reason = 'interval') => {
+      const got = await recordPing({ companyId, employeeId, timeClockId: entryId, reason })
+      if (got) lastPingRef.current = Date.now()
     }
 
     const checkAndStart = async () => {
@@ -96,7 +81,9 @@ export function useLocationTracking() {
       if (document.visibilityState === 'visible') {
         const elapsed = Date.now() - lastPingRef.current
         if (activeEntryRef.current && elapsed >= PING_INTERVAL) {
-          sendPing(activeEntryRef.current)
+          // Back in the app after a while — this is the fix that actually
+          // lands for a field tech, because the timer was asleep.
+          sendPing(activeEntryRef.current, 'resume')
         }
         // Also re-check active entry state
         checkAndStart()

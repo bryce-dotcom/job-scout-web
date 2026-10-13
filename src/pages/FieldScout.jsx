@@ -18,6 +18,7 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import { toast } from '../lib/toast'
 import { syncQueue } from '../lib/syncQueue'
 import { uploadCapture } from '../lib/marketingUpload'
+import { recordPing } from '../lib/locationPing'
 import ScoutLoader from '../components/ScoutLoader'
 import {
   Compass, Clock, MapPin, Play, Square, Coffee, Megaphone, Upload,
@@ -1141,6 +1142,10 @@ export default function FieldScout() {
       }
       // Fill in the address in the background — doesn't block the UI.
       if (inserted?.id && lat != null) backfillAddress(inserted.id, lat, lng, 'in')
+      // And a fix on the trail, labelled. The 15-minute timer only runs while
+      // the app is awake, so a tech's shift is mostly gaps — the moments they
+      // are actually in the app are the ones worth recording (lib/locationPing).
+      if (inserted?.id) recordPing({ companyId, employeeId: currentEmployee?.id, timeClockId: inserted.id, reason: 'clock_in' })
     } catch (err) {
       // 23505 = the one-open-punch index. A second clock-in landed while an
       // earlier punch was still open — two tabs, two devices, a retry, or the
@@ -1504,6 +1509,7 @@ export default function FieldScout() {
     await fetchEntries()
     setShowDailyCheckPrompt(true)
     if (coords.lat != null) backfillAddress(entryId, coords.lat, coords.lng, 'out')
+    recordPing({ companyId, employeeId: currentEmployee?.id, timeClockId: entryId, reason: 'clock_out' })
 
     setClockingOut(false)
     setGpsStatus(null)
@@ -1783,6 +1789,8 @@ export default function FieldScout() {
       }
       if (paymentInvoice?.id) paymentData.invoice_id = paymentInvoice.id
       await supabase.from('payments').insert(paymentData)
+      // Money changed hands somewhere — worth a fix on the trail.
+      recordPing({ companyId, employeeId: currentEmployee?.id, timeClockId: activeEntry?.id || null, reason: 'payment' })
 
       // A wallet payment (Venmo / Cash App / Zelle) moved money the office
       // cannot see in the bank feed yet. Tell them, so the wallet balance in
@@ -4382,6 +4390,9 @@ export default function FieldScout() {
                   .single()
                 const passed = verificationPassed(report)
                 if (passed) {
+                  // A Victor check is somebody standing at the work with the app
+                  // open — the most reliable moment there is to record where.
+                  recordPing({ companyId, employeeId: currentEmployee?.id, timeClockId: activeEntry?.id || null, reason: 'verification' })
                   if (verifyType === 'completion' && jobId) {
                     setVerifiedJobs(prev => new Set(prev).add(jobId))
                     setClockOutBlocked(false); setPendingVerifyJobId(null)
