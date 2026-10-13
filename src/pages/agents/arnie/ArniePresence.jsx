@@ -70,6 +70,10 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
   const navigate = useNavigate()
   const st = STATE[status?.state] || STATE.idle
   const onMachine = status?.state && status.state !== 'idle'
+  // The strapline under the name said "him". assistant.name is already the
+  // right name for whoever this person chose; this line is tight, so it takes
+  // the first word of it.
+  const firstName = (assistant?.name || 'Arnie').trim().split(/\s+/)[0]
 
   return (
     <div style={{
@@ -159,7 +163,7 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
             {status?.detail || 'Not on a computer yet'}
           </span>
           <span style={{ display: 'block', color: c.faint, fontSize: 11.5, marginTop: 1 }}>
-            {onMachine ? st.label : 'Put him on one and he can work in your programs'}
+            {onMachine ? st.label : `Put ${firstName} on one, to work in your programs`}
           </span>
         </span>
         <ChevronRight size={16} style={{ color: c.faint, flexShrink: 0 }} />

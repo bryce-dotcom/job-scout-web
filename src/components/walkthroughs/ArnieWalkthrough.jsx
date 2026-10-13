@@ -101,7 +101,7 @@ function Stage({ scene }) {
 
       <div style={{ display: 'flex', gap: '6px' }}>
         <div style={{ flex: 1, padding: '7px 10px', border: `1px solid ${T.border}`, borderRadius: '7px', backgroundColor: T.bgCard, fontSize: '10px', color: T.textMuted }}>
-          {field ? 'Talk to Arnie…' : 'Ask Arnie anything…'}
+          {field ? 'Talk to Arnie…' : 'Tell Arnie what you need…'}
         </div>
       </div>
     </div>

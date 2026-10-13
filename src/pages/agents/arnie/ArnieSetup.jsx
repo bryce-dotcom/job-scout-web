@@ -13,6 +13,8 @@ import ArnieMemories from './ArnieMemories'
 import ArnieAtWork from './ArnieAtWork'
 import ArnieRules from './ArnieRules'
 import ArniePersona from './ArniePersona'
+import { useAssistant } from '../../../components/AssistantAvatar'
+import { handOffLabel, assistantShortName } from '../../../lib/arniePersonaClient'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -38,6 +40,11 @@ export default function ArnieSetup() {
   // to re-read when somebody changes it here, or the name only updates on the
   // next page load.
   const { refreshPersona } = useOutletContext() || {}
+  // This page said Arnie eight times to people who had chosen Jenny, and
+  // called her "he" twice. The name comes from the persona now, and the
+  // pronouns are gone rather than guessed.
+  const assistant = useAssistant()
+  const who = assistantShortName({ personaRow: assistant.personaRow })
   const user = useStore((s) => s.user)
   const level = (() => {
     if (!user) return 0
@@ -105,7 +112,7 @@ export default function ArnieSetup() {
         <div style={{ textAlign: 'center', marginTop: 24 }}>
         <ShieldAlert size={28} color={t.muted} />
         <h2 style={{ color: t.ink, margin: '12px 0 6px' }}>Manager access or above</h2>
-        <p>Changes Arnie makes are reviewed and rolled back from here, which is limited to managers, admins and owners.</p>
+        <p>Changes {who} makes are reviewed and rolled back from here, which is limited to managers, admins and owners.</p>
         </div>
       </div>
     )
@@ -119,12 +126,12 @@ export default function ArnieSetup() {
     <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 60px', color: t.ink, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <Wrench size={20} color={t.accent} />
-        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>System settings with Arnie</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>System settings with {who}</h1>
       </div>
       <p style={{ color: t.sub, margin: '0 0 14px', fontSize: 14 }}>
         {isAdmin
-          ? 'Tell Arnie what to change in plain English. He drafts it, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.'
-          : 'Every change Arnie makes for you lands here — what it was, what it became, and a way to put it back.'}
+          ? `Tell ${who} what to change in plain English. You get a draft, you review the before-and-after, and nothing changes until you approve. Every change is logged and can be rolled back.`
+          : `Every change ${who} makes for you lands here — what it was, what it became, and a way to put it back.`}
       </p>
 
       {isAdmin && <ArnieAtWork />}
@@ -133,11 +140,11 @@ export default function ArnieSetup() {
       <ArnieRules isAdmin={isAdmin} />
       <ArnieMemories />
 
-      {/* Arnie lives in the corner guy — you can also just talk to him there. */}
+      {/* The assistant lives in the corner launcher too. */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: t.accentBg, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 14px', margin: '0 0 18px' }}>
         <MessageCircle size={18} color={t.accent} style={{ flex: 'none', marginTop: 1 }} />
         <div style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.5 }}>
-          <b style={{ color: t.ink }}>Prefer to just talk? Arnie also lives in the “Ask Arnie” button in the bottom-right corner.</b> Open him from anywhere and ask him to set something up — whenever he's about to change your system, he'll bring the proposed change here for your approval first.
+          <b style={{ color: t.ink }}>Prefer to just talk? {who} is also in the “{handOffLabel(who)}” button in the bottom-right corner.</b> Open it from anywhere and hand over whatever you need set up — anything that would change your system comes back here for your approval first.
         </div>
       </div>
 
@@ -158,7 +165,7 @@ export default function ArnieSetup() {
             ))}
           </div>
           <button onClick={ask} disabled={busy || !request.trim()} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: busy || !request.trim() ? t.muted : t.accent, color: '#fff', border: 0, borderRadius: 10, padding: '10px 16px', fontWeight: 650, fontSize: 14, cursor: busy || !request.trim() ? 'not-allowed' : 'pointer', minHeight: 42 }}>
-            <Send size={15} /> {busy ? 'Thinking…' : 'Ask Arnie'}
+            <Send size={15} /> {busy ? `Thinking…` : handOffLabel(who)}
           </button>
         </div>
       </div>
@@ -200,7 +207,7 @@ export default function ArnieSetup() {
 
       {/* history */}
       <h2 style={{ fontSize: 15, fontWeight: 700, margin: '28px 0 10px', color: t.ink }}>Change history</h2>
-      {!history.length && <p style={{ color: t.muted, fontSize: 13.5 }}>No changes yet. Ask Arnie to set something up above.</p>}
+      {!history.length && <p style={{ color: t.muted, fontSize: 13.5 }}>No changes yet. Tell {who} what to set up above.</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {history.map((h) => {
           const st = STATUS[h.status] || { c: t.muted, label: h.status }

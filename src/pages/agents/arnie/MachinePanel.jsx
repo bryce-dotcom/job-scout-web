@@ -47,7 +47,9 @@ const ago = (iso) => {
   return new Date(iso).toLocaleDateString()
 }
 
-export default function MachinePanel({ session, status, connected, busy, outOfDate, onRefresh, onStop, onGetAgent }) {
+// `who` is the assistant's short name — this panel said "him" and "Arnie" to
+// people whose assistant is Jenny.
+export default function MachinePanel({ who = 'Arnie', session, status, connected, busy, outOfDate, onRefresh, onStop, onGetAgent }) {
   const st = STATE[status?.state] || STATE.idle
   const live = session?.status === 'live'
 
@@ -124,7 +126,7 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
           </div>
         ) : (
           <p style={{ margin: '14px 0 0', color: c.dim, fontSize: 14.5, lineHeight: 1.5 }}>
-            {status?.detail || 'Put him on a computer and he can work in your programs with you.'}
+            {status?.detail || `Put ${who} on a computer, to work in your programs alongside you.`}
           </p>
         )}
         {live && session?.last_seen_at && (
@@ -167,7 +169,7 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
               border: `1px solid rgba(217,103,79,0.45)`, borderRadius: 12,
               padding: '12px 14px', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 48,
             }}>
-              <Power size={16} /> Stop him on this computer
+              <Power size={16} /> Stop {who} on this computer
             </button>
           ) : (
             <button onClick={onGetAgent} style={{
@@ -175,7 +177,7 @@ export default function MachinePanel({ session, status, connected, busy, outOfDa
               gap: 8, background: c.sage, color: c.ink, border: 'none', borderRadius: 12,
               padding: '12px 14px', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', minHeight: 48,
             }}>
-              <Download size={16} /> Put Arnie on this computer
+              <Download size={16} /> Put {who} on this computer
             </button>
           )}
           {/* It used to look identical whether it was working or ignoring

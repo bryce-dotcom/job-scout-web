@@ -11,6 +11,7 @@ import ArniePersona from '../pages/agents/arnie/ArniePersona'
 import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
 import { shouldIntroduce, markIntroDone, INTRO_KICKOFF } from '../lib/arnieIntro'
+import { handOffLabel, assistantShortName } from '../lib/arniePersonaClient'
 
 // Everything Arnie is, in the one place people actually open him. The
 // Clock icon in the header still holds past conversations and his face still
@@ -191,7 +192,7 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
 
   return (
     <>
-      {/* Floating trigger — avatar with orange ring + "Ask Arnie" label */}
+      {/* Floating trigger — avatar with orange ring + the hand-off label */}
       {!open && !hideLauncher && (
         <div
           onClick={openPanel}
@@ -216,7 +217,10 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
           onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
           onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
         >
-          {/* "Ask Arnie" chip */}
+          {/* The chip. It said "Ask Arnie" to everyone, including the people
+              who had chosen Jenny — the one surface a rename never reached,
+              and the most visible one in the app. It is built from the
+              persona now, like every other label. */}
           <div style={{
             backgroundColor: dark.bgHeader,
             color: dark.text,
@@ -231,7 +235,7 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
           }}>
             <span style={{ color: dark.orange, fontSize: 13 }}>&#x2728;</span>
-            Ask Arnie
+            {handOffLabel(assistantShortName({ personaRow: assistant.personaRow }))}
           </div>
 
           {/* Avatar with orange ring — real image */}

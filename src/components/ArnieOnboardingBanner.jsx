@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
-import AssistantAvatar from './AssistantAvatar'
+import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useStore } from '../lib/store'
 import { Sparkles, ArrowRight, X } from 'lucide-react'
+import { assistantShortName } from '../lib/arniePersonaClient'
 
 // First-run nudge: when a brand-new admin lands in an empty workspace, invite
 // them to let Arnie set the place up conversationally. It's dismissible — once
 // turned off (or once they have real data) it never shows again, and they just
-// use the "Ask Arnie" corner guy. See ArnieFloatingPanel ('arnie:open' event).
+// use the corner launcher. See ArnieFloatingPanel ('arnie:open' event).
 const C = {
   card: '#ffffff',
   border: '#d6cdb8',
@@ -18,6 +19,10 @@ const C = {
 }
 
 export default function ArnieOnboardingBanner() {
+  // Whoever this person chose. A brand-new admin who had picked Jenny was
+  // still being invited to chat with Arnie.
+  const assistant = useAssistant()
+  const who = assistantShortName({ personaRow: assistant.personaRow })
   const user = useStore(s => s.user)
   const company = useStore(s => s.company)
   const hasAgent = useStore(s => s.hasAgent)
@@ -96,7 +101,7 @@ export default function ArnieOnboardingBanner() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, fontWeight: 700, color: C.text }}>
           <Sparkles size={15} color={C.orange} />
-          New here? Let Arnie set the place up.
+          New here? Let {who} set the place up.
         </div>
         <div style={{ fontSize: 13, color: C.textSecondary, marginTop: 3, lineHeight: 1.5 }}>
           Just tell him in plain English &mdash; e.g. &ldquo;add a business unit called Government&rdquo; or
@@ -118,12 +123,12 @@ export default function ArnieOnboardingBanner() {
           onMouseEnter={e => (e.currentTarget.style.background = C.orangeHover)}
           onMouseLeave={e => (e.currentTarget.style.background = C.orange)}
         >
-          Chat with Arnie
+          Talk to {who}
           <ArrowRight size={15} />
         </button>
         <button
           onClick={dismiss}
-          title="Dismiss — you can always use the Ask Arnie button in the corner"
+          title={`Dismiss — ${who} is always in the corner`}
           style={{
             width: 34, height: 34, borderRadius: 8,
             border: `1px solid ${C.border}`, background: 'transparent',

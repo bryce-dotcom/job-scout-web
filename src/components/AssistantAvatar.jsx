@@ -13,10 +13,10 @@
 // A persona whose artwork does not exist yet falls back to an icon rather
 // than a broken image, so a persona can ship before its picture does.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Bot, Sparkles } from 'lucide-react'
 import { useStore } from '../lib/store'
-import { loadPersona, personaFor, assistantName } from '../lib/arniePersonaClient'
+import { loadPersona, personaFor, assistantName, PERSONA_CHANGED } from '../lib/arniePersonaClient'
 import { badgeText } from '../lib/arnieAttention'
 
 /**
@@ -29,12 +29,25 @@ export function useAssistant() {
   const getCompanyAgent = useStore((s) => s.getCompanyAgent)
   const [row, setRow] = useState(null)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
+    if (!user?.id) return () => {}
     let alive = true
-    if (!user?.id) return
     loadPersona(user.id).then((r) => { if (alive) setRow(r) }).catch(() => { /* keep the default */ })
     return () => { alive = false }
   }, [user?.id])
+
+  useEffect(() => reload(), [reload])
+
+  // Re-read when somebody switches assistant. Every surface that shows the
+  // face or the name hangs off this hook, so listening here fixes all of
+  // them at once — the corner launcher, the phone tab bar and the avatar
+  // used to keep showing Arnie until the next full page load.
+  useEffect(() => {
+    let cancel = () => {}
+    const onChanged = () => { cancel(); cancel = reload() }
+    window.addEventListener(PERSONA_CHANGED, onChanged)
+    return () => { window.removeEventListener(PERSONA_CHANGED, onChanged); cancel() }
+  }, [reload])
 
   return {
     personaRow: row,

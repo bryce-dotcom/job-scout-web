@@ -28,7 +28,7 @@ export default {
   marketing: {
     voice: 'Bill',
     scenes: [
-      { id: 'ask',      baseDur: 5000, narration: 'Ask Arnie the way you would ask a person. When is the Drinkle job? How many highbays do we have? What is overdue?' },
+      { id: 'ask',      baseDur: 5000, narration: 'Put Arnie on it the way you would hand work to a person. When is the Drinkle job? How many highbays do we have? What is overdue?' },
       { id: 'answer',   baseDur: 6000, narration: 'He answers from your live data — the real job, the real count, the real balance. Nothing made up.' },
       { id: 'draft',    baseDur: 6500, narration: 'Then ask for the change. He drafts it as a card: which record, what it was, what it becomes. Nothing moves until you tap approve.' },
       { id: 'field',    baseDur: 6000, narration: 'Clocked in? Arnie switches to field mode — short answers, hands-free, and he can walk a tech through a fault in any trade.' },
@@ -44,9 +44,9 @@ export default {
     steps: [
       {
         icon: 'MessageSquare',
-        title: 'Tap the Ask Arnie pill',
+        title: 'Tap the Put Arnie on it button',
         body: 'Bottom-right of every page. Ask in plain English — "how many overdue invoices?", "who is on the Halifax job Thursday?", "what did I earn last week?". He finds the record; you never type an ID.',
-        narration: 'Tap the Ask Arnie pill on any page and ask in plain English.',
+        narration: 'Tap the Put Arnie on it button on any page and say what you need in plain English.',
         baseDur: 5000,
       },
       {
@@ -140,7 +140,7 @@ export default {
     ],
 
     actions: {
-      open: { route: '/agents/arnie', label: 'Ask Arnie' },
+      open: { route: '/agents/arnie', label: 'Put Arnie on it' },
       settings: { route: '/agents/arnie/settings', label: 'Arnie settings & rollbacks' },
     },
   },

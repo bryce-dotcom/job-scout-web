@@ -45,21 +45,21 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
     {
       id: 'look',
       title: 'Look at what is on your screen',
-      blurb: 'He takes a picture of the program you point him at and tells you what he sees. '
-        + 'This is how every job starts — he works from what is really there, not from memory.',
+      blurb: 'Takes a picture of the program you point at, and tells you what is there. '
+        + 'This is how every job starts — from what is really on the screen, not from memory.',
       state: base,
     },
     {
       id: 'work',
       title: 'Click and type in a program you allow',
       blurb: 'A utility portal, a spreadsheet, your email. One program at a time, and only the ones you say yes to. '
-        + (allowed('chrome') || allowed('edge') ? 'You have already allowed a browser.' : 'He will ask the first time he needs one.'),
+        + (allowed('chrome') || allowed('edge') ? 'You have already allowed a browser.' : 'You will be asked the first time one is needed.'),
       state: base,
     },
     {
       id: 'open',
       title: 'Open a program for you',
-      blurb: 'Chrome, Edge, Excel, Outlook, Word, Notepad, File Explorer. Anything else you open yourself and he carries on from there.',
+      blurb: 'Chrome, Edge, Excel, Outlook, Word, Notepad, File Explorer. Anything else you open yourself, and the work carries on from there.',
       state: base,
     },
     {
@@ -68,7 +68,7 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
       blurb: canRecord === false
         ? 'This computer cannot watch the screen yet, so a demonstration would record nothing. '
           + (mac ? 'macOS needs Screen Recording and Input Monitoring switched on in System Settings — switches only you can flip.' : '')
-        : 'Do the job once with the recorder on. He writes the steps in plain English and you correct what he misunderstood before it is ever used on a real customer.',
+        : 'Do the job once with the recorder on. The steps are written back in plain English, and you correct anything misunderstood before it is ever used on a real customer.',
       // Not READY when the machine has said it cannot watch a screen. The old
       // version guessed from the platform and called this Ready on a Mac with
       // the switches off, which is the one wrong answer that costs somebody
@@ -78,11 +78,11 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
     {
       id: 'repeat',
       title: taught.length
-        ? `Do a job you have shown him (${taught.length} so far)`
-        : 'Do a job you have shown him',
+        ? `Do a job you have shown (${taught.length} so far)`
+        : 'Do a job you have shown',
       blurb: taught.length
-        ? `He follows the steps as written and looks at the screen between them: ${taught.slice(0, 3).map((s) => s.name).join(', ')}${taught.length > 3 ? '…' : ''}.`
-        : 'Nothing yet. Show him one job — filing a finished rebate is the usual first one — and it becomes something he can do.',
+        ? `The steps are followed as written, with a look at the screen between them: ${taught.slice(0, 3).map((s) => s.name).join(', ')}${taught.length > 3 ? '…' : ''}.`
+        : 'Nothing yet. Show one job — filing a finished rebate is the usual first one — and it becomes something that can be done for you.',
       // Shown-him-a-job depends on having been able to record one, so a
       // machine that cannot watch a screen cannot get here either.
       state: !connected ? NEEDS_AGENT
@@ -101,8 +101,8 @@ export function whatArnieCanDo({ connected = false, platform = '', grants = [], 
  * plainly is cheaper than being asked.
  */
 export const NEVER = [
-  'Type a password, a card number or a code from your phone. He stops at the box and you type it — then he carries on in the session you opened.',
-  'Press Submit, Send, Pay, Delete or anything else that cannot be taken back. He fills the form and hands it to you.',
+  'Type a password, a card number or a code from your phone. It stops at the box and you type it — then the work carries on in the session you opened.',
+  'Press Submit, Send, Pay, Delete or anything else that cannot be taken back. The form gets filled and handed to you.',
   'Touch a program you have not allowed, or a site other than the one you named.',
   'Work on anybody else’s computer, or use anybody else’s login. Your machine, your sessions, your permissions.',
 ]

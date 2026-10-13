@@ -1727,7 +1727,7 @@ const HELP_SECTIONS = [
             { tip: 'The Deal Breadcrumb at the top of Lead, Estimate, and Job detail pages lets you trace the full history of a deal.', color: '#8b5cf6' },
             { tip: 'Click the status badge on a Job to change its stage without going to the board.', color: '#22c55e' },
             { tip: 'Settings are accessed via the gear icon on each page — there\'s no separate settings page.', color: '#f59e0b' },
-            { tip: 'Ask Arnie! Click the floating avatar to ask questions about your data in natural language.', color: '#f97316' },
+            { tip: 'Put Arnie on it — click the floating avatar and say what you need in plain English.', color: '#f97316' },
             { tip: 'Time Clock entries tag to specific jobs, so hours automatically feed into job costing.', color: '#3b82f6' },
             { tip: 'Products can include built-in labor rates — when added to an estimate, labor is calculated automatically.', color: '#8b5cf6' },
             { tip: 'Product bundles show their components right on the card — no guessing what\'s inside.', color: '#22c55e' },

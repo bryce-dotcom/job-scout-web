@@ -24,6 +24,8 @@ import MachinePanel from './MachinePanel'
 import { useRelease, agentIsStale, releaseBase } from '../../../lib/agentRelease'
 import { whatArnieCanDo, stateLabel, NEVER, READY } from '../../../lib/arnieCanDo'
 import { computerState, describeAction } from '../../../lib/agentStatus'
+import { useAssistant } from '../../../components/AssistantAvatar'
+import { assistantShortName } from '../../../lib/arniePersonaClient'
 
 const t = {
   bg: '#f7f5ef', card: '#ffffff', card2: '#f0ebdd', ink: '#2c3530', sub: '#4d5a52',
@@ -68,6 +70,9 @@ const ago = (iso) => {
 export default function ArnieComputer() {
   const user = useStore((s) => s.user)
   const companyId = useStore((s) => s.companyId)
+  // This page said "Arnie" and "him" to people whose assistant is Jenny.
+  const assistant = useAssistant()
+  const who = assistantShortName({ personaRow: assistant.personaRow })
   // user.id IS the employees row id in this app — the same thing every other
   // Arnie page uses as employee_id.
   const employeeId = user?.id || null
@@ -115,7 +120,7 @@ export default function ArnieComputer() {
 
   const doStop = async () => {
     if (!data.session) return
-    if (!window.confirm('Stop Arnie on this computer? Anything he is waiting to do will be refused, and the agent has to be started again from the machine.')) return
+    if (!window.confirm(`Stop ${who} on this computer? Anything waiting to be done will be refused, and the agent has to be started again from the machine.`)) return
     setBusy(true)
     try { await stopSession(data.session.id); await load() }
     catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
@@ -144,8 +149,8 @@ export default function ArnieComputer() {
           <Monitor size={20} style={{ color: t.accent }} /> Arnie on your computer
         </h2>
         <p style={{ margin: '5px 0 0', fontSize: 13.5, color: t.sub, lineHeight: 1.55 }}>
-          He can only touch programs you have allowed here, he never types a password,
-          and he never clicks anything that cannot be taken back. Everything he does is listed below.
+          Only the programs you have allowed here can be touched, a password is never typed,
+          and nothing that cannot be taken back is ever clicked. It is all listed below.
         </p>
       </header>
 
@@ -157,6 +162,7 @@ export default function ArnieComputer() {
 
       {/* ── 1. The machine ───────────────────────────────────────────── */}
       <MachinePanel
+        who={who}
         outOfDate={agentIsStale(data.session, release)}
         session={data.session}
         status={status}
@@ -284,6 +290,7 @@ export default function ArnieComputer() {
           this page answered that. A permission list and a log describe a
           system to somebody who already understands it. */}
       <WhatHeCanDo
+        who={who}
         connected={connected}
         platform={data.session?.platform || ''}
         grants={grants}
@@ -372,7 +379,7 @@ export default function ArnieComputer() {
  * What he will never do sits right beside it, because that is the part people
  * want to know before installing anything.
  */
-function WhatHeCanDo({ connected, platform, grants, skills, canRecord, onConnect }) {
+function WhatHeCanDo({ who = 'Arnie', connected, platform, grants, skills, canRecord, onConnect }) {
   const rows = whatArnieCanDo({ connected, platform, grants, skills, canRecord })
   const blocked = rows.filter((r) => r.state !== READY).length
 
@@ -411,13 +418,13 @@ function WhatHeCanDo({ connected, platform, grants, skills, canRecord, onConnect
 
       {!connected && (
         <button onClick={onConnect} style={{ ...btn(t.accent, '#fff'), marginTop: 12 }}>
-          <Download size={14} /> Put Arnie on this computer
+          <Download size={14} /> Put {who} on this computer
         </button>
       )}
 
       <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: t.ink, marginBottom: 6 }}>
-          And what he will never do
+          And what never happens
         </div>
         {NEVER.map((line) => (
           <div key={line} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
@@ -554,7 +561,7 @@ function GetTheAgent() {
       )}
 
       <Step n={1} title={`Download it${mac ? '' : ' on that computer'}`}>
-        One small file. It is what starts Arnie and keeps him up to date, so keep it
+        One small file. It is what starts the agent and keeps it up to date, so keep it
         somewhere you can find it again — the desktop is fine.
         <div style={{ marginTop: 9, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => grab(file)} disabled={dl === 'working'} style={btn(t.accent, '#fff')}>
