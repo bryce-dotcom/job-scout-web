@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { X, MapPin } from 'lucide-react'
+import { X, MapPin, Truck } from 'lucide-react'
 import L from 'leaflet'
+import { useStore } from '../lib/store'
 import { shiftOnSite, onSiteColor } from '../lib/onSite'
 
 export default function LocationTrailModal({ entry, employeeName, onClose, theme }) {
+  const companyId = useStore(s => s.companyId)
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const [pings, setPings] = useState([])
@@ -13,6 +15,13 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
   // with nothing to measure against — which is why "I can't really tell where
   // he is" was the honest answer when HR went looking.
   const [job, setJob] = useState(null)
+  // The truck assigned to this person, and wherever it went during the shift.
+  // A phone takes no fix while suspended, so a field tech's shift records
+  // about five; the tracker's own breadcrumbs run one every ~45 seconds while
+  // moving. Where a vehicle is assigned, it is the better witness — of the
+  // truck, which is not quite the same claim, and the verdict says so.
+  const [vehicle, setVehicle] = useState(null)
+  const [vehiclePoints, setVehiclePoints] = useState([])
 
   // Load Leaflet CSS
   useEffect(() => {
@@ -46,9 +55,74 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
       } else {
         setJob(null)
       }
+
+      // ---- the assigned truck, over the same window -------------------
+      // fleet.assigned_to is the driver link (AssignedOperator writes it). No
+      // assignment means no vehicle evidence, and the verdict falls back to
+      // the phone exactly as before.
+      const startIso = entry.clock_in
+      const endIso = entry.clock_out || new Date().toISOString()
+      let truck = null
+      let truckPoints = []
+      if (entry.employee_id && companyId) {
+        const { data: trucks } = await supabase
+          .from('fleet')
+          .select('id, name, asset_id, gps_device_id')
+          .eq('company_id', companyId)
+          .eq('assigned_to', entry.employee_id)
+          .limit(1)
+        truck = trucks?.[0] || null
+
+        if (truck?.gps_device_id) {
+          // Trips that overlap the shift at all — one may have started before
+          // the clock-in or run past the clock-out. The points themselves are
+          // then clipped to the shift window, so a trip home afterwards is
+          // never read as time on the job.
+          const { data: trips } = await supabase
+            .from('fleet_trips')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('fleet_id', truck.id)
+            .lte('started_at', endIso)
+            .or(`ended_at.gte.${startIso},ended_at.is.null`)
+          const tripIds = (trips || []).map(t => t.id)
+
+          if (tripIds.length) {
+            const { data: crumbs } = await supabase
+              .from('fleet_trip_locations')
+              .select('latitude, longitude, recorded_at, speed_mph')
+              .in('trip_id', tripIds)
+              .gte('recorded_at', startIso)
+              .lte('recorded_at', endIso)
+              .order('recorded_at', { ascending: true })
+              .limit(2000)
+            truckPoints = (crumbs || []).map(c => ({
+              lat: c.latitude, lng: c.longitude, at: c.recorded_at, speed: c.speed_mph, kind: 'trip',
+            }))
+          }
+
+          // The coarse latest-position polls as well: they are sparse, but
+          // they are what exists for the parked stretches between trips.
+          const { data: pos } = await supabase
+            .from('fleet_positions')
+            .select('latitude, longitude, recorded_at, speed_mph')
+            .eq('company_id', companyId)
+            .eq('fleet_id', truck.id)
+            .gte('recorded_at', startIso)
+            .lte('recorded_at', endIso)
+            .order('recorded_at', { ascending: true })
+            .limit(500)
+          truckPoints = [...truckPoints, ...(pos || []).map(p => ({
+            lat: p.latitude, lng: p.longitude, at: p.recorded_at, speed: p.speed_mph, kind: 'position',
+          }))].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0))
+        }
+      }
+      setVehicle(truck)
+      setVehiclePoints(truckPoints)
+
       setLoading(false)
     })()
-  }, [entry.id, entry.job_id])
+  }, [entry.id, entry.job_id, entry.employee_id, entry.clock_in, entry.clock_out, companyId])
 
   // Build map
   useEffect(() => {
@@ -92,8 +166,10 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
       })
     }
 
-    if (points.length === 0) {
-      // No location data at all
+    // Nothing to draw only if NEITHER the phone nor the truck reported. A
+    // sleeping phone with a tracked truck is the case this whole thing is
+    // for, so it must not bail here.
+    if (points.length === 0 && vehiclePoints.length === 0) {
       return
     }
 
@@ -140,6 +216,26 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
       }).addTo(map)
     }
 
+    // The truck's trail, drawn solid and in its own colour beneath the
+    // phone's. It is usually the denser of the two by an order of magnitude,
+    // so it goes on first and thin, and the phone's dashed line stays
+    // readable on top of it.
+    const truckLatLngs = vehiclePoints
+      .filter(p => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)))
+      .map(p => [Number(p.lat), Number(p.lng)])
+    if (truckLatLngs.length > 1) {
+      L.polyline(truckLatLngs, { color: '#a855f7', weight: 3, opacity: 0.55 }).addTo(map)
+    }
+    truckLatLngs.forEach((ll, i) => {
+      const p = vehiclePoints[i]
+      L.circleMarker(ll, {
+        radius: 3, color: '#a855f7', weight: 1, fillColor: '#a855f7', fillOpacity: 0.7,
+      }).addTo(map).bindPopup(
+        `<b>${vehicle?.name || 'Vehicle'}</b><br>${p.at ? new Date(p.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}` +
+        (p.speed != null ? `<br><small>${Number(p.speed).toFixed(0)} mph</small>` : ''),
+      )
+    })
+
     // The job itself — a square, so it reads as a place rather than another
     // fix, with a ring at the quarter mile that counts as "at the job".
     const jobLat = job && job.latitude != null ? Number(job.latitude) : null
@@ -160,7 +256,7 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
     // Fit bounds — including the job. Fitting the dots alone is what made a
     // tech twenty miles away look like he was standing on the site: the map
     // just zoomed until his dots filled the frame.
-    const boundPoints = points.map(p => [p.lat, p.lng])
+    const boundPoints = [...points.map(p => [p.lat, p.lng]), ...truckLatLngs]
     if (hasJobPin) boundPoints.push([jobLat, jobLng])
     const bounds = L.latLngBounds(boundPoints)
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 })
@@ -171,11 +267,14 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
         mapInstance.current = null
       }
     }
-  }, [loading, pings, entry, job])
+  }, [loading, pings, entry, job, vehicle, vehiclePoints])
 
   const clockIn = new Date(entry.clock_in)
   const clockOut = entry.clock_out ? new Date(entry.clock_out) : null
-  const hasAnyLocation = entry.clock_in_lat || entry.clock_out_lat || pings.length > 0
+  // The truck counts. A shift where the phone reported nothing but the
+  // tracker ran all day is the case this exists for, and gating the map on
+  // the phone alone would hide exactly that.
+  const hasAnyLocation = entry.clock_in_lat || entry.clock_out_lat || pings.length > 0 || vehiclePoints.length > 0
 
   // The answer in words, above the map. Everything the shift reported — the
   // clock-in, every ping, the clock-out — measured against the job's own pin
@@ -188,6 +287,7 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
       ...pings.map(p => ({ lat: p.lat, lng: p.lng })),
       ...(entry.clock_out_lat ? [{ lat: entry.clock_out_lat, lng: entry.clock_out_lng }] : []),
     ],
+    vehiclePoints,
   })
 
   return (
@@ -259,7 +359,39 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6', display: 'inline-block' }} /> Location Ping
           </span>
           <span>{pings.length} pings</span>
+          {vehiclePoints.length > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: 14, height: 3, background: '#a855f7', display: 'inline-block' }} />
+              {vehicle?.name || 'Vehicle'} — {vehiclePoints.length} tracker points
+            </span>
+          )}
         </div>
+
+        {/* Why the phone trail is thin, and what would fix it. A browser takes
+            no position while suspended, so this is not a setting anybody can
+            turn up — it is the reason the truck's own trail matters. */}
+        {!loading && !vehicle && (
+          <div style={{
+            padding: '8px 20px', fontSize: '11.5px', color: theme.textMuted,
+            borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '6px', lineHeight: 1.45,
+          }}>
+            <Truck size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
+            <span>
+              No vehicle is assigned to {employeeName}. A phone cannot report its position while the app
+              is closed, so a field shift records only a handful of fixes — assign the truck they drive
+              on its Fleet page and its tracker fills in the rest.
+            </span>
+          </div>
+        )}
+        {!loading && vehicle && !vehicle.gps_device_id && (
+          <div style={{
+            padding: '8px 20px', fontSize: '11.5px', color: theme.textMuted,
+            borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '6px', lineHeight: 1.45,
+          }}>
+            <Truck size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
+            <span>{vehicle.name} is assigned to {employeeName} but has no tracker linked, so only the phone is reporting.</span>
+          </div>
+        )}
 
         {/* Map */}
         <div style={{ height: '400px', position: 'relative' }}>

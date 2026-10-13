@@ -105,6 +105,98 @@ describe('what counts as thin', () => {
   })
 })
 
+// A tracker, unlike a phone, reports while nobody is holding it. The device
+// collects a point every ~45 seconds while driving (87 on one 65-minute trip
+// on the live account) where the same day recorded six positions from polling.
+describe('the truck\'s own trail', () => {
+  it('answers the question when the phone could not', () => {
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [], vehiclePoints: [onSite, onSite, acrossTown] })
+    expect(v.status).toBe('on_site')
+    expect(v.source).toBe('vehicle')
+    expect(v.vehiclePointCount).toBe(3)
+    expect(v.headline).toMatch(/assigned truck was at the job/)
+  })
+
+  it('never claims the truck is the person', () => {
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [], vehiclePoints: [onSite] })
+    expect(v.detail).toMatch(/where the truck was, not who was in it/)
+  })
+
+  it('says so when both agree, and keeps the counts apart', () => {
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [onSite], vehiclePoints: [onSite, onSite] })
+    expect(v.source).toBe('both')
+    expect(v.pointCount).toBe(1)
+    expect(v.vehiclePointCount).toBe(2)
+    expect(v.headline).toMatch(/phone and truck both within/)
+  })
+
+  it('a truck on site outweighs a phone that never reported near it', () => {
+    // the phone slept through the shift and caught one fix at the shop
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [acrossTown], vehiclePoints: [onSite] })
+    expect(v.status).toBe('on_site')
+    expect(v.source).toBe('vehicle')
+    expect(v.detail).toMatch(/phone never got within/)
+  })
+
+  it('counts both sources when nothing was near, without conflating them', () => {
+    const far = { lat: 33.78, lng: -112.35 }
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [far], vehiclePoints: [far, far] })
+    expect(v.status).toBe('away')
+    expect(v.detail).toMatch(/1 phone fix and 2 tracker points/)
+  })
+
+  it('still will not accuse on a job pin that is a guess', () => {
+    const THIN = { job_title: 'AZ Fix it auto', job_address: '1625 w sunrise blvd', latitude: 40.6126, longitude: -111.9364 }
+    const v = shiftOnSite({ job: THIN, points: [], vehiclePoints: [onSite, onSite] })
+    expect(v.status).toBe('job_pin_unreliable')
+  })
+
+  it('ignores junk tracker coordinates rather than reading 0,0 as the Atlantic', () => {
+    const v = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [], vehiclePoints: [{ lat: null, lng: null }, onSite] })
+    expect(v.vehiclePointCount).toBe(1)
+    expect(v.status).toBe('on_site')
+  })
+
+  it('reads exactly as before when there is no vehicle', () => {
+    const without = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [onSite, acrossTown] })
+    const empty = shiftOnSite({ job: ARIZONA_EQUIPMENT, points: [onSite, acrossTown], vehiclePoints: [] })
+    expect(without.headline).toBe(empty.headline)
+    expect(without.headline).toMatch(/At the job — 1 of 2 fixes/)
+    expect(without.source).toBe('phone')
+  })
+})
+
+describe('the sync keeps the breadcrumbs it fetches', () => {
+  const read = (p) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', p), 'utf8')
+
+  it('stores them instead of computing one number and dropping them', () => {
+    const sync = read('supabase/functions/watchdog-sync/index.ts')
+    expect(sync).toMatch(/upsert\(\s*'fleet_trip_locations'/)
+    expect(sync).toMatch(/breadcrumbRows\(pts, \{ tripId: trip\.id, companyId \}\)/)
+    // the trip's own row id has to be selected for the points to hang off
+    expect(sync).toMatch(/select=id,external_id/)
+  })
+
+  it('walks every trip once, not only the ones awaiting an idle figure', () => {
+    const sync = read('supabase/functions/watchdog-sync/index.ts')
+    expect(sync).toMatch(/breadcrumbs_at=is\.null/)
+    expect(sync).not.toMatch(/idle_seconds=is\.null/)
+  })
+
+  it('will not overwrite a good idle figure with zero when no points come back', () => {
+    // this pass now revisits trips that already have idle_seconds, and an
+    // empty breadcrumb array measures as zero idle — writing that would take
+    // engine hours down with it
+    const sync = read('supabase/functions/watchdog-sync/index.ts')
+    expect(sync).toMatch(/if \(sampled > 0\) patch\.idle_seconds = idleSeconds/)
+  })
+
+  it('has somewhere for them to land', () => {
+    const sql = read('supabase/migrations/20261014021500_trip_breadcrumbs_visited.sql')
+    expect(sql).toMatch(/add column if not exists breadcrumbs_at timestamptz/i)
+  })
+})
+
 describe('the radius is a knob, not a constant', () => {
   it('a tighter radius can turn a yes into a no', () => {
     const edge = { lat: 33.4420, lng: -112.1101 }   // ~0.32 mi north
@@ -165,5 +257,50 @@ describe('a state code, however it was typed', () => {
   it('still trusts a comma or a postcode on its own', () => {
     expect(jobPinLooksThin({ job_address: '2523 w houston ave 85120' })).toBe(false)
     expect(jobPinLooksThin({ job_address: 'unit 4, riverside park' })).toBe(false)
+  })
+})
+
+// The trail modal, wired to the truck. Every one of these is a way to have
+// the vehicle data present and still show nothing — the shapes that would
+// quietly keep the old answer.
+describe('the trail modal reads the truck', () => {
+  const read = (p) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', p), 'utf8')
+  const modal = () => read('src/components/LocationTrailModal.jsx')
+
+  it('hands the vehicle points to the verdict', () => {
+    expect(modal()).toMatch(/shiftOnSite\(\{[\s\S]*?vehiclePoints,[\s\S]*?\}\)/)
+  })
+
+  it('finds the truck through the driver link, and only a tracked one', () => {
+    const m = modal()
+    expect(m).toMatch(/\.eq\('assigned_to', entry\.employee_id\)/)
+    expect(m).toMatch(/if \(truck\?\.gps_device_id\)/)
+  })
+
+  it('clips the points to the shift, so the drive home is not time on the job', () => {
+    const m = modal()
+    expect(m).toMatch(/\.gte\('recorded_at', startIso\)/)
+    expect(m).toMatch(/\.lte\('recorded_at', endIso\)/)
+  })
+
+  it('still draws when the phone reported nothing but the truck did', () => {
+    const m = modal()
+    // the early return, and the empty-state gate, both have to count the truck
+    expect(m).toMatch(/if \(points\.length === 0 && vehiclePoints\.length === 0\)/)
+    expect(m).toMatch(/pings\.length > 0 \|\| vehiclePoints\.length > 0/)
+  })
+
+  it('fits the map around the truck as well as the phone and the job', () => {
+    expect(modal()).toMatch(/const boundPoints = \[\.\.\.points\.map\(p => \[p\.lat, p\.lng\]\), \.\.\.truckLatLngs\]/)
+  })
+
+  it('redraws when the vehicle data arrives', () => {
+    expect(modal()).toMatch(/\}, \[loading, pings, entry, job, vehicle, vehiclePoints\]\)/)
+  })
+
+  it('says when nobody is assigned the truck, because that is the fixable case', () => {
+    const m = modal()
+    expect(m).toMatch(/No vehicle is assigned to \{employeeName\}/)
+    expect(m).toMatch(/has no tracker linked/)
   })
 })

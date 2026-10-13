@@ -18,6 +18,7 @@ import {
   odometerFromTrips,
   idleSecondsFromBreadcrumbs,
   tripsToIntervals,
+  breadcrumbRows,
 } from '../../supabase/functions/_shared/fleetMeters.ts'
 
 const H = 3_600_000
@@ -223,5 +224,61 @@ describe('idle from breadcrumbs', () => {
     ])
     expect(r.idleSeconds).toBe(60)
     expect(r.sampled).toBe(2)
+  })
+})
+
+// The same breadcrumbs, kept rather than reduced to one number. They are the
+// densest location record the business owns, and until now the sync fetched
+// them, measured idle, and dropped them.
+describe('breadcrumbs, shaped for storage', () => {
+  const pts = [
+    { occurred_at: '2026-10-13T20:40:00Z', latitude: 37.8674, longitude: -109.3863, speed: 0.4 },
+    { occurred_at: '2026-10-13T20:38:00Z', latitude: 37.8690, longitude: -109.3830, speed: 11.18 },
+    { occurred_at: '2026-10-13T20:39:00Z', latitude: 37.8713, longitude: -109.3434, speed: 13.67 },
+  ]
+
+  it('orders by time and numbers from zero, so a re-sync overwrites', () => {
+    const rows = breadcrumbRows(pts, { tripId: 150117, companyId: 3 })
+    expect(rows.map(r => r.sequence)).toEqual([0, 1, 2])
+    expect(rows.map(r => r.recorded_at)).toEqual([
+      '2026-10-13T20:38:00.000Z', '2026-10-13T20:39:00.000Z', '2026-10-13T20:40:00.000Z',
+    ])
+    // run it again and the keys are identical — (trip_id, sequence) upserts
+    const again = breadcrumbRows([...pts].reverse(), { tripId: 150117, companyId: 3 })
+    expect(again).toEqual(rows)
+  })
+
+  it('carries the tenant and the trip on every row', () => {
+    const rows = breadcrumbRows(pts, { tripId: 42, companyId: 3 })
+    expect(rows.every(r => r.company_id === 3 && r.trip_id === 42)).toBe(true)
+  })
+
+  it('drops points with no coordinates instead of storing 0,0', () => {
+    // Number(null) is 0 and 0,0 is a real place in the Atlantic; a row there
+    // would read as a truck 7,000 miles from the job
+    const rows = breadcrumbRows(
+      [{ occurred_at: '2026-10-13T20:38:00Z', latitude: null, longitude: null }, ...pts],
+      { tripId: 1, companyId: 3 },
+    )
+    expect(rows.length).toBe(3)
+    expect(rows.some(r => r.latitude === 0 || r.longitude === 0)).toBe(false)
+    // and sequence still has no gaps, because it is assigned after filtering
+    expect(rows.map(r => r.sequence)).toEqual([0, 1, 2])
+  })
+
+  it('reads the alternative key spellings a provider might use', () => {
+    const rows = breadcrumbRows([{ timestamp: '2026-10-13T20:38:00Z', lat: 37.1, lng: -109.2, speed_mph: 5 }], { tripId: 1, companyId: 3 })
+    expect(rows[0]).toMatchObject({ latitude: 37.1, longitude: -109.2, speed_mph: 5 })
+  })
+
+  it('is empty, not broken, on junk', () => {
+    expect(breadcrumbRows(null, { tripId: 1, companyId: 3 })).toEqual([])
+    expect(breadcrumbRows([{}], { tripId: 1, companyId: 3 })).toEqual([])
+  })
+
+  it('keeps a point whose clock is missing rather than inventing a time', () => {
+    const rows = breadcrumbRows([{ latitude: 37.1, longitude: -109.2 }], { tripId: 1, companyId: 3 })
+    expect(rows.length).toBe(1)
+    expect(rows[0].recorded_at).toBeNull()
   })
 })

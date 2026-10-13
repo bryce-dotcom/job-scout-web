@@ -73,15 +73,25 @@ const r2 = (n) => (n == null ? null : Math.round(n * 100) / 100)
  *
  * @param job     the job row (latitude, longitude, job_address, job_title)
  * @param points  [{lat, lng, type}] — clock-in, every ping, clock-out
+ * @param vehiclePoints  [{lat, lng}] from the truck assigned to this person,
+ *                 inside the shift window. A phone cannot report while
+ *                 suspended, so a field tech's shift holds about five fixes;
+ *                 a tracker's trip breadcrumbs run one every ~45 seconds. When
+ *                 both exist they are weighed together, and the verdict says
+ *                 which one answered — "his truck was there" and "his phone
+ *                 was there" are different claims and get worded differently.
  * @param radiusMiles  how close counts as "at the job". A quarter mile covers
  *                     a big site, a parking lot and ordinary phone drift
  *                     (these fixes are taken with enableHighAccuracy off).
  * @returns {{ status, nearestMiles, farthestMiles, onSiteCount, pointCount,
- *             headline, detail }}
+ *             headline, detail, source, vehiclePointCount }}
  *          status: 'on_site' | 'away' | 'unknown' | 'job_pin_unreliable'
+ *          source: 'phone' | 'vehicle' | 'both' | null — what the reading rests on
  */
-export function shiftOnSite({ job, points = [], radiusMiles = 0.25 } = {}) {
-  const usable = (points || []).filter(p => num(p?.lat) !== null && num(p?.lng) !== null)
+export function shiftOnSite({ job, points = [], vehiclePoints = [], radiusMiles = 0.25 } = {}) {
+  const usablePhone = (points || []).filter(p => num(p?.lat) !== null && num(p?.lng) !== null)
+  const usableVehicle = (vehiclePoints || []).filter(p => num(p?.lat) !== null && num(p?.lng) !== null)
+  const usable = [...usablePhone, ...usableVehicle]
   const jobPoint = job && num(job.latitude) !== null && num(job.longitude) !== null
     ? { lat: num(job.latitude), lng: num(job.longitude) }
     : null
@@ -96,20 +106,45 @@ export function shiftOnSite({ job, points = [], radiusMiles = 0.25 } = {}) {
   }
   if (usable.length === 0) {
     return { status: 'unknown', nearestMiles: null, farthestMiles: null, onSiteCount: 0, pointCount: 0,
+      source: null, vehiclePointCount: 0,
       headline: 'No location on this shift', detail: 'The phone never reported a position — location may be off for this employee.' }
   }
 
-  const distances = usable.map(p => milesBetween(p, jobPoint)).filter(d => d != null)
+  const miles = (d) => (d < 0.1 ? `${Math.round(d * 5280)} ft` : `${r2(d)} mi`)
+  const measure = (list) => {
+    const ds = list.map(p => milesBetween(p, jobPoint)).filter(d => d != null)
+    return { ds, nearest: ds.length ? Math.min(...ds) : null, onSite: ds.filter(d => d <= radiusMiles).length }
+  }
+  const phone = measure(usablePhone)
+  const truck = measure(usableVehicle)
+
+  const distances = [...phone.ds, ...truck.ds]
   const nearest = Math.min(...distances)
   const farthest = Math.max(...distances)
-  const onSiteCount = distances.filter(d => d <= radiusMiles).length
-  const miles = (d) => (d < 0.1 ? `${Math.round(d * 5280)} ft` : `${r2(d)} mi`)
+  const onSiteCount = phone.onSite + truck.onSite
+  const source = phone.onSite && truck.onSite ? 'both' : phone.onSite ? 'phone' : truck.onSite ? 'vehicle' : null
 
   if (onSiteCount > 0) {
+    // Worded by what actually proved it. A tracker is attached to a truck, not
+    // to a person, so vehicle-only evidence says the truck was there and
+    // leaves the inference to whoever is having the conversation.
+    let headline, detail
+    if (source === 'phone') {
+      headline = `At the job — ${phone.onSite} of ${usablePhone.length} fix${usablePhone.length === 1 ? '' : 'es'} within ${miles(radiusMiles)}`
+      detail = `Closest ${miles(phone.nearest)} from the site.`
+    } else if (source === 'vehicle') {
+      headline = `The assigned truck was at the job — ${truck.onSite} of ${usableVehicle.length} tracker points within ${miles(radiusMiles)}`
+      detail = usablePhone.length
+        ? `Closest ${miles(truck.nearest)} from the site. The phone never got within ${miles(phone.nearest)}, so this rests on the vehicle — which says where the truck was, not who was in it.`
+        : `Closest ${miles(truck.nearest)} from the site. The phone reported nothing on this shift, so this rests on the vehicle — which says where the truck was, not who was in it.`
+    } else {
+      headline = `At the job — phone and truck both within ${miles(radiusMiles)}`
+      detail = `Phone closest ${miles(phone.nearest)}, truck closest ${miles(truck.nearest)}.`
+    }
     return {
-      status: 'on_site', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount, pointCount: usable.length,
-      headline: `At the job — ${onSiteCount} of ${usable.length} fix${usable.length === 1 ? '' : 'es'} within ${miles(radiusMiles)}`,
-      detail: `Closest ${miles(nearest)} from the site.`,
+      status: 'on_site', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount,
+      pointCount: usablePhone.length, vehiclePointCount: usableVehicle.length, source,
+      headline, detail,
     }
   }
 
@@ -117,16 +152,20 @@ export function shiftOnSite({ job, points = [], radiusMiles = 0.25 } = {}) {
   // own pin can be trusted.
   if (jobPinLooksThin(job)) {
     return {
-      status: 'job_pin_unreliable', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount: 0, pointCount: usable.length,
+      status: 'job_pin_unreliable', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount: 0,
+      pointCount: usablePhone.length, vehiclePointCount: usableVehicle.length, source: null,
       headline: 'Cannot tell — the job location looks wrong',
       detail: `The address "${String(job.job_address || job.address || '').trim() || '(blank)'}" has no city or state, so its pin is a guess. Every fix on this shift is ${miles(nearest)}+ from it. Fix the job address before reading anything into this.`,
     }
   }
 
   return {
-    status: 'away', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount: 0, pointCount: usable.length,
+    status: 'away', nearestMiles: r2(nearest), farthestMiles: r2(farthest), onSiteCount: 0,
+    pointCount: usablePhone.length, vehiclePointCount: usableVehicle.length, source: null,
     headline: `Never closer than ${miles(nearest)} to the job`,
-    detail: `${usable.length} location${usable.length === 1 ? '' : 's'} on this shift, the nearest ${miles(nearest)} away.`,
+    detail: usableVehicle.length
+      ? `${usablePhone.length} phone fix${usablePhone.length === 1 ? '' : 'es'} and ${usableVehicle.length} tracker point${usableVehicle.length === 1 ? '' : 's'} on this shift, the nearest ${miles(nearest)} away.`
+      : `${usable.length} location${usable.length === 1 ? '' : 's'} on this shift, the nearest ${miles(nearest)} away.`,
   }
 }
 

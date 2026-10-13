@@ -282,3 +282,65 @@ export function idleSecondsFromBreadcrumbs(
 
   return { idleSeconds: Math.round(idle), sampled: rows.length, cappedGaps: capped }
 }
+
+/**
+ * Trip breadcrumbs, shaped for fleet_trip_locations.
+ *
+ * The sync has been fetching these all along to measure idle time, then
+ * throwing them away — and they are the densest location record the business
+ * owns. One 65-minute trip on the live account carries 87 points, roughly one
+ * every 45 seconds, against the SIX positions the whole of that day recorded
+ * from polling /devices: a tracker sleeps when parked, so the latest-position
+ * poll misses most of the driving it is meant to capture.
+ *
+ * That matters beyond the meters. HR asked whether a tech was at the jobs he
+ * booked hours to (see lib/onSite), and a phone cannot answer it — a browser
+ * takes no fix while suspended, so a field tech's shift records about five.
+ * The truck's own trail can, where a truck is assigned to a driver.
+ *
+ * Sequence is assigned after sorting by time and discarding points with no
+ * coordinates, so a re-sync upserts over the same rows rather than doubling
+ * them — (trip_id, sequence) is the natural key.
+ */
+export function breadcrumbRows(
+  points: any[],
+  { tripId, companyId }: { tripId: number; companyId: number },
+): any[] {
+  const num = (v: any): number | null => {
+    if (v === null || v === undefined || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  const first = (row: any, keys: string[]): any => {
+    for (const k of keys) {
+      const v = row?.[k]
+      if (v !== undefined && v !== null && v !== '') return v
+    }
+    return null
+  }
+
+  return (points || [])
+    .map(p => {
+      const lat = num(first(p, ['latitude', 'lat', 'last_latitude']))
+      const lng = num(first(p, ['longitude', 'lng', 'lon', 'last_longitude']))
+      const at = first(p, ['occurred_at', 'recorded_at', 'timestamp', 'created_at'])
+      const t = at ? new Date(at).getTime() : NaN
+      return {
+        lat, lng,
+        recorded_at: Number.isFinite(t) && t > 0 ? new Date(t).toISOString() : null,
+        sort: Number.isFinite(t) ? t : Number.MAX_SAFE_INTEGER,
+        speed_mph: num(first(p, ['speed', 'speed_mph'])),
+      }
+    })
+    .filter(p => p.lat !== null && p.lng !== null)
+    .sort((a, b) => a.sort - b.sort)
+    .map((p, i) => ({
+      company_id: companyId,
+      trip_id: tripId,
+      sequence: i,
+      recorded_at: p.recorded_at,
+      latitude: p.lat,
+      longitude: p.lng,
+      speed_mph: p.speed_mph,
+    }))
+}

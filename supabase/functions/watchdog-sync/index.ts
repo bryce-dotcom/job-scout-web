@@ -27,7 +27,7 @@ import {
   attachFleetIds, upsert, pg, partnerFetch, partnerConfigured,
   type ExtractorConfig, type Integration,
 } from '../_shared/watchdog.ts'
-import { computeMeters, tripsToIntervals, odometerFromTrips, idleSecondsFromBreadcrumbs } from '../_shared/fleetMeters.ts'
+import { computeMeters, tripsToIntervals, odometerFromTrips, idleSecondsFromBreadcrumbs, breadcrumbRows } from '../_shared/fleetMeters.ts'
 
 // When every tenant's trackers live in one JobScout-owned Watchdog company,
 // there is exactly one account to poll no matter how many customers there are.
@@ -156,7 +156,7 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
 
   const touched = new Set<number>()
   let unattributed = 0
-  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0, engineEvents: 0, meterReadings: 0, tripsIdled: 0 }
+  const counts = { devices: 0, positions: 0, trips: 0, alerts: 0, engineEvents: 0, meterReadings: 0, tripsIdled: 0, breadcrumbs: 0, breadcrumbsGone: 0, breadcrumbsThrottled: 0 }
   let apiCalls = 2 // /devices + /alerts; per-device trip calls added below
   let error: string | null = null
 
@@ -286,9 +286,12 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
     let breadcrumbBudget = PER_RUN_BREADCRUMB_BUDGET
     for (const companyId of touched) {
       if (breadcrumbBudget <= 0) break
+      // Driven by the visited marker, not by idle_seconds. Idle was the only
+      // thing this pass produced, so a trip already idled was never revisited
+      // — and its points, the densest location record we get, stayed lost.
       const pending = await pg(
-        `fleet_trips?company_id=eq.${companyId}&idle_seconds=is.null&ended_at=not.is.null` +
-        `&select=external_id&order=ended_at.desc&limit=${breadcrumbBudget}`,
+        `fleet_trips?company_id=eq.${companyId}&breadcrumbs_at=is.null&ended_at=not.is.null` +
+        `&select=id,external_id&order=ended_at.desc&limit=${breadcrumbBudget}`,
       ).catch(() => [])
       for (const trip of pending || []) {
         if (breadcrumbBudget <= 0) break
@@ -296,15 +299,60 @@ async function syncPlatform(): Promise<Record<string, unknown>> {
         try {
           const pts = await platformGet(`/trips/${trip.external_id}/locations`)
           apiCalls++
-          const { idleSeconds } = idleSecondsFromBreadcrumbs(pts)
+          const { idleSeconds, sampled } = idleSecondsFromBreadcrumbs(pts)
+
+          // Keep them. These points are the densest location record we get —
+          // one every ~45 seconds while driving, against the handful a day
+          // that polling /devices yields once a parked tracker sleeps. They
+          // answer "was the truck at the job" (lib/onSite), and until now the
+          // sync computed one number from them and dropped the rest.
+          counts.breadcrumbs += await upsert(
+            'fleet_trip_locations',
+            breadcrumbRows(pts, { tripId: trip.id, companyId }),
+            'trip_id,sequence',
+          )
+
+          // The marker is stamped whether or not the provider returned points,
+          // so a trip with none is not re-fetched forever. The idle figure is
+          // NOT: this pass now revisits trips that were already idled, and an
+          // empty breadcrumb array measures as zero idle. Writing that would
+          // quietly replace a good figure with 0 and take engine hours with
+          // it, since the meter maths reads idle back out of here.
+          const patch: Record<string, unknown> = { breadcrumbs_at: new Date().toISOString() }
+          if (sampled > 0) patch.idle_seconds = idleSeconds
           await pg(`fleet_trips?company_id=eq.${companyId}&external_id=eq.${encodeURIComponent(trip.external_id)}`, {
             method: 'PATCH',
             headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify({ idle_seconds: idleSeconds }),
+            body: JSON.stringify(patch),
           })
-          counts.tripsIdled++
+          if (sampled > 0) counts.tripsIdled++
         } catch (err) {
-          console.error(`[watchdog-sync] breadcrumbs ${trip.external_id}:`, (err as Error).message)
+          const message = (err as Error).message || ''
+          console.error(`[watchdog-sync] breadcrumbs ${trip.external_id}:`, message)
+
+          // A trip the provider genuinely does not have is walked, not
+          // pending: with the pass driven by the visited marker, leaving it
+          // unstamped means doomed calls every fifteen minutes for ever.
+          //
+          // But ONLY 404/410 means that. A rate limit is also 4xx and means
+          // the opposite — come back later — and stamping those would throw
+          // away breadcrumbs that are sitting right there. The live account
+          // rate-limits at around thirty trip calls in quick succession, so
+          // this is the common failure, not the rare one. On a 429 the pass
+          // stops for this run rather than spending the rest of the budget
+          // collecting refusals.
+          if (/failed: (404|410)/.test(message)) {
+            counts.breadcrumbsGone++
+            await pg(`fleet_trips?company_id=eq.${companyId}&external_id=eq.${encodeURIComponent(trip.external_id)}`, {
+              method: 'PATCH',
+              headers: { Prefer: 'return=minimal' },
+              body: JSON.stringify({ breadcrumbs_at: new Date().toISOString() }),
+            }).catch(() => {})
+          } else if (/failed: (429|408)/.test(message)) {
+            counts.breadcrumbsThrottled++
+            breadcrumbBudget = 0
+            break
+          }
         }
       }
     }
