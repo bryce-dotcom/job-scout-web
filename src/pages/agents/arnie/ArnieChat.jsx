@@ -640,7 +640,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         ))
         // He starts talking at the end of his first sentence, not his last.
         speakAsItArrives(partialText)
-      }, files, { spoken })
+        // Who this person's assistant is, sent WITH the message. The engine
+        // used to read this from a module cache that only the /agents/arnie
+        // route ever filled, so from the corner launcher Jenny introduced
+        // herself as Arnie.
+      }, files, { spoken, personaRow: assistant.personaRow })
 
       await saveMessage(sid, 'assistant', fullResponse)
 
@@ -665,7 +669,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       sendingRef.current = false
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
-  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, resetSpeech, speakAsItArrives])
+    // assistant.personaRow is in here because it arrives AFTER the first
+    // render — without it this closes over null and the first message of
+    // every session goes out as the wrong assistant.
+  }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, resetSpeech, speakAsItArrives, assistant.personaRow])
 
   // An attached file is enough on its own — a screenshot with no caption is a
   // perfectly clear question.

@@ -43,15 +43,28 @@ export function detectMode(role, userId) {
 // still ours to supply, because it is generated from the feature cards.
 
 // The persona is whoever this person chose — Arnie or Jenny, under whatever
-// name they gave them. Cached on the module because every turn builds a
-// prompt and nobody changes their assistant mid-conversation.
+// name they gave them.
+//
+// This used to live ONLY in the module cache below, and exactly one place
+// filled it: the /agents/arnie route. The corner launcher and the phone tab
+// bar render the chat directly, so on any other page the cache was empty, the
+// prompt fell back to the default persona, and Jenny answered "Name's OG
+// Arnie — not Jenny, chief" while her own name, face and voice sat around the
+// reply. It also depended on which page you had visited first, which is why
+// it looked intermittent. Bryce found it: "when the personna is jenny and
+// they talk to her and call her jenny she replies im not jenny im arnie".
+//
+// So the persona now travels WITH the message — whoever is sending knows who
+// their assistant is. The cache is only a fallback for callers that do not.
 let personaRow = null
 export function setPersona(row) { personaRow = row || null }
 
-function buildSystemPrompt(user, company, role, mode = 'office', spoken = false) {
+function buildSystemPrompt(user, company, role, mode = 'office', spoken = false, who = undefined) {
+  // The row the caller handed us wins; the module cache is only the fallback.
+  const row = who || personaRow
   return buildArniePrompt(
     user, company, role, mode, JOBSCOUT_KNOWLEDGE,
-    personaRow?.persona, personaRow?.display_name,
+    row?.persona, row?.display_name,
     { spoken },
   )
 }
@@ -277,7 +290,7 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
 // `spoken` says the message came off the microphone rather than the keyboard.
 // It only changes how the answer OPENS — see SPOKEN_READBACK in arniePrompt —
 // because somebody talking cannot see what was heard.
-export async function sendMessageStream(message, history = [], onChunk, attachments = [], { spoken = false } = {}) {
+export async function sendMessageStream(message, history = [], onChunk, attachments = [], { spoken = false, personaRow: who } = {}) {
   let role, userId
   try {
     const ur = getUserRole()
@@ -292,7 +305,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
 
   let systemPrompt
   try {
-    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId), spoken)
+    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId), spoken, who)
   } catch (e) {
     console.error('[Arnie] buildSystemPrompt failed:', e)
     throw new Error('Failed to build prompt: ' + e.message)

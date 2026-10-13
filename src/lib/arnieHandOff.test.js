@@ -91,3 +91,41 @@ describe('every surface that used to hardcode it', () => {
     expect(src).not.toMatch(/Open him\b/)
   })
 })
+
+describe('the assistant answers to the name on the screen', () => {
+  const engine = read('pages/agents/arnie/arnieEngine.js')
+  const chat = read('pages/agents/arnie/ArnieChat.jsx')
+  const promptSrc = readFileSync(resolve(here, '../../supabase/functions/_shared/arniePrompt.ts'), 'utf8').replace(/\r\n/g, '\n')
+
+  it('the persona travels WITH the message, not in a module cache', () => {
+    // The cache was filled by exactly one route. From the corner launcher —
+    // where people actually use this — Jenny introduced herself as Arnie.
+    expect(chat).toMatch(/\{ spoken, personaRow: assistant\.personaRow \}/)
+    expect(engine).toMatch(/personaRow: who \} = \{\}/)
+    expect(engine).toMatch(/const row = who \|\| personaRow/)
+  })
+
+  it('the caller’s persona beats the cache, never the other way round', () => {
+    // `personaRow || who` would reinstate the bug for any tab that had once
+    // visited the Arnie page.
+    expect(engine).not.toMatch(/const row = personaRow \|\| who/)
+  })
+
+  it('the first message of a session is not sent as the wrong assistant', () => {
+    // personaRow arrives after the first render; without it in the deps the
+    // callback closes over null.
+    expect(chat).toMatch(/speakAsItArrives, assistant\.personaRow\]\)/)
+  })
+
+  it('the shared prompt never names Arnie in a rule meant for either of them', () => {
+    // "Arnie is sharp and direct" told Jenny she was Arnie. Four of these
+    // were in the body; the only mentions left are comments and the function
+    // name itself.
+    const body = promptSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/[^\n]*$/gm, '')
+    const mentions = (body.match(/Arnie/g) || []).filter((_, i, a) => a)
+    // buildArniePrompt + the ARNIE persona constant are code, not prompt text.
+    const inProse = body.split('\n').filter((l) => /Arnie/.test(l) && /^- |^## /.test(l.trim()))
+    expect(inProse, inProse.join(' | ')).toHaveLength(0)
+    expect(mentions.length).toBeLessThan(8)
+  })
+})

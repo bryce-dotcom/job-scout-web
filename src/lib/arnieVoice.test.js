@@ -171,8 +171,8 @@ describe('spoken instructions are read back before they are carried out', () => 
   it('the microphone says so, and the keyboard does not', () => {
     expect(chat).toMatch(/handleSend\(text, \{ spoken: true \}\)/)
     expect(chat).toMatch(/\{ canned = false, spoken = false \} = \{\}/)
-    expect(chat).toMatch(/\}, files, \{ spoken \}\)/)
-    expect(engine).toMatch(/\{ spoken = false \} = \{\}/)
-    expect(engine).toMatch(/buildSystemPrompt\(user, company, role, detectMode\(role, userId\), spoken\)/)
+    expect(chat).toMatch(/\}, files, \{ spoken,/)
+    expect(engine).toMatch(/\{ spoken = false, personaRow: who \} = \{\}/)
+    expect(engine).toMatch(/buildSystemPrompt\(user, company, role, detectMode\(role, userId\), spoken, who\)/)
   })
 })
