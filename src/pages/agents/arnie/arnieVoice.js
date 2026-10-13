@@ -182,6 +182,11 @@ function uuid() {
 
 // ── State ───────────────────────────────────────────────────────────────
 
+// A shade quicker than the default. Bryce: "arnie and jenny talk to slow".
+// The ElevenLabs side has its own speed setting in arnie-tts; this is the
+// built-in voice, which is only ever the fallback.
+const SPEAK_RATE = 1.12
+
 let currentAudio = null
 let currentUtterance = null
 let audioUnlocked = false
@@ -286,7 +291,7 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
     if (text.length > 200) { speakChunked(text, voice, onStart, onEnd); return }
 
     const u = new SpeechSynthesisUtterance(text)
-    u.voice = voice; u.lang = 'en-US'; u.rate = 1.0; u.pitch = 1.0
+    u.voice = voice; u.lang = 'en-US'; u.rate = SPEAK_RATE; u.pitch = 1.0
     let ended = false
     const callOnEnd = () => { if (!ended) { ended = true; currentUtterance = null; onEnd?.() } }
     u.onstart = () => onStart?.()
@@ -302,7 +307,7 @@ function speakBrowser(text, voiceDef, onStart, onEnd) {
     const voice = findBestVoice(voiceDef)
     if (text.length > 200) { speakChunked(text, voice, onStart, onEnd); return }
     const u = new SpeechSynthesisUtterance(text)
-    u.voice = voice; u.lang = 'en-US'; u.rate = 1.0; u.pitch = 1.0
+    u.voice = voice; u.lang = 'en-US'; u.rate = SPEAK_RATE; u.pitch = 1.0
     let ended = false
     const callOnEnd = () => { if (!ended) { ended = true; currentUtterance = null; onEnd?.() } }
     u.onstart = () => onStart?.()
@@ -334,7 +339,7 @@ function speakChunked(text, voice, onStart, onEnd) {
   const next = () => {
     if (idx >= merged.length || !currentUtterance) { callOnEnd(); return }
     const u = new SpeechSynthesisUtterance(merged[idx])
-    u.voice = voice; u.lang = 'en-US'; u.rate = 1.0; u.pitch = 1.0
+    u.voice = voice; u.lang = 'en-US'; u.rate = SPEAK_RATE; u.pitch = 1.0
     u.onstart = () => { if (!started) { started = true; onStart?.() } }
     u.onend = () => { idx++; next() }
     u.onerror = (e) => { if (e.error !== 'canceled') console.error('[Arnie Voice] Chunk error:', e.error); callOnEnd() }

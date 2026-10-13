@@ -67,15 +67,26 @@ export function resolveVoiceId(asked: string): string {
 }
 
 /** Text → mp3 bytes. Throws with ElevenLabs' status and message. */
-export async function synthesize(key: string, voiceId: string, text: string, opts: { format?: string; stability?: number; style?: number } = {}): Promise<Uint8Array> {
+/**
+ * `speed` is ElevenLabs' own rate control: 1.0 is the voice's natural pace,
+ * and the API accepts 0.7 to 1.2 — anything outside that is rejected, so it
+ * is clamped here rather than failing the whole request.
+ *
+ * Arnie and Jenny were running at 1.0 and Bryce's note was simply that they
+ * "talk to slow". Speeding up the audio itself is the right knob: the
+ * alternative, writing shorter answers, is a different fix for a different
+ * complaint and does nothing for the sentences that have to be long.
+ */
+export async function synthesize(key: string, voiceId: string, text: string, opts: { format?: string; stability?: number; style?: number; speed?: number } = {}): Promise<Uint8Array> {
   const format = opts.format || 'mp3_44100_128'
+  const speed = Math.min(1.2, Math.max(0.7, opts.speed ?? 1.0))
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${format}`, {
     method: 'POST',
     headers: { 'xi-api-key': key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify({
       text,
       model_id: MODEL,
-      voice_settings: { stability: opts.stability ?? 0.45, similarity_boost: 0.8, style: opts.style ?? 0.2, use_speaker_boost: true },
+      voice_settings: { stability: opts.stability ?? 0.45, similarity_boost: 0.8, style: opts.style ?? 0.2, use_speaker_boost: true, speed },
     }),
   })
   if (!r.ok) throw new Error(`The voice service refused (${r.status}): ${(await r.text()).slice(0, 300)}`)

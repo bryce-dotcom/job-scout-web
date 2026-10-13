@@ -6,7 +6,7 @@ import { sendMessageStream, createSession, saveMessage, updateSessionTitle, load
 import { getUserRole, isClockedIn } from './arnieTools'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun, Bot } from 'lucide-react'
+import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun, Bot, ClipboardList } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
 import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio } from './arnieVoice'
@@ -16,6 +16,7 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import ArniePresence from './ArniePresence'
+import { startsTakeoff, endsTakeoff, joinSegments, TAKEOFF_HINT } from '../../../lib/takeoffMode'
 
 // Dark Arnie theme
 const dark = {
@@ -179,6 +180,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const silenceTimerRef = useRef(null)
   const transcriptRef = useRef('')
   const safetyTimerRef = useRef(null)
+  // Takeoff mode — listen, say nothing, never send on a pause. The ref is
+  // what the recognition callbacks read (they are built once and would close
+  // over a stale state value); the state is only what the screen renders.
+  const [takeoff, setTakeoff] = useState(false)
+  const takeoffRef = useRef(false)
+  // Speech collected across recognition restarts. event.results starts over
+  // on every restart, and in this mode the silences that cause restarts are
+  // the whole point.
+  const takeoffTextRef = useRef('')
 
   // Mic state machine: 'idle' | 'listening' | 'paused'
   // Replaces the old boolean pausedRef to prevent double-start race conditions
@@ -472,6 +482,47 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     recognition.onresult = (event) => {
       const full = Array.from(event.results).map(r => r[0].transcript).join('')
       transcriptRef.current = full
+
+      // ── Takeoff mode ────────────────────────────────────────────────
+      // Everything said since it started, including the runs that ended at
+      // earlier silences.
+      if (takeoffRef.current) {
+        const sofar = joinSegments(takeoffTextRef.current, full)
+        setInput(sofar)
+        // No silence timer at all. A pause means they are counting.
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+
+        const done = endsTakeoff(full)
+        if (done.hit) {
+          const text = joinSegments(takeoffTextRef.current, done.rest).trim()
+          takeoffRef.current = false
+          takeoffTextRef.current = ''
+          setTakeoff(false)
+          micStateRef.current = 'paused'
+          try { recognition.stop() } catch {}
+          setInput('')
+          transcriptRef.current = ''
+          if (text) handleSend(text, { spoken: true })
+        }
+        return
+      }
+
+      // Asked for it out loud rather than reaching for the button — likely,
+      // since both hands are busy.
+      const start = startsTakeoff(full)
+      if (start.hit) {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+        takeoffRef.current = true
+        takeoffTextRef.current = start.rest || ''
+        setTakeoff(true)
+        setInput(start.rest || '')
+        transcriptRef.current = ''
+        // Nothing is said back — being told "takeoff mode is on" out loud is
+        // the first thing this mode exists to prevent.
+        stopSpeaking()
+        return
+      }
+
       setInput(full)
 
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
@@ -498,6 +549,13 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     }
 
     recognition.onend = () => {
+      // A takeoff lives through these restarts — the browser ends recognition
+      // on every long silence, and this is the only moment the run's text can
+      // be banked before `event.results` starts over empty.
+      if (takeoffRef.current) {
+        takeoffTextRef.current = joinSegments(takeoffTextRef.current, transcriptRef.current)
+        transcriptRef.current = ''
+      }
       // Only auto-restart if mic state is 'listening' (natural silence end)
       // Do NOT restart if 'paused' (we intentionally stopped) or 'idle' (user toggled off)
       if (micStateRef.current === 'listening' && listeningRef.current) {
@@ -512,6 +570,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const stopListening = () => {
     listeningRef.current = false
     micStateRef.current = 'idle'
+    // Turning the mic off ends a takeoff too. Leaving it armed would mean the
+    // next thing said, possibly hours later, is filed as part of a building.
+    takeoffRef.current = false
+    takeoffTextRef.current = ''
+    setTakeoff(false)
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
     recognitionRef.current?.stop()
     recognitionRef.current = null
@@ -673,6 +736,35 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // render — without it this closes over null and the first message of
     // every session goes out as the wrong assistant.
   }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, resetSpeech, speakAsItArrives, assistant.personaRow])
+
+  // Finish a takeoff by hand — the banner, or the toggle while it is on.
+  // Sends everything collected, exactly as saying "that's it" would.
+  const finishTakeoff = useCallback(() => {
+    const text = joinSegments(takeoffTextRef.current, transcriptRef.current).trim()
+    takeoffRef.current = false
+    takeoffTextRef.current = ''
+    setTakeoff(false)
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+    micStateRef.current = 'paused'
+    try { recognitionRef.current?.stop() } catch { /* already stopped */ }
+    setInput('')
+    transcriptRef.current = ''
+    if (text) handleSend(text, { spoken: true })
+  }, [handleSend])
+
+  // Start one by hand. Also starts the mic if it is off, because somebody
+  // reaching for this has not necessarily tapped the mic first.
+  const beginTakeoff = useCallback(() => {
+    stopSpeaking()
+    takeoffTextRef.current = ''
+    transcriptRef.current = ''
+    setInput('')
+    takeoffRef.current = true
+    setTakeoff(true)
+    if (!listeningRef.current) startListening()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
 
   // An attached file is enough on its own — a screenshot with no caption is a
   // perfectly clear question.
@@ -1265,6 +1357,28 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           </div>
         )}
 
+        {/* On air. The whole bar is the "done" control, because the one thing
+            somebody in takeoff mode has is a phone in one hand and no
+            attention to spare for finding a small button. */}
+        {takeoff && (
+          <button
+            onClick={finishTakeoff}
+            style={{
+              width: '100%', textAlign: 'left', marginBottom: 8, cursor: 'pointer',
+              background: 'rgba(249,115,22,0.12)', border: `1px solid ${dark.orange}`,
+              borderRadius: 10, padding: '9px 12px', color: dark.text,
+              font: 'inherit', fontSize: 12.5, lineHeight: 1.45, minHeight: 44,
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <span style={{
+              width: 8, height: 8, borderRadius: 4, background: dark.orange, flexShrink: 0,
+              animation: 'arniePulse 1.5s ease-in-out infinite',
+            }} />
+            <span>{TAKEOFF_HINT}</span>
+          </button>
+        )}
+
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <input
             ref={fileInputRef}
@@ -1296,7 +1410,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={listening ? 'Listening...' : 'Tap mic, type, or attach a photo...'}
+            placeholder={takeoff ? 'Listening — take your time…' : listening ? 'Listening...' : 'Tap mic, type, or attach a photo...'}
             rows={1}
             style={{
               flex: 1, padding: '10px 14px', borderRadius: 12,
@@ -1322,9 +1436,28 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
               animation: listening ? 'arniePulse 1.5s ease-in-out infinite' : 'none',
             }}
-            title={listening ? 'Stop listening' : 'Speak to Arnie'}
+            title={listening ? 'Stop listening' : `Speak to ${assistant.name || 'Arnie'}`}
           >
             <Mic size={18} />
+          </button>
+
+          {/* Takeoff mode. Next to the mic because it is a way of listening,
+              not a separate feature, and it can also be asked for out loud. */}
+          <button
+            onClick={takeoff ? finishTakeoff : beginTakeoff}
+            title={takeoff
+              ? 'Finish the takeoff and send it'
+              : 'Takeoff mode — listen without answering, however long the pauses'}
+            style={{
+              width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+              border: `1px solid ${takeoff ? dark.orange : dark.borderLight}`,
+              backgroundColor: takeoff ? dark.orange : dark.inputBg,
+              color: takeoff ? '#ffffff' : dark.textSecondary,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}
+          >
+            {takeoff ? <Check size={18} /> : <ClipboardList size={18} />}
           </button>
 
           <button

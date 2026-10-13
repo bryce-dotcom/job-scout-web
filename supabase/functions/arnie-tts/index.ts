@@ -167,7 +167,11 @@ Deno.serve(async (req) => {
     const meterEnv = { supabaseUrl: SUPABASE_URL, serviceKey: SERVICE_KEY }
     const cap = await checkCap(meterEnv, caller!.companyId!, 'arnie_voice', truncated.length)
     if (!cap.allowed) return jsonRes({ error: capMessage(cap, 'arnie_voice'), capped: true }, 429)
-    const audioBytes = await synthesize(key, id, truncated, { stability: 0.5, style: 0.15 })
+    // 1.1 — a shade quicker than natural. Bryce: "arnie and jenny talk to
+    // slow". 1.2 is the API's ceiling and starts to clip consonants, so this
+    // leaves headroom. The caller can override per request.
+    const speed = typeof body.speed === 'number' ? body.speed : 1.1
+    const audioBytes = await synthesize(key, id, truncated, { stability: 0.5, style: 0.15, speed })
     await recordMediaUsage(meterEnv, { companyId: caller!.companyId!, kind: 'arnie_voice', model: 'eleven_flash_v2_5', units: truncated.length, costUsd: truncated.length * MEDIA_PRICES.voice_per_char })
     const base64Audio = uint8ToBase64(audioBytes)
 
