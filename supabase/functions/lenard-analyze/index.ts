@@ -59,6 +59,44 @@ Pay close attention to these corrections. If you see a similar fixture, use the 
       }
     }
 
+    // ── this company's own swap rules ───────────────────────────────────
+    //
+    // The wattage table below is a sensible default for anybody. It is not
+    // what a company that sells a specific product line every day actually
+    // does: the table turns a 400W metal halide into 150W, and HHH's Arizona
+    // practice is 60W. That is not a rounding difference — it is 2.5x the
+    // saving on every pole light, straight into the incentive and the
+    // payback, and one of the two has been wrong on every job.
+    //
+    // So the rules live as data, per company and per state (settings keys
+    // lenard_rules_*), and they BEAT the table. They are read here rather
+    // than written into this prompt because HHH's Arizona practice is not
+    // every tenant's, and because a rule somebody can edit is one they will
+    // keep current.
+    let houseRules = '';
+    if (SUPABASE_URL && SERVICE_KEY && companyId) {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/settings?select=key,value&company_id=eq.${companyId}&key=like.lenard_rules_*`,
+          { headers: { Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY } },
+        );
+        const rows = res.ok ? await res.json() : [];
+        const blocks = (Array.isArray(rows) ? rows : [])
+          .map((r: { key: string; value: string }) => String(r.value || '').trim())
+          .filter(Boolean);
+        if (blocks.length) {
+          houseRules = `
+
+## THIS COMPANY'S OWN RULES — THESE WIN
+Where these disagree with the common wattages below, follow THESE. They are
+what this company actually sells, written by the people who sell it.
+${blocks.join('\n\n')}`;
+        }
+      } catch (e) {
+        console.warn('[Lenard] Could not fetch house rules:', e);
+      }
+    }
+
     const ai = await callAnthropic(
       { feature: 'lenard-analyze', companyId: companyId ? Number(companyId) : null },
       {
@@ -106,7 +144,7 @@ Common wattages (with ballast):
 400W MH: 458W→150W | 250W MH: 288W→100W | 1000W MH: 1080W→300W
 400W HPS: 465W→150W | 250W HPS: 295W→100W
 175W MH WP: 210W→40W | 100W MH WP: 120W→25W
-${correctionsBlock}
+${houseRules}${correctionsBlock}
 
 Return ONLY a valid JSON array. No markdown, no backticks, no explanation.` }
           ]
