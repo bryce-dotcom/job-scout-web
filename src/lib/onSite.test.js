@@ -144,3 +144,26 @@ describe('where the fixes come from', () => {
     expect(sql).toMatch(/add column if not exists reason text/)
   })
 })
+
+describe('a state code, however it was typed', () => {
+  // HHH's addresses are hand-typed by whoever took the call. The first
+  // version of this check only matched capitals, so "748 e broadway rd phx
+  // az" — a real Phoenix address — read as thin, and the one shift HR was
+  // asking about came back "cannot tell" instead of 22 miles away.
+  it('accepts a lower-case state', () => {
+    expect(jobPinLooksThin({ job_address: '748 e broadway rd phx az' })).toBe(false)
+    expect(jobPinLooksThin({ job_address: '11325 E Apache Trail AJ AZ' })).toBe(false)
+  })
+
+  it('does not mistake a street type for a state', () => {
+    // "rd", "st", "dr", "ln" are two letters and none of them is a state
+    expect(jobPinLooksThin({ job_address: '1625 w sunrise blvd' })).toBe(true)
+    expect(jobPinLooksThin({ job_address: '42 oak rd' })).toBe(true)
+    expect(jobPinLooksThin({ job_address: '8 high dr' })).toBe(true)
+  })
+
+  it('still trusts a comma or a postcode on its own', () => {
+    expect(jobPinLooksThin({ job_address: '2523 w houston ave 85120' })).toBe(false)
+    expect(jobPinLooksThin({ job_address: 'unit 4, riverside park' })).toBe(false)
+  })
+})

@@ -50,12 +50,19 @@ export function milesBetween(a, b) {
  * miles from the work (see [[project_liahona_map]]: city-less addresses
  * anchor to the tenant home).
  */
+const STATE_CODES = new Set(['al', 'ak', 'az', 'ar', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'id', 'il', 'in', 'ia', 'ks', 'ky', 'la', 'me', 'md', 'ma', 'mi', 'mn', 'ms', 'mo', 'mt', 'ne', 'nv', 'nh', 'nj', 'nm', 'ny', 'nc', 'nd', 'oh', 'ok', 'or', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'vt', 'va', 'wa', 'wv', 'wi', 'wy', 'dc'])
+
 export function jobPinLooksThin(job) {
   const addr = String(job?.job_address || job?.address || '').trim()
   if (!addr) return true
-  if (addr.includes(',')) return false            // "street, city, ST" shape
+  if (addr.includes(',')) return false              // "street, city, ST" shape
   if (/\b\d{5}(-\d{4})?\b/.test(addr)) return false // has a postcode
-  if (/\b[A-Z]{2}\b/.test(addr)) return false     // has a state code
+  // A state code, however it was typed. Matching any two letters would read
+  // "rd" as a state and call every street address complete; matching only
+  // capitals missed "748 e broadway rd phx az", a perfectly good Phoenix
+  // address — and that was the one shift HR was actually asking about, so it
+  // came back "cannot tell" instead of 22 miles away.
+  if (addr.toLowerCase().split(/[^a-z]+/).some(w => STATE_CODES.has(w))) return false
   return true
 }
 
