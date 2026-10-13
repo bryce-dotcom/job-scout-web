@@ -71,8 +71,19 @@ const CREW = [
     hi: ['One inbox for every bid alert + SAM.gov', 'Scores each bid 0–100 on fit, not price', 'Deadlines straight onto your calendar', 'Hands the package to Benny'],
     rep: ['BidNet · GovWin', 'a bid-finding service'],
     out: { kicker: 'scored a solicitation', head: 'ITB · School district · LED retrofit', rows: ['Fit 86 / 100 · due in 11 days', 'Your trade, your county, your size'], done: 'sent to Benny to build ✓' } },
+  { ab: 'CH', name: 'Chris', role: 'Christmas lights',
+    hook: 'Snap a photo of the house — or pull it from Street View — and Chris maps the rooflines, designs the Christmas light display, and prices the whole install.',
+    hi: ['Designs from a front photo or Street View', 'Maps rooflines, peaks & walkways', 'Coverage you pick — tasteful to all-out', 'A rendered design + a priced proposal'],
+    rep: ['hand-drawn light plans', 'eyeball quotes'],
+    out: { kicker: 'designed a display', head: '123 Maple St · two-story', rows: ['Rooflines + peaks mapped from one photo', 'Warm-white C9s · ~180 ft · installed'], done: 'rendered proposal ready to send ✓' } },
 ]
 const COMING = ['Plumbing', 'HVAC', 'Roofing', 'Electrical', 'Painting', 'Masonry', 'Flooring', 'Windows', 'Cleaning', 'Gutters', 'Safety']
+
+// The specific things people actually search for. A visitor who came for ONE of
+// these should spot it in the first few seconds — two rows streaming past, their
+// keyword jumps out. Everything here is shipped (no Freddy-trap promises).
+const CAP_ROW_A = ['Estimates & e-sign', 'Invoicing & payments', 'Card & ACH payments', 'Payment plans', 'Books & bank reconciliation', 'Payroll + tax forms', 'Commissions & bonuses', 'Scheduling & dispatch', 'Route optimization', 'Branded customer portal', 'CRM & sales pipeline', 'Recurring jobs', 'Memberships & subscriptions', 'EOS scorecard & L10']
+const CAP_ROW_B = ['GPS time clock', 'Offline field app', 'Job photos & checklists', 'Work orders', 'GPS fleet tracking', 'Maintenance & PM schedules', 'Lighting audits & rebates', 'Excavation takeoffs', 'Aerial yard measuring', 'Bid packages', 'Bid finding (SAM.gov)', 'Handwritten takeoffs', 'Christmas light design', 'Email marketing campaigns', 'Quality-control grading']
 
 // Live "AI workforce, on the clock" hero feed — real work the crew does, cycling.
 const ACTIVITY = [
@@ -87,6 +98,7 @@ const ACTIVITY = [
   { ab: 'FD', name: 'Freddy', msg: 'logged PM due on Truck #3', meta: '5m' },
   { ab: 'FR', name: 'Frankie', msg: 'matched 6 bank deposits to invoices', meta: '6m' },
   { ab: 'ZA', name: 'Zach', msg: 'priced a spring cleanup bundle', meta: '8m' },
+  { ab: 'CH', name: 'Chris', msg: 'designed a Christmas light display from a photo', meta: 'just now' },
 ]
 
 // Per-plan marketing copy, merged with real prices/caps from billingPlans.
@@ -239,6 +251,16 @@ const CSS = `
   .pr .hp-txt{font-size:13px;color:#d6d2c2;line-height:1.35;min-width:0}
   .pr .hp-txt b{color:#fff;font-weight:750}
   .pr .hp-meta{margin-left:auto;font-family:var(--mono);font-size:11px;color:#7fae5c;flex:none;white-space:nowrap;align-self:flex-start;padding-top:3px}
+  .pr .capmq{padding:34px 0 8px;overflow:hidden}
+  .pr .capmq .sechead{margin-bottom:22px}
+  .pr .cap-rows{position:relative;display:flex;flex-direction:column;gap:12px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+  .pr .cap-track{display:flex;gap:12px;width:max-content;animation:capscroll 72s linear infinite;will-change:transform}
+  .pr .cap-track.rev{animation-duration:86s;animation-direction:reverse}
+  .pr .capmq:hover .cap-track{animation-play-state:paused}
+  .pr .cap-chip{flex:none;display:inline-flex;align-items:center;gap:9px;font-size:14.5px;font-weight:650;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:9px 16px;white-space:nowrap;box-shadow:0 1px 2px rgba(25,29,21,.04)}
+  .pr .cap-dot{width:6px;height:6px;border-radius:50%;background:var(--viz);flex:none}
+  @keyframes capscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media(prefers-reduced-motion:reduce){ .pr .cap-track{animation:none;flex-wrap:wrap;width:auto;justify-content:center;max-width:1100px;margin:0 auto} .pr .cap-rows{-webkit-mask-image:none;mask-image:none;padding:0 20px} .pr .cap-chip.dup{display:none} }
   .pr section{padding:52px 0 8px}
   .pr .sechead h2{font-size:clamp(27px,6.4vw,42px);font-weight:850;line-height:1.05;margin-top:10px}
   .pr .sechead p{color:var(--sub);font-size:16px;margin:12px 0 0;max-width:54ch}
@@ -692,6 +714,25 @@ export default function Pricing() {
           </div>
         </section>
 
+        <section className="capmq">
+          <div className="wrap">
+            <div className="sechead rv" style={{ textAlign: 'center' }}>
+              <span className="kicker">One app, the whole operation</span>
+              <h2>Whatever you came looking for — it's in here.</h2>
+            </div>
+          </div>
+          <div className="cap-rows rv">
+            <div className="cap-track">
+              {CAP_ROW_A.map((c, i) => <span key={`a${i}`} className="cap-chip"><span className="cap-dot" />{c}</span>)}
+              {CAP_ROW_A.map((c, i) => <span key={`a2${i}`} className="cap-chip dup" aria-hidden="true"><span className="cap-dot" />{c}</span>)}
+            </div>
+            <div className="cap-track rev">
+              {CAP_ROW_B.map((c, i) => <span key={`b${i}`} className="cap-chip"><span className="cap-dot" />{c}</span>)}
+              {CAP_ROW_B.map((c, i) => <span key={`b2${i}`} className="cap-chip dup" aria-hidden="true"><span className="cap-dot" />{c}</span>)}
+            </div>
+          </div>
+        </section>
+
         <section id="pr-quote">
           <div className="wrap">
             <div className="sechead rv">
@@ -1096,7 +1137,7 @@ export default function Pricing() {
           <div className="wrap">
             <div className="stats rv">
               <div><div className="n">134</div><div className="l">features, shipped</div></div>
-              <div><div className="n">8<span className="u">+12</span></div><div className="l">AI specialists</div></div>
+              <div><div className="n">{CREW.length}<span className="u">+12</span></div><div className="l">AI specialists</div></div>
               <div><div className="n">14</div><div className="l">systems, one login</div></div>
               <div><div className="n">0<span className="u">bars</span></div><div className="l">and it still runs</div></div>
             </div>
