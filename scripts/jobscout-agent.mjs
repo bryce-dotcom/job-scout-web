@@ -115,10 +115,21 @@ const pair = async () => {
   if (!started?.code) die('could not reach JobScout to connect. Check the internet connection and try again.')
 
   const url = `${APP_URL}/connect?code=${started.code}`
+  // The CODE, not just the link.
+  //
+  // This opens a browser tab, and somebody who started in the installed app
+  // lands in Chrome halfway through setting up — possibly not even signed in
+  // there. That is where Bryce ended up. The code gives them the way back:
+  // JobScout → Computer has a box for it, and typing it never leaves the app.
   console.log(`
   Connecting this computer to JobScout.
 
-  A browser should have opened. If it did not, go to:
+      Your code:   ${started.code}
+
+  A browser should have opened — press Connect there and you are done.
+
+  Already have JobScout open? Go to Arnie → Computer and type that code
+  in instead. Or open this link yourself:
   ${url}
 
   Waiting for you to press Connect…`)

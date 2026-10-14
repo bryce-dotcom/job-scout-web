@@ -12,6 +12,7 @@
 // last thing he looked at, and every action with its verdict.
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import {
@@ -587,6 +588,9 @@ const Step = ({ n, title, children }) => (
 )
 
 function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
+  const navigate = useNavigate()
+  // Typed in when the browser hop did not land where they are signed in.
+  const [pairCode, setPairCode] = useState('')
   // WHY THIS IS NOT JUST AN <a download>.
   //
   // It was, and Alayda clicked it and nothing happened at all — no file, no
@@ -708,6 +712,36 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
             A window opens and a browser tab asks “Connect this computer?”. Press Connect —
             nothing to type, nothing to copy. This page will say so the moment it lands.
           </div>
+          {/* The agent opens /connect in the DEFAULT browser, so somebody who
+              started in the installed app gets dropped into Chrome halfway
+              through setting up — which is where Bryce ended up. The manifest
+              now asks Windows to route our links back into the app, but that
+              depends on a setting not everybody has on. This is the way that
+              always works: the agent prints the code, and typing it here
+              stays inside the app. It routes to the same /connect page rather
+              than claiming here, so there is still only one way in. */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); const c = pairCode.trim().toUpperCase(); if (c) navigate(`/connect?code=${encodeURIComponent(c)}`) }}
+            style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 14 }}
+          >
+            <input
+              value={pairCode}
+              onChange={(e) => setPairCode(e.target.value)}
+              placeholder="Code from the agent window"
+              aria-label="Code from the agent window"
+              style={{
+                ...input, flex: '0 1 230px', minWidth: 0, textAlign: 'center',
+                letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 650,
+              }}
+            />
+            <button type="submit" disabled={!pairCode.trim()} style={btn(t.accent, '#fff')}>
+              Connect
+            </button>
+          </form>
+          <div style={{ fontSize: 12, color: t.muted, marginTop: 8 }}>
+            Only needed if the browser did not open, or opened somewhere you are not signed in.
+          </div>
+
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 12 }}>
             <button onClick={() => { setDl('idle'); setHelp(true) }} style={btn(t.card2, t.sub)}>
               Nothing happened

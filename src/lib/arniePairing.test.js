@@ -371,6 +371,7 @@ describe('a stale agent is visible', () => {
   const lib = read('./agentRelease.js')
   const builder = read('../../scripts/build-agent-release.mjs')
   const agent = read('../../scripts/jobscout-agent.mjs')
+  const page = read('../pages/agents/arnie/ArnieComputer.jsx')
 
   it('what is compared is derived, not typed by a person', () => {
     // A version only changes when somebody remembers, and somebody did not: a
@@ -516,5 +517,32 @@ describe('you can see when he is working', () => {
     // Declared in the component, because it renders in the drawer as well as
     // the page and a keyframe defined elsewhere goes missing in one of them.
     expect(panel).toMatch(/@keyframes jsSpin/)
+  })
+})
+
+describe('getting back into the app when the browser hop lands elsewhere', () => {
+  const manifest = JSON.parse(read('../../public/manifest.json'))
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const page = read('../pages/agents/arnie/ArnieComputer.jsx')
+
+  it('the installed app asks to handle its own links', () => {
+    // The agent opens /connect in the DEFAULT browser, which drops somebody
+    // who started in the PWA into Chrome halfway through setting up.
+    expect(manifest.handle_links).toBe('preferred')
+    expect(manifest.launch_handler?.client_mode).toBe('navigate-existing')
+  })
+
+  it('and the agent prints the CODE, not only a link', () => {
+    // Link handling depends on an OS setting not everybody has on, so the
+    // code is the way that always works.
+    expect(agent).toMatch(/Your code:\s+\$\{started\.code\}/)
+    expect(agent).toMatch(/Arnie → Computer and type that code/)
+  })
+
+  it('typing it routes to the same connect page, not a second way in', () => {
+    // One claim path. A box that claimed the pairing itself would be a second
+    // route to the thing that attaches a token to a computer.
+    expect(page).toMatch(/navigate\(`\/connect\?code=\$\{encodeURIComponent\(c\)\}`\)/)
+    expect(page).toMatch(/Code from the agent window/)
   })
 })
