@@ -164,7 +164,28 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
       : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`
     const expectedKeys = new Set(expected.map(keyOf))
     const existingKeys = new Set((existing || []).map(keyOf))
-    const missing = expected.filter(r => !existingKeys.has(keyOf(r)))
+
+    // A synthetic row stands in for a payment this call cannot see: the
+    // invoice reads Paid and no payment row came back, so the customer total
+    // is the only basis available. But "no payment loaded" and "no payment
+    // exists" are not the same thing, and the ledger itself can tell them
+    // apart — if a payment-backed row for this invoice already exists, the
+    // payment is real and merely outside the window, so minting the synthetic
+    // beside it books the same invoice twice.
+    //
+    // It had: 15 rows across 6 reps, $7,403.35, two of them already paid out.
+    // Christopher's $29,963 Juan Diego invoice carried both a $1,498.15
+    // payment-backed row and a $1,498.15 synthetic. Neither is deleted by the
+    // stale pass — each one's own source is out of view — so they simply
+    // accumulate, and both read as earned money owed.
+    const invoiceKey = (r) => `${r.invoice_id}:${r.employee_id}:${r.kind}`
+    const isSynthetic = (r) => r.payment_id == null && r.utility_invoice_id == null && r.invoice_id != null
+    const payBackedInvoices = new Set(
+      (existing || []).filter(r => r.payment_id != null && r.invoice_id != null).map(invoiceKey),
+    )
+    const missing = expected.filter(r =>
+      !existingKeys.has(keyOf(r)) && !(isSynthetic(r) && payBackedInvoices.has(invoiceKey(r))),
+    )
 
     // A row is stale only when the thing it was earned on was actually LOADED
     // and no longer produces it. Payroll fetches invoices that are unpaid or
@@ -186,6 +207,18 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
       return r.invoice_id != null && loadedInvoiceIds.has(r.invoice_id)
     }
     const stale = (existing || []).filter(r => r.payment_status !== 'paid' && inView(r) && !expectedKeys.has(keyOf(r)))
+
+    // The duplicates already in the ledger. This one needs no window: a
+    // synthetic row whose invoice ALSO carries a payment-backed row is the
+    // same money twice whatever is loaded today, and the payment-backed row
+    // is the truer of the two — it is measured against what was actually
+    // collected, and splits correctly across an invoice paid in instalments
+    // where the synthetic lumps them into one. Paid rows stay frozen: an
+    // overpayment already out the door is a decision, not a cleanup.
+    const duplicated = (existing || []).filter(r =>
+      r.payment_status !== 'paid' && isSynthetic(r) && payBackedInvoices.has(invoiceKey(r)),
+    )
+    for (const r of duplicated) if (!stale.some(x => x.id === r.id)) stale.push(r)
     let inserted = 0, deleted = 0
     if (stale.length) {
       const { error: delErr } = await supabase.from('rep_commissions').delete().in('id', stale.map(r => r.id))

@@ -365,3 +365,75 @@ describe('a commission earned last month is not deleted for being out of view', 
     expect(deleted).not.toContain(900)
   })
 })
+
+// Fifteen rows across six reps, $7,403.35, two of them already paid out.
+// Nothing was double-SOLD: the same invoice simply earned twice, once from
+// the payment and once from a synthetic row minted while that payment sat
+// outside the window the caller had loaded. Neither row is stale by its own
+// test — each one's source is out of view — so they accumulate quietly and
+// both read as money owed.
+describe('an invoice must not earn twice', () => {
+  const rep = { id: 14, company_id: 3, is_commission: true, commission_services_rate: 5, commission_services_type: 'percent', commission_min_job_total: 10000 }
+  const job = { id: 23427, salesperson_id: 14, job_total: 29963 }
+  const invoice = { id: 32797, job_id: 23427, amount: 29963, payment_status: 'Paid', discount_applied: null, tax_amount: null }
+  // Christopher's Juan Diego invoice: paid 1 September, read in October.
+  const octoberWindow = { employees: [rep], jobs: [job], leads: [], invoices: [invoice], payments: [{ id: 99, invoice_id: 777, amount: 10, date: '2026-10-02' }] }
+  const alreadyThere = [{ id: 10425, payment_id: 28846, invoice_id: 32797, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'earned' }]
+
+  const harness = (existing) => {
+    const ops = { inserted: null, deleted: null }
+    const supabase = {
+      from() { return this },
+      select() { return this }, eq() { return this },
+      in(_col, ids) { ops.deleted = ids; return Promise.resolve({ error: null }) },
+      insert(rows) { ops.inserted = rows; return Promise.resolve({ error: null }) },
+      delete() { return this },
+      then(res) { return Promise.resolve({ data: existing, error: null }).then(res) },
+    }
+    return { supabase, ops }
+  }
+
+  it('does not mint a synthetic row beside a payment-backed one for the same invoice', async () => {
+    const { supabase, ops } = harness(alreadyThere)
+    const out = await syncRepCommissions(supabase, 3, octoberWindow)
+    expect(out.inserted).toBe(0)
+    expect(ops.inserted).toBeNull()
+  })
+
+  it('clears a duplicate already in the ledger, without needing the payment in view', async () => {
+    const withDupe = [...alreadyThere, { id: 10440, payment_id: null, invoice_id: 32797, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'earned' }]
+    const { supabase, ops } = harness(withDupe)
+    const out = await syncRepCommissions(supabase, 3, octoberWindow)
+    expect(ops.deleted).toEqual([10440])          // the synthetic, never the payment-backed row
+    expect(out.deleted).toBe(1)
+  })
+
+  it('leaves a PAID duplicate frozen — money already out the door is a decision, not a cleanup', async () => {
+    const paidDupe = [...alreadyThere, { id: 4143, payment_id: null, invoice_id: 32797, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'paid' }]
+    const { supabase, ops } = harness(paidDupe)
+    await syncRepCommissions(supabase, 3, octoberWindow)
+    expect(ops.deleted).toBeNull()
+  })
+
+  it('still writes the synthetic when the invoice genuinely has no payment-backed row', async () => {
+    const { supabase, ops } = harness([])
+    await syncRepCommissions(supabase, 3, octoberWindow)
+    expect(ops.inserted).toHaveLength(1)
+    expect(ops.inserted[0].source).toBe('live_synthetic')
+    expect(ops.inserted[0].payment_id).toBeNull()
+  })
+
+  it('keeps the instalment rows, which the synthetic would have lumped into one', async () => {
+    // inv 32739: two payments, $2,785.59 then $6,499.71. The synthetic booked
+    // the $9,285.30 total a third time.
+    const twoPayments = [
+      { id: 10483, payment_id: 28772, invoice_id: 32739, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'earned' },
+      { id: 10447, payment_id: 28834, invoice_id: 32739, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'earned' },
+      { id: 10501, payment_id: null, invoice_id: 32739, utility_invoice_id: null, employee_id: 14, kind: 'services', payment_status: 'earned' },
+    ]
+    const inv = { id: 32739, job_id: 23427, amount: 9285.3, payment_status: 'Paid', discount_applied: null, tax_amount: null }
+    const { supabase, ops } = harness(twoPayments)
+    await syncRepCommissions(supabase, 3, { ...octoberWindow, invoices: [inv] })
+    expect(ops.deleted).toEqual([10501])
+  })
+})
