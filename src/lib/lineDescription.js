@@ -49,10 +49,14 @@ export function descriptionValue(text) {
  * or a proposal, and the warning must use their word, not ours.
  */
 export function propagateWarning({ documentWord = 'estimate', reference } = {}) {
-  const which = reference ? `${documentWord} ${reference}` : `the ${documentWord}`
+  // documentWord hands back a LABEL — 'Estimate', 'Bid', 'Proposal'. These
+  // are common nouns in a sentence, and "came from the Estimate" reads like
+  // a typo, so they are lowercased here and nowhere else.
+  const word = String(documentWord || 'estimate').toLowerCase()
+  const which = reference ? `${word} ${reference}` : `the ${word}`
   return {
     title: `Change this on ${which} too?`,
-    body: `This description came from ${which}. Updating it here can also update it there, so the two keep saying the same thing. The customer may have already seen the ${documentWord}.`,
+    body: `This description came from ${which}. Updating it here can also update it there, so the two keep saying the same thing. The customer may have already seen the ${word}.`,
     confirm: `Change both`,
     decline: `Only on this job`,
   }

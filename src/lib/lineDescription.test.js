@@ -49,9 +49,9 @@ describe('the warning uses the company word', () => {
     expect(propagateWarning().title).toMatch(/estimate/)
   })
 
-  it('says bid or proposal when that is what they call it', () => {
-    // lib/documentVocabulary is the rule for the customer-facing word.
-    const w = propagateWarning({ documentWord: 'bid', reference: 'Q-1042' })
+  it('says bid or proposal when that is what they call it, in lower case', () => {
+    // documentWord hands back a label ('Bid'); mid-sentence it is a common noun.
+    const w = propagateWarning({ documentWord: 'Bid', reference: 'Q-1042' })
     expect(w.title).toBe('Change this on bid Q-1042 too?')
     expect(w.body).toMatch(/bid Q-1042/)
     expect(w.body).not.toMatch(/estimate/)
