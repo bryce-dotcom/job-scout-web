@@ -30,46 +30,52 @@ if not exist "%DIR%" mkdir "%DIR%" >nul 2>&1
 rem --- Node ----------------------------------------------------------
 rem Nobody downloading this has any reason to know what Node is, so if
 rem it is missing we install it rather than explaining it.
+rem NOTHING HERE MAY ASK FOR ADMIN.
+rem
+rem This used to run `winget install OpenJS.NodeJS.LTS`, which installs
+rem machine-wide into Program Files and therefore needs administrator
+rem rights. On a work computer the person sitting at it usually is not an
+rem administrator, so Windows threw a credential box over the top of
+rem everything - and on a machine with Windows Hello that box asks for a
+rem PIN. Doug reported exactly that: "Dougs computer is asking for a pin".
+rem He had no way to answer it, and the install stopped dead.
+rem
+rem So Node is not INSTALLED at all now. The official zip is unpacked
+rem into our own folder under LOCALAPPDATA, which needs no rights beyond
+rem the ones every user already has over their own profile. It also fixes
+rem the other rough edge: winget could not change the PATH of a window
+rem that was already open, so the old script sometimes had to ask people
+rem to close it and start again.
 set "NODE=node"
 where node >nul 2>&1
 if not errorlevel 1 goto have_node
+if exist "%DIR%\node\node.exe" goto node_ours
 
-echo    First run on this computer - installing what it needs.
-echo    This takes a minute or two and only ever happens once.
-echo.
-where winget >nul 2>&1
-if errorlevel 1 goto no_winget
-winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
+echo    First run on this computer - getting what it needs.
+echo    About a minute, and only this once. Nothing is installed and
+echo    nothing will ask for a password.
 echo.
 
-rem winget cannot change the PATH of a window that is already open, so
-rem look where it puts things rather than asking the person to reopen.
-where node >nul 2>&1
-if not errorlevel 1 goto have_node
-if exist "%ProgramFiles%\nodejs\node.exe" goto node_in_pf
-if exist "%ProgramFiles(x86)%\nodejs\node.exe" goto node_in_pf86
+rem One PowerShell call: newest LTS from nodejs.org, unpacked beside the
+rem agent. Single quotes throughout - the whole thing is already inside
+rem double quotes, and a double quote in here ends the argument early.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $d='%DIR%'; $i=Invoke-RestMethod 'https://nodejs.org/dist/index.json'; $v=($i | Where-Object { $_.lts -and $_.files -contains 'win-x64-zip' })[0].version; $z=Join-Path $env:TEMP ('jobscout-node-'+$v+'.zip'); $t=Join-Path $env:TEMP ('jobscout-node-'+$v); Invoke-WebRequest -UseBasicParsing ('https://nodejs.org/dist/'+$v+'/node-'+$v+'-win-x64.zip') -OutFile $z; if (Test-Path $t) { Remove-Item $t -Recurse -Force }; Expand-Archive $z $t -Force; $s=(Get-ChildItem $t -Directory)[0].FullName; $dest=Join-Path $d 'node'; if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }; Move-Item $s $dest; Remove-Item $z -Force -ErrorAction SilentlyContinue; Remove-Item $t -Recurse -Force -ErrorAction SilentlyContinue; exit 0 } catch { Write-Host ('    ' + $_.Exception.Message); exit 1 }"
+if errorlevel 1 goto no_node
+if exist "%DIR%\node\node.exe" goto node_ours
 
-echo    Installed, but this window cannot see it yet.
-echo    Close this window, open the file again, and it will work.
+:no_node
 echo.
-pause
-exit /b 0
-
-:node_in_pf
-set "NODE=%ProgramFiles%\nodejs\node.exe"
-goto have_node
-
-:node_in_pf86
-set "NODE=%ProgramFiles(x86)%\nodejs\node.exe"
-goto have_node
-
-:no_winget
-echo    This computer needs Node and cannot install it automatically.
-echo    Opening the download page - install it, then open this file again.
+echo    Could not fetch what it needs automatically.
+echo    Opening the Node download page - install it, then open this
+echo    file again.
 echo.
 start "" https://nodejs.org/en/download
 pause
 exit /b 1
+
+:node_ours
+set "NODE=%DIR%\node\node.exe"
+goto have_node
 
 :have_node
 
