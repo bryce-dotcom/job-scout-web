@@ -815,7 +815,21 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
                   ? 'It is signed by Hollow Hills Holdings, so it opens normally.'
                   : <>Your browser will ask whether to keep it, because it is a program rather than a
                     document. Keep it. {mac
-                      ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
+                      // THIS USED TO SAY "hold Control and click it, then choose Open".
+                      // Apple removed that in macOS Sequoia — their own words:
+                      // users "will no longer be able to Control-click to
+                      // override Gatekeeper", and must visit System Settings >
+                      // Privacy & Security instead. So the instruction sent
+                      // people to a menu item that is not there, which is
+                      // exactly where London got stuck: "Apple could not
+                      // verify JobScout is free of malware."
+                      ? <>macOS will refuse it the first time — “Apple could not verify…”. That is
+                        because it is not signed by Apple yet, not because anything is wrong with
+                        it. Press <strong>Done</strong>, then open <strong>System Settings → Privacy
+                        &amp; Security</strong>, scroll to Security, and press <strong>Open
+                        Anyway</strong> next to JobScout Agent. That button only appears for about
+                        an hour after you tried, so if it is not there, double-click the file again
+                        first. Older Macs may instead offer Open on a Control-click.</>
                       : 'Windows may also show a blue “protected your PC” box — choose More info, then Run anyway.'}</>}
               </div>
               <div style={{ marginBottom: 7 }}>
@@ -825,7 +839,10 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
                 It connects outward only: nothing listens on the computer and no port is opened.
                 The first run installs what it needs, which takes a minute and never happens again.
               </div>
-              {!mine.signed && !mac && <PasteInstead open={dl === 'blocked'} />}
+              {/* On the Mac too now. It was excluded, which left the platform
+                  with the strictest gatekeeping as the only one with no way
+                  round it. */}
+              {!mine.signed && <PasteInstead open={dl === 'blocked'} mac={mac} />}
             </div>
           )}
         </>
@@ -924,12 +941,22 @@ const input = {
  * is the thing the whole download flow exists to avoid — it is the fallback,
  * not the path.
  */
-function PasteInstead({ open: openByDefault = false }) {
+function PasteInstead({ open: openByDefault = false, mac = false }) {
   const [open, setOpen] = useState(openByDefault)
   const [copied, setCopied] = useState(false)
-  // The backslashes matter: a single one here is an escape and the path comes
-  // out as $env:TEMPJobScoutAgent.cmd, which fails in a way nobody could debug.
-  const cmd = `irm "${releaseBase}/JobScout%20Agent.cmd" -OutFile "$env:TEMP\\JobScoutAgent.cmd"; & "$env:TEMP\\JobScoutAgent.cmd"`
+  // This used to be Windows-only, which left the Mac with no way out at all —
+  // and the Mac is where it is needed MOST. London downloaded the agent and
+  // macOS refused it outright: "Apple could not verify JobScout is free of
+  // malware". A file fetched by curl carries no quarantine flag, so there is
+  // nothing for Gatekeeper to refuse; it is the same trick as the PowerShell
+  // line, and on a Mac it is often the only one that works.
+  //
+  // The backslashes in the Windows one matter: a single one is an escape and
+  // the path comes out as $env:TEMPJobScoutAgent.cmd, which fails in a way
+  // nobody could debug.
+  const cmd = mac
+    ? `curl -fsSL "${releaseBase}/JobScout%20Agent.command" -o "$TMPDIR/jobscout-agent.command" && bash "$TMPDIR/jobscout-agent.command"`
+    : `irm "${releaseBase}/JobScout%20Agent.cmd" -OutFile "$env:TEMP\\JobScoutAgent.cmd"; & "$env:TEMP\\JobScoutAgent.cmd"`
 
   if (!open) {
     return (
@@ -949,9 +976,14 @@ function PasteInstead({ open: openByDefault = false }) {
   return (
     <div style={{ marginTop: 10, background: t.card2, borderRadius: 9, padding: '10px 12px' }}>
       <div style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.5, marginBottom: 8 }}>
-        Some work computers refuse to keep a downloaded program, and say nothing about it.
-        This does the same job and cannot be blocked: open <strong>PowerShell</strong> on that
-        computer — press Start, type powershell, press enter — then paste this and press enter.
+        {mac
+          ? <>macOS refuses to open a program it cannot verify, and until we are signed by Apple
+            that is every copy of this. This does the same job and Gatekeeper has nothing to
+            refuse: open <strong>Terminal</strong> — press Command and Space, type terminal,
+            press return — then paste this and press return.</>
+          : <>Some work computers refuse to keep a downloaded program, and say nothing about it.
+            This does the same job and cannot be blocked: open <strong>PowerShell</strong> on that
+            computer — press Start, type powershell, press enter — then paste this and press enter.</>}
       </div>
       <code style={{
         display: 'block', background: '#fff', border: `1px solid ${t.line}`, borderRadius: 7,

@@ -400,7 +400,7 @@ describe('the download that cannot be blocked', () => {
     // Nobody at the company had ever completed a connect, and one person
     // clicked the button and nothing happened. A browser refusing to keep a
     // downloaded .cmd looks exactly like that: no error, no file.
-    expect(page).toMatch(/function PasteInstead\(\{ open: openByDefault = false \}\)/)
+    expect(page).toMatch(/function PasteInstead\(\{ open: openByDefault = false, mac = false \}\)/)
     expect(page).toMatch(/Download blocked, or nothing happened\?/)
   })
 
@@ -418,7 +418,12 @@ describe('the download that cannot be blocked', () => {
     // It IS a terminal, which is the thing the download flow exists to
     // avoid — so it stays behind a link, and disappears entirely once there
     // is a signed installer that browsers do not fight.
-    expect(page).toMatch(/\{!mine\.signed && !mac && <PasteInstead open=\{dl === 'blocked'\} \/>\}/)
+    //
+    // The !mac half is GONE, and excluding the Mac was a real mistake: it
+    // left the platform with the STRICTEST gatekeeping as the only one with
+    // no way round it. London hit exactly that — macOS refused the download
+    // outright and there was nothing else to offer him.
+    expect(page).toMatch(/\{!mine\.signed && <PasteInstead open=\{dl === 'blocked'\} mac=\{mac\} \/>\}/)
   })
 })
 
@@ -496,7 +501,7 @@ describe('the button can no longer fail in silence', () => {
   it('a refusal opens the fallback by itself', () => {
     // Making somebody find the workaround after the thing already failed them
     // once is how you lose them twice.
-    expect(page).toMatch(/<PasteInstead open=\{dl === 'blocked'\} \/>/)
+    expect(page).toMatch(/<PasteInstead open=\{dl === 'blocked'\} mac=\{mac\} \/>/)
   })
 })
 
