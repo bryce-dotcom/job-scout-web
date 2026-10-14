@@ -295,7 +295,7 @@ const MOUNT_TEXT: Record<string, string> = {
  * @param rebateGiven  the SRP rebate a rep read off TrakSmart, if they gave one
  *                     — it wins over the estimate, because it is the real one
  */
-export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { rebateGiven?: number | null; state?: string | null } = {}): Plan | PlanError {
+export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { rebateGiven?: number | null; state?: string | null; fixtureSubtotal?: number | null } = {}): Plan | PlanError {
   const pb = ENERGY_SCOUT
   // Only the bundle section. A product of the same name elsewhere is not it.
   const book = catalog.filter((p) => !p.type || p.type === pb.catalog_type)
@@ -351,7 +351,12 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     if (a) assumptions.push(a)
   }
 
-  const productsSubtotal = money(lines.reduce((s, l) => s + l.quantity * l.price, 0))
+  // Redoing the GMs on an estimate that already exists: the fixtures as they
+  // stand on it now are what the rebate has to cover — someone may have
+  // changed a price or a count since it was built, and JobScout is right.
+  const productsSubtotal = opts.fixtureSubtotal != null && Number.isFinite(Number(opts.fixtureSubtotal))
+    ? money(Number(opts.fixtureSubtotal))
+    : money(lines.reduce((s, l) => s + l.quantity * l.price, 0))
   const rebateGiven = opts.rebateGiven != null && Number.isFinite(Number(opts.rebateGiven)) && Number(opts.rebateGiven) > 0 ? money(Number(opts.rebateGiven)) : null
   const ut = /^(ut|utah)$/i.test(String(opts.state || '').trim())
   // Utah has its own incentives (RMP) — the same concepts, not these numbers.
@@ -399,7 +404,9 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     ? (ut ? 'No GMs: Utah incentives come from RMP, and I have not got that figure — give me the rebate and I will add the GMs it allows.'
       : 'No GMs: I have no rebate figure for these fixtures yet (tubes are priced by TrakSmart). Give me the SRP number and I will add the GMs it allows.')
     : gmLines.length === 0
-      ? `No GMs: the ${rebateSource === 'given' ? 'SRP rebate' : 'estimated rebate'} (${usd(rebate)}) does not cover more than the fixtures (${usd(productsSubtotal)}).`
+      ? (rebate > productsSubtotal
+        ? `No GMs: the ${rebateSource === 'given' ? 'SRP rebate' : 'estimated rebate'} (${usd(rebate)}) leaves only ${usd(rebate - productsSubtotal)} past the fixtures — not enough for a $${MOUNT_GM_PRICE} mount or the lift hours.`
+        : `No GMs: the ${rebateSource === 'given' ? 'SRP rebate' : 'estimated rebate'} (${usd(rebate)}) does not cover more than the fixtures (${usd(productsSubtotal)}).`)
       : `GMs added to keep the customer at $0: ${mountCount ? `${mountCount} mount${mountCount === 1 ? '' : 's'} at $77` : 'no mounts'}${liftAdded ? `, then ${liftHours} lift hours` : mounts.length ? ', no room left for the lift GM' : ''}.`
   if (rebateSource === 'estimated' && rebate > 0) {
     assumptions.push(`The rebate is my ESTIMATE from SRP's small-business rates (${usd(rebate)}${unknownRebate ? ', tubes not counted' : ''}). TrakSmart gives the real one — read it to me and I will redo the GMs.`)

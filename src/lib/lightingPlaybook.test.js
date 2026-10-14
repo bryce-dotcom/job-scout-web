@@ -148,6 +148,11 @@ describe('GMs keep the customer at $0, never more', () => {
     expect(p.rebate).toBe(0)
     expect(p.gm_note).toMatch(/Utah/)
   })
+  it('a little room, not enough for one mount, says exactly that', () => {
+    // Live on 10-14: $1.24 of room was reported as "does not cover more".
+    const p = plan([{ kind: 'cobra', qty: 1, existing_watts: 400 }], { rebateGiven: 418.24 })
+    expect(p.gm_note).toMatch(/leaves only \$1\.24 past the fixtures — not enough for a \$77 mount/)
+  })
   it('an estimated rebate says it is one', () => {
     const p = plan([{ kind: 'flood', qty: 10, existing_watts: 1000 }])
     expect(p.rebate_source).toBe('estimated')

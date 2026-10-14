@@ -167,7 +167,12 @@ async function prepareTakeoffQuote(r: Rest, caller: Caller, f: Record<string, st
 
   return {
     ok: true,
-    columns: { intake, lead_before: leadBefore, for_label: forLabel, fill_quote_id: null, fill_quote_ref: null, new_lead: newLead, proposer_employee_id: caller.employeeId ?? null },
+    columns: {
+      intake, lead_before: leadBefore, for_label: forLabel, fill_quote_id: null, fill_quote_ref: null, new_lead: newLead, proposer_employee_id: caller.employeeId ?? null,
+      // Kept on the estimate so the GMs can be redone when TrakSmart's real
+      // rebate arrives (see arnieSrpRebate.ts).
+      takeoff: { playbook: playbook.key, state, items },
+    },
     display,
   }
 }
@@ -378,6 +383,8 @@ export async function applyQuote(r: Rest, companyId: number, prop: any): Promise
   }
   try {
     const res = await createEstimateFromIntakeRest(target, intake, { advanceLeadTo: null })
+    const takeoff = prop.payload?.columns?.takeoff
+    if (takeoff) await patchRow(r, 'quotes', companyId, res.quoteId, { takeoff })
     return { ok: true, id: res.quoteId, label: prop.payload?.entity_label || 'quote', created: { quote_id: res.quoteId, line_count: res.lineCount, ...(createdLeadId ? { lead_id: createdLeadId } : {}) } }
   } catch (e) {
     if (createdLeadId) await fetch(`${r.url}/rest/v1/leads?id=eq.${createdLeadId}&company_id=eq.${companyId}`, { method: 'DELETE', headers: { apikey: r.key, Authorization: `Bearer ${r.key}` } })

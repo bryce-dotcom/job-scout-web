@@ -21,6 +21,7 @@ import { readRecordList } from './arnieRest.ts'
 import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
+import { applySrpRebate, prepareSrpRebate, rollbackSrpRebate } from './arnieSrpRebate.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 import { applyAgenda, prepareAgenda, rollbackAgenda } from './arnieEos.ts'
 import { prepareRoutine, rollbackRoutine } from './arnieRoutineTarget.ts'
@@ -219,6 +220,26 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareQuote,
     applyCustom: applyQuote,
     rollbackCustom: rollbackQuote,
+  },
+
+  // The real SRP rebate from TrakSmart, written back onto an estimate built
+  // from a takeoff: the GMs are redone to fit it and the incentive set. Cole's
+  // flow, the SRP half — see arnieSrpRebate.ts.
+  srp_rebate: {
+    label: 'SRP rebate',
+    table: 'quotes',
+    minLevel: 0,
+    verb: 'Update estimate',
+    done: 'Done — the GMs and the incentive on the estimate now match the SRP rebate. It is still a draft.',
+    fields: {
+      quote:          { column: null, label: 'Estimate', required: true, max: 160 },
+      rebate:         { column: null, label: 'Rebate',   required: true, max: 20 },
+      annual_savings: { column: null, label: 'Annual savings', max: 20 },
+    },
+    labelOf: (f) => `SRP rebate on ${f.quote}`.slice(0, 120),
+    prepare: prepareSrpRebate,
+    applyCustom: applySrpRebate,
+    rollbackCustom: rollbackSrpRebate,
   },
 
   // A personal follow-up on a quote that went quiet. The one rail whose

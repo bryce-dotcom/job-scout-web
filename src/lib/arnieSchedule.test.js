@@ -118,7 +118,7 @@ describe('apply and rollback are the page\'s write and its undo', () => {
   })
   it('registered: manager+, when taken as said, the prompt hands the day to the server', () => {
     expect(create).toMatch(/schedule: \{\n\s+label: 'schedule',\n\s+table: 'jobs',\n\s+minLevel: 2,\n\s+verb: 'Schedule',/)
-    expect(chat).toMatch(/'price_book', 'won', 'schedule'\]/)
+    expect(chat).toMatch(/'price_book', 'won', 'schedule'(, '\w+')*\]/)
     // `when` is one shared property for appointment, schedule and
     // meeting_agenda now — it used to be declared twice, and the second
     // declaration silently replaced the first. What must hold is that the model
