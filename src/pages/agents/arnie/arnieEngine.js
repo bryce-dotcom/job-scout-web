@@ -1,7 +1,7 @@
 import { getUserRole, assembleDataContext, getDataLoadStatus, isClockedIn } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
-import { asksAboutHere, getPosition } from '../../../lib/arnieLocation'
+import { wantsLocationNow, getPosition } from '../../../lib/arnieLocation'
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 /**
@@ -359,7 +359,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
   // raise a permission prompt with no visible reason — which is a prompt
   // people deny. null when refused or unavailable: Arnie then says he has not
   // got it rather than guessing an address.
-  const coords = asksAboutHere(message) ? await getPosition() : null
+  const coords = wantsLocationNow(message, history) ? await getPosition() : null
 
   const response = await callClaude(conversationHistory, dataContext, onChunk, coords, { spoken })
   return response

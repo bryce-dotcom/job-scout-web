@@ -68,7 +68,11 @@ describe('Arnie never invents a price', () => {
 describe('the lines arrive structured, and the card shows every one with its maths', () => {
   it('lines is a raw (JSON) field on the quote target', () => {
     const block = create.slice(create.indexOf('quote: {'), create.indexOf('export const isCreateTarget'))
-    expect(block).toMatch(/lines:\s*\{[^}]*required: true[^}]*raw: true/)
+    // Not `required` any more: a takeoff can stand instead (Cole's flow). The
+    // lines path still refuses a quote with none — see parseLines.
+    expect(block).toMatch(/lines:\s*\{[^}]*raw: true/)
+    expect(block).toMatch(/takeoff:\s*\{[^}]*raw: true/)
+    expect(quote).toMatch(/if \(!Array\.isArray\(v\) \|\| !v\.length\) return 'a quote needs at least one line'/)
     expect(create).toMatch(/def\.raw \? JSON\.stringify\(v\)/)
   })
 

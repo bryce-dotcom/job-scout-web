@@ -25,6 +25,7 @@ import type { Prepared } from './arnieCreate.ts'
 import { createEstimateFromIntakeRest, fillEstimateFromIntakeRest, IntakeWriteError } from './estimateIntakeRest.ts'
 import type { EstimateIntake, IntakeLine } from './estimateIntake.ts'
 import { labourRate, sourcePrices } from './bennySource.ts'
+import { parseTakeoff, planEstimate, playbookFor } from './lightingPlaybook.ts'
 
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const money = (n: number) => Math.round(n * 100) / 100
@@ -52,7 +53,127 @@ function parseLines(raw: string | undefined): WantedLine[] | string {
   return out
 }
 
+// ── A takeoff, built to the company's estimating playbook ──────────────────
+//
+// Cole's flow: he names the business, walks the site in takeoff mode, and the
+// count arrives as fixtures — "six 400 watt shoeboxes on poles, five wall
+// packs no lift". `takeoff` carries those as items; the playbook
+// (_shared/lightingPlaybook.ts) turns them into the bundle products, the line
+// notes, the GMs and the incentive, exactly as he would. A business that is
+// not a lead yet becomes one on the same card — one approval, not two.
+
+async function playbookSetting(r: Rest, companyId: number): Promise<unknown> {
+  // Newest row wins — never .maybeSingle() on a company+key setting.
+  const rows = await readRecordList(r, `settings?select=value&company_id=eq.${companyId}&key=eq.estimating_playbook&order=id.desc&limit=1`)
+  return rows[0]?.value ?? null
+}
+
+function stateOf(...texts: unknown[]): string | null {
+  for (const t of texts) {
+    const s = String(t ?? '')
+    if (/\b(AZ|Arizona)\b/.test(s)) return 'AZ'
+    if (/\b(UT|Utah)\b/.test(s)) return 'UT'
+  }
+  return null
+}
+
+async function prepareTakeoffQuote(r: Rest, caller: Caller, f: Record<string, string>): Promise<Prepared> {
+  const companyId = caller.companyId as number
+  const playbook = playbookFor(await playbookSetting(r, companyId))
+  if (!playbook) return { ok: false, error: 'This company has no estimating playbook set up, so I cannot build from a takeoff. Give me the products as lines instead.' }
+
+  const items = parseTakeoff(f.takeoff)
+  if (typeof items === 'string') return { ok: false, error: items }
+
+  // Who it is for: an existing lead or customer, or a new business.
+  let leadId: number | null = null, customerId: number | null = null, forLabel = '', leadBefore: Record<string, unknown> | null = null
+  let address = ''
+  let newLead: Record<string, unknown> | null = null
+  const business = String(f.business_name || f.lead || f.customer || '').trim()
+  if (!business) return { ok: false, error: 'Which business is the quote for?' }
+  if (f.customer) {
+    const t = String(f.customer).replace(/[*,()]/g, '').trim()
+    const cs = await readRecordList(r, `customers?select=id,name,business_name,address&company_id=eq.${companyId}&or=(name.ilike.*${encodeURIComponent(t)}*,business_name.ilike.*${encodeURIComponent(t)}*)&limit=6`)
+    if (cs.length > 1) return { needs_choice: cs.map((c: any) => ({ id: c.id, label: c.business_name || c.name })), message: 'More than one customer matches. Ask which, then call again with the full name.' }
+    if (cs.length === 1) { customerId = cs[0].id; forLabel = cs[0].business_name || cs[0].name; address = cs[0].address || '' }
+  }
+  if (!customerId) {
+    const t = business.replace(/[*,()]/g, '').trim()
+    const ls = t.length >= 3
+      ? await readRecordList(r, `leads?select=id,customer_name,business_name,address,customer_id,status,quote_id,quote_generated,salesperson_id&company_id=eq.${companyId}&or=(business_name.ilike.*${encodeURIComponent(t)}*,customer_name.ilike.*${encodeURIComponent(t)}*)&order=created_at.desc&limit=6`)
+      : []
+    if (ls.length > 1 && !f.confirm_lead) {
+      return { needs_choice: ls.map((l: any) => ({ id: l.id, label: `${l.business_name || l.customer_name}${l.address ? ' — ' + l.address : ''} (${l.status || 'New'})` })),
+        message: 'More than one lead matches that business. Ask which one, then call again with lead set to the one they pick — or with business_name and new_business="yes" if it is a different place.' }
+    }
+    if (ls.length === 1 && f.new_business !== 'yes') {
+      const l = ls[0]
+      leadId = l.id; customerId = l.customer_id ?? null
+      forLabel = l.business_name || l.customer_name; address = l.address || ''
+      leadBefore = { status: l.status, quote_id: l.quote_id, quote_generated: l.quote_generated }
+    } else {
+      // A new business. Only what they told us — never an invented phone.
+      forLabel = business
+      address = String(f.address || '').slice(0, 300)
+      newLead = {
+        customer_name: String(f.customer_name || business).slice(0, 120),
+        business_name: business.slice(0, 120),
+        address: address || null,
+        phone: f.phone ? String(f.phone).slice(0, 40) : null,
+        service_type: f.service_type || 'Lighting Retrofit',
+        lead_source: 'Field — assistant',
+      }
+    }
+  }
+
+  // The rep: whoever is asking — Cole is quoting his own walk.
+  let repId: number | null = caller.employeeId ?? null, repName = ''
+  if (repId) { const [e] = await readRecordList(r, `employees?select=id,name&company_id=eq.${companyId}&id=eq.${repId}&limit=1`); repName = e?.name || '' }
+
+  const state = (f.state && /^(az|ut|arizona|utah)$/i.test(f.state) ? (/^(az|arizona)$/i.test(f.state) ? 'AZ' : 'UT') : null) || stateOf(address, f.address)
+  const catalog = await readRecordList(r, `products_services?select=id,name,unit_price,type&company_id=eq.${companyId}&active=eq.true&type=eq.${encodeURIComponent(playbook.catalog_type)}&limit=3000`)
+  const rebateGiven = f.rebate ? Number(String(f.rebate).replace(/[$,\s]/g, '')) : null
+  const plan = planEstimate(items, catalog, { rebateGiven: Number.isFinite(rebateGiven as number) ? rebateGiven : null, state })
+  if (!plan.ok) return { ok: false, error: plan.error }
+
+  const lines: IntakeLine[] = plan.lines.map((l) => ({
+    item_name: l.item_name.trim(), item_id: l.item_id, quantity: l.quantity, price: l.price,
+    description: l.description, in_utility_scope: true, price_source: 'catalog',
+  }))
+  const intake: EstimateIntake = {
+    source: 'arnie', company_id: companyId, lead_id: leadId, customer_id: customerId, salesperson_id: repId,
+    audit_id: null, service_type: f.service_type || 'Lighting Retrofit', business_unit: plan.business_unit,
+    estimate_name: f.estimate_name || `${state ? state + ' ' : ''}${forLabel}`.slice(0, 140),
+    summary: f.notes || null, status: 'Draft', lines,
+    utility_incentive: plan.incentive,
+  }
+
+  const display: { label: string; value: string }[] = [
+    { label: 'For', value: `${forLabel}${newLead ? ' — new lead, created with this quote' : ''}${address ? ` · ${address}` : ''}` },
+    { label: 'Rep', value: repName || '(none)' },
+    { label: 'Business unit', value: plan.business_unit },
+    ...plan.lines.map((l, i) => ({
+      label: l.role === 'fixture' ? `Line ${i + 1}` : l.role === 'lift_gm' ? 'Lift GM' : 'Mount GM',
+      value: `${l.quantity} × ${l.item_name.trim()} @ ${usd(l.price)} = ${usd(l.quantity * l.price)}${l.role === 'fixture' ? ` — ${l.description}` : ''}`,
+    })),
+    { label: 'Subtotal', value: usd(plan.subtotal) },
+    { label: plan.rebate_source === 'given' ? 'SRP rebate (as you gave it)' : 'Rebate (estimate)', value: plan.rebate > 0 ? usd(plan.rebate) : 'not known yet' },
+    { label: 'Incentive', value: `${usd(plan.incentive)} — the lower of the rebate and the subtotal` },
+    { label: 'Customer pays', value: usd(plan.out_of_pocket) },
+    { label: 'GMs', value: plan.gm_note },
+    ...plan.assumptions.map((a) => ({ label: 'Note', value: a })),
+    { label: 'Status', value: 'Draft — nothing is sent, no PDF, no discount' },
+  ]
+
+  return {
+    ok: true,
+    columns: { intake, lead_before: leadBefore, for_label: forLabel, fill_quote_id: null, fill_quote_ref: null, new_lead: newLead, proposer_employee_id: caller.employeeId ?? null },
+    display,
+  }
+}
+
 export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, string>): Promise<Prepared> {
+  if (f.takeoff) return prepareTakeoffQuote(r, caller, f)
   const companyId = caller.companyId as number
 
   // Who it is for: a lead or a customer, by description.
@@ -235,10 +356,31 @@ export async function applyQuote(r: Rest, companyId: number, prop: any): Promise
       return { ok: false, error: (e as Error).message }
     }
   }
+  // A business that was not a lead yet: the lead first, the same way the lead
+  // rail makes one, so the estimate has somewhere to live. Undone below if the
+  // estimate then fails, so a failed approve leaves nothing behind.
+  let createdLeadId: number | null = null
+  const nl = prop.payload?.columns?.new_lead
+  if (nl && !intake.lead_id && !intake.customer_id) {
+    const who = prop.payload?.columns?.proposer_employee_id ?? prop.payload?.proposer_employee_id ?? null
+    const lr = await fetch(`${r.url}/rest/v1/leads`, {
+      method: 'POST',
+      headers: { apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({
+        company_id: companyId, ...nl, status: 'New', lead_id: `LEAD-${Date.now().toString(36).toUpperCase()}`,
+        ...(who ? { setter_owner_id: who, lead_source_employee_id: who, salesperson_id: who } : {}),
+      }),
+    })
+    if (!lr.ok) return { ok: false, error: `Could not create the lead for ${nl.business_name}: ${lr.status} ${await lr.text()}` }
+    createdLeadId = (await lr.json())?.[0]?.id ?? null
+    if (!createdLeadId) return { ok: false, error: 'The lead was not returned after insert.' }
+    intake.lead_id = createdLeadId
+  }
   try {
     const res = await createEstimateFromIntakeRest(target, intake, { advanceLeadTo: null })
-    return { ok: true, id: res.quoteId, label: prop.payload?.entity_label || 'quote', created: { quote_id: res.quoteId, line_count: res.lineCount } }
+    return { ok: true, id: res.quoteId, label: prop.payload?.entity_label || 'quote', created: { quote_id: res.quoteId, line_count: res.lineCount, ...(createdLeadId ? { lead_id: createdLeadId } : {}) } }
   } catch (e) {
+    if (createdLeadId) await fetch(`${r.url}/rest/v1/leads?id=eq.${createdLeadId}&company_id=eq.${companyId}`, { method: 'DELETE', headers: { apikey: r.key, Authorization: `Bearer ${r.key}` } })
     if (e instanceof IntakeWriteError) return { ok: false, error: e.message + (e.rolledBack ? '' : ` (a header #${e.orphanQuoteId} was left behind)`) }
     return { ok: false, error: (e as Error).message }
   }
@@ -266,6 +408,20 @@ export async function rollbackQuote(r: Rest, companyId: number, prop: any): Prom
   const before = prop.payload?.columns?.lead_before
   if (leadId && before) await patchRow(r, 'leads', companyId, leadId, before)
   await fetch(`${r.url}/rest/v1/quotes?id=eq.${id}&company_id=eq.${companyId}`, { method: 'DELETE', headers: H })
+  // The lead this card created for a new business goes too — unless something
+  // else has come to hang off it since (another quote, an appointment).
+  const madeLead = Number(prop.payload?.created?.lead_id) || 0
+  if (madeLead) {
+    const [others, appts] = await Promise.all([
+      readRecordList(r, `quotes?select=id&company_id=eq.${companyId}&lead_id=eq.${madeLead}&limit=1`),
+      readRecordList(r, `appointments?select=id&company_id=eq.${companyId}&lead_id=eq.${madeLead}&limit=1`),
+    ])
+    if (!others.length && !appts.length) {
+      await fetch(`${r.url}/rest/v1/lead_commissions?company_id=eq.${companyId}&lead_id=eq.${madeLead}&payment_status=neq.paid`, { method: 'DELETE', headers: H })
+      await fetch(`${r.url}/rest/v1/leads?id=eq.${madeLead}&company_id=eq.${companyId}`, { method: 'DELETE', headers: H })
+    }
+    return { ok: true, deleted: id }
+  }
   // Inserting the quote promoted the setter's fee on this lead to earned
   // (quotes_promote_setter_commissions). The trigger handles relinks, not
   // deletes, so withdrawing the quote has to put the fee back itself — but

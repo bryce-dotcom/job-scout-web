@@ -37,6 +37,29 @@ const ASKS_WHERE = [
   /\bwhat'?s (around|near) (me|here)\b/i,
 ]
 
+// STARTING A QUOTE ON SITE IS ALSO ABOUT WHERE THEY ARE.
+//
+// Cole's flow: "Jenny, create a new quote" → she asks the business name →
+// "Desert Ridge Dental" → she finds it from where he is standing and asks
+// whether to use it. Neither of his two messages mentions a location, so by
+// the rule above the second one went without a position and she could not
+// do the one thing he asked for. Starting a quote, and answering her question
+// about which business, are the moments the prompt explains itself.
+const STARTS_A_QUOTE = /\b(new|create|start|build|make|do|write)\b[^.?!]{0,30}\b(quote|estimate|bid|takeoff|take off)\b/i
+const ASKED_FOR_BUSINESS = /\b(business|company|customer|site|place)('s)?\b[^.?!]{0,40}\b(name|called|is it|this for)\b[^.?!]*\?|\bwho('s| is) (it|this|the quote) for\?/i
+
+/**
+ * Should this turn carry a position? The message is about where they are,
+ * or it starts a quote, or it answers her asking which business it is.
+ */
+export function wantsLocationNow(text, history = []) {
+  if (asksAboutHere(text)) return true
+  if (STARTS_A_QUOTE.test(String(text || ''))) return true
+  const lastAssistant = [...(history || [])].reverse().find((m) => m?.role === 'assistant')
+  const said = typeof lastAssistant?.content === 'string' ? lastAssistant.content : ''
+  return ASKED_FOR_BUSINESS.test(said.slice(-400))
+}
+
 /** Is this message about where the person physically is? */
 export function asksAboutHere(text) {
   const t = String(text || '')

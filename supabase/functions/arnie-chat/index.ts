@@ -11,6 +11,7 @@ import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrica
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
+import { playbookFor } from '../_shared/lightingPlaybook.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -534,6 +535,7 @@ const PROPOSE_CREATE_TOOL = {
           'ticket: message (required — what was seen, the exact record ids/numbers involved, what was expected, what you checked), subject, feedback_type (bug|feature|question|feedback). ' +
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
+          'quote FROM A LIGHTING TAKEOFF (when the company has an estimating playbook — see that section): instead of lines, takeoff = an ARRAY of { kind (cobra|flood|wall_pack|mini_wall_pack|dome|high_bay|t5_high_bay|t8_4ft|t8_8ft), qty (HEADS, not poles), existing_watts, lamps (T5/T8), no_lift (true only if they said no lift), mount (pole|arm|flush for cobras; trunnion|knuckle for floods), words (their own words for it), area }; business_name (the business it is for — an existing lead is matched by name, otherwise a new lead is made on the same card), address and phone ONLY as found or said, state (AZ|UT), rebate (only a figure they read you from TrakSmart). The server picks the products, prices, notes, GMs and incentive by the playbook — never pass lines with a takeoff. ' +
           'routine: prompt (required — what to check, in the words they would use), when (required — the hour as said: "7am", "half six", "noon"), routine_name (a short name for it), how (app|sms|email, default app), every_day ("yes" only if they said every day — weekdays is the default). Standing work that runs as THEM, with their access, so it sees what they see; anything it would change still comes back as a card for them to approve. ' +
           'meeting_agenda: type (l10 | quarterly | annual — l10 is the weekly meeting and the default; a "quarterly", "Q4 meeting" or "planning session" is quarterly; two days at year end is annual), days and ends for a quarterly/annual ("Saturday and Sunday, done by 3 and by noon" → days 2, ends "3pm, noon"), when (only if they named a day — otherwise the team\'s own L10 day is used), to (only if they named people), how (email|app|both, default both), unit (one business unit only). The agenda itself is BUILT from the EOS page — the seven L10 sections, this quarter\'s rocks, the open issues, the outstanding to-dos, the scorecard with a blank per metric. Never compose or pass agenda content. ' +
           'followup: quote (required — the number, the estimate name, or who it is for, in words), message (required — the note AS THE REP WOULD SAY IT, first person, short, one clear ask, mentioning what the estimate is for; never invent a discount, deadline or price), subject (email only), channel (email|sms, default email). The server finds the recipient on the quote, lead or customer; you never supply an address.',
@@ -553,6 +555,12 @@ const PROPOSE_CREATE_TOOL = {
           merchant: { type: 'string', description: 'expense: who was paid, as printed on the receipt' }, receipt: { type: 'string', description: 'expense: "yes" when a receipt photo or PDF is attached to this conversation and this expense is from it' }, category: { type: 'string', description: 'expense: Fuel, Materials, Meals, Equipment Rental, Permits, Travel, Office Supplies, Subcontractor, Labor, Marketing, Insurance, Utilities, Cost of Sale or Other' },
           text: { type: 'string', description: 'memory: the one line to remember, written as a fact about the user in the third person, e.g. "Calls the Riverside Apartments job (JOB-2214) the gym", "Wants the morning brief by text"' },
           lines: { type: 'array', items: { type: 'object', properties: { item: { type: 'string' }, quantity: { type: 'number' }, price: { type: 'number' }, description: { type: 'string' } }, required: ['item'] } },
+          takeoff: { type: 'array', items: { type: 'object', properties: {
+            kind: { type: 'string', enum: ['cobra', 'flood', 'wall_pack', 'mini_wall_pack', 'dome', 'high_bay', 't5_high_bay', 't8_4ft', 't8_8ft'] },
+            qty: { type: 'number' }, existing_watts: { type: 'number' }, lamps: { type: 'number' },
+            no_lift: { type: 'boolean' }, mount: { type: 'string' }, words: { type: 'string' }, area: { type: 'string' },
+          }, required: ['kind', 'qty'] } },
+          rebate: { type: 'string' }, state: { type: 'string' }, new_business: { type: 'string' },
           role: { type: 'string', description: 'employee: job title as said (Field Tech, Installer, Sales, Setter, Office, Manager)' }, user_role: { type: 'string', description: 'employee: access level — User, Team Lead, Manager or Admin; User unless they said otherwise' }, hourly_rate: { type: 'string', description: 'employee: only if they gave an hourly rate, e.g. "28"' }, annual_salary: { type: 'string', description: 'employee: only if they gave a yearly salary' }, hire_date: { type: 'string', description: 'employee: the start day AS SAID ("Monday", "October 1") — the server resolves it' }, tax_classification: { type: 'string', description: 'employee: "1099" if they said contractor/1099, else omit' }, business_unit: { type: 'string' }, invite: { type: 'string', description: 'employee: "no" only if they said not to send the login invite; otherwise omit' },
           // ONE `when`, because this properties map is shared by every target
           // and a second declaration silently replaced the first — the
@@ -1640,6 +1648,7 @@ Deno.serve(async (req) => {
       ? await serverArniePrompt({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, body)
         + await whoYouAreBlock(caller.employeeId)
         + await appMapFor(caller.employeeId)
+        + await playbookBlock(companyId)
         + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
@@ -1825,6 +1834,34 @@ async function appMapFor(employeeId: number): Promise<string> {
     if (!row) return ''
     const first = String(row.name || '').trim().split(/\s+/)[0] || 'They'
     return '\n\n' + appMapBlock(whoFromEmployee(row), first)
+  } catch { return '' }
+}
+
+/**
+ * HOW THIS COMPANY BUILDS A LIGHTING QUOTE — only when it has an estimating
+ * playbook (settings.estimating_playbook). Cole's flow, from his write-up:
+ * "He opens his phone and tells his Jenny to create a new quote. He says the
+ * name of the business and Jenny finds his location and asks Cole if she
+ * should use the location. Then Jenny goes into Job Scout as Cole speaks what
+ * fixtures are there and builds a quote."
+ */
+async function playbookBlock(companyId: number): Promise<string> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/settings?select=value&company_id=eq.${companyId}&key=eq.estimating_playbook&order=id.desc&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+    const row = r.ok ? (await r.json())?.[0] : null
+    const pb = playbookFor(row?.value)
+    if (!pb) return ''
+    return `
+
+## Building a lighting quote here — the ${pb.name} playbook
+When someone says "create a new quote" (or estimate, or bid) on site:
+1. If they have not said which business, ask — one short question.
+2. Find it from where they are standing with where_i_am, and ask "Is it <name> at <address>?" — use it only if they say yes. If you have no location, take the name and address as they say them; never invent an address or phone.
+3. Tell them to count it: "Say '<your name>, go into takeoff mode' and walk it — I'll stay quiet until you ask if I'm ready." (They can also just tell you the fixtures.)
+4. When the count arrives, read it back briefly — counts, wattages, lift or no-lift — then call propose_create target=quote with a takeoff (NOT lines) and business_name/address/phone/state. Ask about something only if the rules cannot decide it (existing watts for a fixture they did not give; whether a cobra is on a pole or an arm only if mounts matter). Do not ask about products, prices or business unit: the playbook decides those.
+5. If they read you the SRP rebate from TrakSmart, pass it as rebate and the GMs are redone to fit it.
+The playbook (do not override it, and explain it if asked): products only from the ${pb.catalog_type} section; business unit ${pb.business_unit}; quantities are heads, not poles; exterior is 20 ft on a lift unless marked no-lift (15 ft, the no-lift product), interior never on a lift; Arizona swaps — cobra or shoebox (400W, 750W or more) to a 60W LED cobra, 400W flood to 45W and 750W+ to 60W, 400W wall pack to 30-40W, mini 15W wall packs only for small security lights above doors, dome to a 25W wall pack, high bays up to 400W to a 60W LED high bay, 6-lamp T5 to a full high bay, 4 ft T8 to Type B tubes, 8 ft T8 to 43W 8 ft tubes; GMs only while the rebate keeps the customer at $0 — $77 mounts first (cobras before floods), then the ES LIFT item at $49.98 an hour (2 hours per fixture on a lift, 1 off); incentive = the lower of the rebate and the subtotal; never a discount; never sent, no PDF, never marked sent unless asked.`
   } catch { return '' }
 }
 

@@ -84,7 +84,9 @@ describe('the position itself', () => {
 
   it('only sent when there is something to send', () => {
     const engine = read('pages/agents/arnie/arnieEngine.js')
-    expect(engine).toMatch(/asksAboutHere\(message\) \? await getPosition\(\) : null/)
+    // Since 2026-10-14 also when a quote is started on site (Cole's flow) —
+    // see wantsLocationNow, which still begins with asksAboutHere.
+    expect(engine).toMatch(/wantsLocationNow\(message, history\) \? await getPosition\(\) : null/)
     expect(engine).toMatch(/\.\.\.\(coords \? \{ coords \} : \{\}\)/)
   })
 })

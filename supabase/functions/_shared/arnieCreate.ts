@@ -195,7 +195,18 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     fields: {
       lead:          { column: null, label: 'Lead',     max: 160 },
       customer:      { column: null, label: 'Customer', max: 160 },
-      lines:         { column: null, label: 'Lines',    required: true, max: 8000, raw: true },
+      // Either lines (products named in words) or a takeoff (fixtures counted
+      // on site, built to the company's estimating playbook — Cole's flow).
+      // prepareQuote refuses a call with neither.
+      lines:         { column: null, label: 'Lines',    max: 8000, raw: true },
+      takeoff:       { column: null, label: 'Takeoff',  max: 12000, raw: true },
+      rebate:        { column: null, label: 'Rebate',   max: 20 },
+      state:         { column: null, label: 'State',    max: 20 },
+      business_name: { column: null, label: 'Business', max: 120 },
+      customer_name: { column: null, label: 'Contact',  max: 120 },
+      address:       { column: null, label: 'Address',  max: 300 },
+      phone:         { column: null, label: 'Phone',    max: 40 },
+      new_business:  { column: null, label: 'New business', max: 5 },
       estimate_name: { column: null, label: 'Name',     max: 140 },
       service_type:  { column: null, label: 'Service',  max: 80 },
       salesperson:   { column: null, label: 'Rep',      max: 80 },
