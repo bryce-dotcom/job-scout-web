@@ -1747,6 +1747,22 @@ Deno.serve(async (req) => {
   }
 })
 
+/**
+ * Did this tool call do what a claim about it would say?
+ *
+ * The truth check lets "I've drafted the card" through when a propose_ tool
+ * ran this turn. It used to count the CALL — so on 10-14 the closing check
+ * refused to mark EST-MV1KLY3M won, the tool returned that refusal, and Jenny
+ * told Bryce "I've drafted the won card" with nothing on screen. A card tool
+ * now counts only when a card came out of it.
+ */
+function madeItsCard(name: string, result: unknown): boolean {
+  if (!/^propose_/.test(name)) return true
+  const r = result as Record<string, unknown> | null
+  // The same test the stream uses to draw the card: both halves present.
+  return !!r && typeof r === 'object' && !!(r.proposal && r.preview)
+}
+
 function jsonError(msg: string, status: number, extra?: Record<string, unknown>) {
   return new Response(JSON.stringify({ error: msg, ...(extra || {}) }), {
     status,
@@ -2262,8 +2278,8 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
     convo.push({ role: 'assistant', content: blocks })
     const toolResults = []
     for (const tu of toolUses) {
-      used.add(tu.name)
       const result = await setup.exec(tu.name, tu.input)
+      if (madeItsCard(tu.name, result)) used.add(tu.name)
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: toolContent(result) })
     }
     convo.push({ role: 'user', content: toolResults })
@@ -2415,8 +2431,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
           const toolResults = []
           for (const tu of toolUses) {
-            used.add(tu.name)
             const result = await setup.exec(tu.name, tu.input)
+            if (madeItsCard(tu.name, result)) used.add(tu.name)
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
             // one and clicking approve.

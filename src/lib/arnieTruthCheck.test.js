@@ -237,3 +237,19 @@ describe('blaming the app for a card he never made', () => {
     }
   })
 })
+
+describe('a refused card is not a drafted card', () => {
+  // Live, 2026-10-14: the closing check refused to mark EST-MV1KLY3M won;
+  // the tool returned the refusal; Jenny said "I've drafted the won card".
+  // The rail let it through because the CALL counted as use.
+  const chatSrc = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../supabase/functions/arnie-chat/index.ts'), 'utf8').replace(/\r\n/g, '\n')
+  it('a propose_ tool counts only when a card came out of it', () => {
+    expect(chatSrc).toMatch(/if \(madeItsCard\(tu\.name, result\)\) used\.add\(tu\.name\)/)
+    expect((chatSrc.match(/madeItsCard\(tu\.name, result\)/g) || []).length).toBe(2)
+    expect(chatSrc).not.toMatch(/used\.add\(tu\.name\)\n\s+const result = await setup\.exec/)
+    expect(chatSrc).toMatch(/return !!r && typeof r === 'object' && !!\(r\.proposal && r\.preview\)/)
+  })
+  it('so the claim after a refusal is caught', () => {
+    expect(T.fabricationIn("I've drafted the won card for EST-MV1KLY3M. Approve it and it's on the Job Board.", [], false)).toBe('card')
+  })
+})

@@ -87,6 +87,11 @@ export function claimsACard(text: string): boolean {
   // "I've drafted the change for your approval" — no card named, but it says
   // in as many words that a thing exists and is waiting on them.
   if (drafted.test(t) && /\bfor (your |my )?(approval|review|sign ?off)\b/i.test(t)) return true
+  // "I've drafted the won card" — ANY card, not only an "approval" one — and
+  // "I've drafted it. Approve it and…". Both say a thing exists to approve.
+  // Missed live on 10-14, after a refusal, with nothing on screen.
+  if (drafted.test(t) && /\bcard\b/i.test(t)) return true
+  if (drafted.test(t) && /\bapprove (it|this|that|the)\b/i.test(t)) return true
   return false
 }
 
