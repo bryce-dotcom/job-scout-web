@@ -252,6 +252,20 @@ const CSS = `
   .pr .hearbar-prog{position:absolute;left:0;bottom:0;height:3px;background:var(--viz);border-radius:0 2px 2px 0;transition:width .15s linear}
   @media(prefers-reduced-motion:reduce){ .pr .hearbar.on .hearbar-eq i{animation:none;height:13px} }
   @media(max-width:560px){ .pr .hearbar-eq{display:none} }
+  .pr .hearshare{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:7px 13px;background:transparent;border:1px solid rgba(255,255,255,.2);border-radius:9px;color:#cfcbba;font-family:inherit;font-size:13px;font-weight:650;cursor:pointer;transition:border-color .2s,color .2s}
+  .pr .hearshare:hover{border-color:rgba(201,154,46,.6);color:#f0d79a}
+  .pr .hearov{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:24px;background:rgba(18,22,14,.74);backdrop-filter:blur(6px);animation:hearfade .3s ease}
+  @keyframes hearfade{from{opacity:0}to{opacity:1}}
+  .pr .hearov-card{max-width:440px;width:100%;text-align:center;background:var(--nightGrn);border:1px solid rgba(255,255,255,.14);border-radius:22px;padding:34px 28px 26px;box-shadow:0 30px 80px -20px rgba(0,0,0,.6)}
+  .pr .hearov-av{width:58px;height:58px;margin:0 auto 14px;border-radius:16px;display:grid;place-items:center;font-family:var(--mono);font-weight:750;font-size:18px;background:var(--viz);color:#201700}
+  .pr .hearov-card h2{font-size:25px;font-weight:850;color:#fff;letter-spacing:-.02em}
+  .pr .hearov-card p{color:#cfcbba;font-size:15px;margin:10px 0 0;line-height:1.5}
+  .pr .hearov-play{display:inline-flex;align-items:center;gap:10px;margin:22px 0 0;padding:14px 26px;background:var(--viz);color:#201700;border:none;border-radius:13px;font-family:inherit;font-size:16.5px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px -6px rgba(201,154,46,.7);transition:transform .12s,background .2s}
+  .pr .hearov-play:hover{background:var(--vizDk);color:#fff}
+  .pr .hearov-play:active{transform:translateY(1px)}
+  .pr .hearov-play svg{width:20px;height:20px;fill:currentColor;stroke:none}
+  .pr .hearov-skip{display:block;margin:14px auto 0;background:none;border:none;color:#9aa08c;font-family:inherit;font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  .pr .hearov-skip:hover{color:#cfcbba}
   .pr .crewstrip{display:flex;align-items:center;gap:8px;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,.12);flex-wrap:wrap}
   .pr .crewstrip .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa08c}
   .pr .chip{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;background:var(--nightGrn);border:1px solid rgba(255,255,255,.14);color:#e9e5d6;opacity:0;transform:translateY(8px);animation:prpop .5s forwards}
@@ -602,6 +616,8 @@ export default function Pricing() {
   const [iq, setIq] = useState(0)
   const [hearing, setHearing] = useState(false)
   const [hprog, setHprog] = useState(0)
+  const [hearOverlay, setHearOverlay] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const goSignup = (planId) => navigate(`/login?signup=1&plan=${planId}`)
   const toPlans = () => document.getElementById('pr-plans')?.scrollIntoView({ behavior: 'smooth' })
@@ -617,6 +633,20 @@ export default function Pricing() {
     const a = audioRef.current
     if (!a) return
     if (a.paused) a.play().catch(() => {}); else a.pause()
+  }
+  // A link a rep can send: /pricing?hear=1 opens straight to Arnie's intro.
+  // Browsers block autoplaying sound on a cold load, so greet with a one-tap
+  // play moment; where autoplay IS allowed, it just starts and skips the card.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('hear') !== '1') return
+    const a = audioRef.current
+    Promise.resolve(a && a.play()).then(() => setHearOverlay(false)).catch(() => setHearOverlay(true))
+  }, [])
+  const playHear = () => { const a = audioRef.current; if (a) a.play().catch(() => {}); setHearOverlay(false) }
+  const copyHearLink = async () => {
+    const url = (typeof window !== 'undefined' ? window.location.origin : 'https://jobscout.appsannex.com') + '/pricing?hear=1'
+    try { if (typeof navigator !== 'undefined' && navigator.share) { await navigator.share({ title: 'A minute from Arnie', text: 'Hear what JobScout does for your business:', url }); return } } catch { /* fell through to copy */ }
+    try { await navigator.clipboard.writeText(url); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2200) } catch { /* clipboard blocked */ }
   }
 
   // Reveal-on-scroll + hero underline draw + mobile sticky CTA.
@@ -668,6 +698,19 @@ export default function Pricing() {
   return (
     <div className="pr" ref={rootRef}>
       <style>{CSS}</style>
+      {hearOverlay && (
+        <div className="hearov" role="dialog" aria-modal="true" aria-label="Hear from Arnie" onClick={(e) => { if (e.target === e.currentTarget) setHearOverlay(false) }}>
+          <div className="hearov-card">
+            <div className="hearov-av">AR</div>
+            <h2>A minute with Arnie</h2>
+            <p>Your AI CEO on what JobScout does for your business — and the whole team behind him.</p>
+            <button type="button" className="hearov-play" onClick={playHear}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg> Play Arnie’s intro
+            </button>
+            <button type="button" className="hearov-skip" onClick={() => setHearOverlay(false)}>Skip — just show me the site</button>
+          </div>
+        </div>
+      )}
       <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true"><defs>
         <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></symbol>
         <symbol id="i-quote" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h6" /></symbol>
@@ -738,6 +781,9 @@ export default function Pricing() {
                   onEnded={() => { setHearing(false); setHprog(0) }}
                   onTimeUpdate={(e) => { const a = e.currentTarget; if (a.duration) setHprog(a.currentTime / a.duration) }}
                 />
+                <button type="button" className="hearshare" onClick={copyHearLink}>
+                  <Icon id="i-share" style={{ fontSize: 13 }} /> {linkCopied ? 'Link copied — send it to a prospect' : 'Copy a link to send'}
+                </button>
                 <a href="#pr-compare" style={{ display: 'inline-block', marginTop: 14, fontSize: 14, color: '#bcc0ad', textDecoration: 'underline', textUnderlineOffset: 3 }}>or see how it compares →</a>
                 <div className="trust">
                   <span><Icon id="i-check" /> Live in an afternoon</span>
@@ -908,6 +954,25 @@ export default function Pricing() {
         <section>
           <div className="wrap">
             <div className="prospect rv">
+              <span className="eb on-dark"><Icon id="i-map" style={{ fontSize: 13 }} /> Canvassing, on a live map</span>
+              <h3>Work a neighborhood like you own it.</h3>
+              <p className="say">Pull the territory up on a live map — every parcel pinned, owners matched, leads colored by where they stand. Split it into routes, assign your reps, and drop a new lead right on the address the moment a door says yes. Nobody knocks the same house twice.</p>
+              <div className="term">
+                <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>Liahona · Elm St district</span></div>
+                <div className="res">
+                  <div className="row"><span>142 parcels pinned · owners matched</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> live map</span></div>
+                  <div className="row"><span>Territory split 3 ways · routed to reps</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> assigned</span></div>
+                  <div className="row"><span>1431 Elm — interested</span><span style={{ color: '#e0b24a', fontSize: 10.5 }}>dropped as a lead →</span></div>
+                </div>
+              </div>
+              <div className="repl">replaces <b>SalesRabbit, SPOTIO, Badger Maps</b> — and the paper map on the dash.</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div className="wrap">
+            <div className="prospect rv">
               <span className="eb on-dark"><Icon id="i-dollar" style={{ fontSize: 13 }} /> Win government &amp; GC work</span>
               <h3>A bid desk, without the bid desk.</h3>
               <p className="say">Point every procurement portal and SAM.gov at one inbox. <b>Sal</b> reads each solicitation and scores it against the work you actually win. Pick one, and <b>Benny</b> reads the package — or takes it off the drawings when there’s no schedule — matches every line to your catalog, and builds the bid in the buyer’s own format. Prices he had to source stay redlined until you verify them, and a bid won’t send until you do.</p>
@@ -930,16 +995,17 @@ export default function Pricing() {
             <div className="prospect rv">
               <span className="eb on-dark"><Icon id="i-share" style={{ fontSize: 13 }} /> Marketing, from the truck</span>
               <h3>Your crew’s camera roll is your marketing team.</h3>
-              <p className="say">A tech taps <b>Share to Marketing</b> on a job photo from Field Scout. The AI writes the post in your company’s voice — learned from your EOS values and every caption you’ve approved — you tap OK, and it publishes to the networks you’ve connected. Nothing goes out without a human approval.</p>
+              <p className="say">A tech taps <b>Share to Marketing</b> on a job photo — or a few clips. The AI writes the post in your company’s voice, or cuts the clips into a <b>vertical video with music and a narrator</b>, and on your OK it publishes to every network you’ve connected. Nothing goes out without a human approval.</p>
               <div className="term">
                 <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>marketing · draft</span></div>
                 <div className="q">3 photos shared → “panel upgrade, Gilbert”<span className="cur" /></div>
                 <div className="res">
                   <div className="row"><span>Another clean panel upgrade in Gilbert. Swipe for the before — booking spring installs now.</span><span className="cited">your voice</span></div>
+                  <div className="row"><span>or: 5 clips → 0:22 vertical reel · music + voiceover</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> AI-cut</span></div>
                   <div className="row"><span>Facebook · Instagram · Google · LinkedIn</span><span className="cited"><Icon id="i-check" style={{ fontSize: 11 }} /> approve to post</span></div>
                 </div>
               </div>
-              <div className="repl">replaces <b>Hootsuite, Buffer, Later</b> — and the agency that never saw the job.</div>
+              <div className="repl">replaces <b>Hootsuite, Buffer, Later, a video editor</b> — and the agency that never saw the job.</div>
             </div>
           </div>
         </section>
