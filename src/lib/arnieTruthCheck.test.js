@@ -221,8 +221,18 @@ describe('blaming the app for a card he never made', () => {
     expect(T.fabricationIn("I'll file a ticket for that.", ['propose_create'], false)).toBeNull()
   })
 
+  it('pins blame when he tells THEM to report it', () => {
+    expect(T.fabricationIn("The card didn't load. You should submit a bug to the team.", [], false)).toBe('card')
+  })
+
   it('and does not fire on ordinary answers', () => {
-    for (const s of ['You have 3 open jobs.', 'Want me to draft that?']) {
+    for (const s of [
+      'You have 3 open jobs.',
+      'Want me to draft that?',
+      // Describing the Feedback form, live, 2026-10-14 — "Bug Report" is
+      // the name of one of its types, not an excuse.
+      'Send Feedback — Bug Report, Feature Request, Question or General Feedback. Goes straight to the JobScout team.\n\nI can also file one for you right now if you have something specific to report.',
+    ]) {
       expect(T.fabricationIn(s, [], false), s).toBeNull()
     }
   })

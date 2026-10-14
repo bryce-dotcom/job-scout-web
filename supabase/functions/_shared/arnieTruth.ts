@@ -109,7 +109,14 @@ export function blamesTheApp(text: string): boolean {
   if (!t) return false
   return /\b(dev|development|engineering) team\b/i.test(t)
     || /\b(file|submit|raise|add (it |this )?to) a? ?bug( report)?\b/i.test(t)
-    || /\bbug report\b/i.test(t)
+    // "Bug report" ALONE is not blame — it is the first of the four types on
+    // the Feedback form, and the app map now has him describe that form. On
+    // 2026-10-14 Bryce asked "is there a feedback page?", got a correct answer
+    // naming "Bug Report", and the rail forced a baffling "I didn't draft
+    // anything" onto the end of it. What IS blame is the bug report pinned on
+    // something — added to, or the same, as an existing one.
+    || /\b(add (it |this )?to|same as|part of|in) (the|that|a|an existing) bug report\b/i.test(t)
+    || /\b(you|they) (can|could|should|might|may want to|'?ll (want|need) to|need to) (file|submit|send|raise|report) (a |an )?(bug|ticket)\b/i.test(t)
     || /\bknown (issue|bug)\b/i.test(t)
     || /\bwait (for|until) (the |a )?(dev|fix|team|engineers)/i.test(t)
     || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)

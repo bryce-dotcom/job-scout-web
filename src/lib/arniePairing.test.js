@@ -452,6 +452,22 @@ describe('he talks while he thinks', () => {
   it('and a new answer speaks from its own beginning', () => {
     expect(chat).toMatch(/resetSpeech\(\)/)
   })
+
+  it('stopping also silences the sentences still on their way', () => {
+    const stop = chat.slice(chat.indexOf('const handleStopSpeaking'))
+    expect(stop.slice(0, 500)).toMatch(/hushedRef\.current = true/)
+    expect(chat).toMatch(/if \(!voiceOn \|\| hushedRef\.current\) return/)
+  })
+
+  it('the Stop button lasts the whole answer, not one sentence', () => {
+    // Live, 2026-10-14: Stop vanished six seconds into an eight-sentence
+    // answer, because `speaking` went false at the end of every clip.
+    const drain = chat.slice(chat.indexOf('const drainSpeech'), chat.indexOf('const speakAsItArrives'))
+    expect(drain).toMatch(/if \(streamDoneRef\.current\) setSpeaking\(false\)/)
+    // The per-sentence end hands straight on to the next — no setSpeaking(false).
+    const perSentence = drain.slice(drain.indexOf('speak(next'))
+    expect(perSentence).not.toMatch(/setSpeaking\(false\)/)
+  })
 })
 
 describe('the button can no longer fail in silence', () => {

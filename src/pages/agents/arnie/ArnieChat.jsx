@@ -457,12 +457,29 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   // The last thing said OUT LOUD, to compare the microphone against. Only
   // what was actually spoken can come back as an echo.
   const lastSpokenRef = useRef('')
+  // "Stop" means the rest of THIS answer, including sentences still arriving.
+  // Clearing the queue alone let the next streamed sentence start a moment
+  // later, as if the button had not been pressed.
+  const hushedRef = useRef(false)
+  // Has the answer finished arriving? Until it has, an empty queue is only a
+  // pause between sentences, not the end of speaking.
+  const streamDoneRef = useRef(true)
 
   /** Play the next sentence; the mic comes back only when the queue empties. */
   const drainSpeech = useCallback(() => {
     if (speakingLockRef.current) return
     const next = speechQueue.current.shift()
-    if (!next) { resumeMic(); return }
+    if (!next) {
+      // THE STOP BUTTON FOLLOWS THE WHOLE ANSWER, NOT ONE SENTENCE.
+      // Each sentence is its own clip, fetched while the last one plays, and
+      // `speaking` used to drop to false at the end of every one of them —
+      // so Stop vanished between sentences and was gone by the time anyone
+      // reached for it. Found live on Bryce's account, 2026-10-14: Stop
+      // disappeared six seconds into an eight-sentence answer.
+      if (streamDoneRef.current) setSpeaking(false)
+      resumeMic()
+      return
+    }
     speakingLockRef.current = true
     // Keep what was actually spoken, to compare the microphone against.
     lastSpokenRef.current = `${lastSpokenRef.current} ${next}`.slice(-4000)
@@ -470,7 +487,6 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       () => setSpeaking(true),
       () => {
         speakingLockRef.current = false
-        setSpeaking(false)
         drainSpeech()
       },
     )
@@ -485,7 +501,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
    * arrives. `final` flushes whatever is left when the stream ends.
    */
   const speakAsItArrives = useCallback((full, final = false) => {
-    if (!voiceOn) return
+    if (!voiceOn || hushedRef.current) return
+    if (final) {
+      streamDoneRef.current = true
+      // Nothing left to say and nothing playing: the answer is over.
+      if (!speakingLockRef.current && !speechQueue.current.length && !String(full || '').slice(spokenUpTo.current).trim()) setSpeaking(false)
+    }
     const fresh = String(full || '').slice(spokenUpTo.current)
     if (!fresh) return
     let cut = 0
@@ -499,6 +520,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     spokenUpTo.current += cut
     if (!chunk) return
     speechQueue.current.push(chunk)
+    // Stop shows from the moment there is something to say — including the
+    // second or so while the first clip downloads, which is exactly when
+    // someone who did not want the answer read aloud reaches for it.
+    setSpeaking(true)
     drainSpeech()
   }, [voiceOn, drainSpeech])
 
@@ -506,11 +531,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     speechQueue.current = []
     spokenUpTo.current = 0
     lastSpokenRef.current = ''
+    hushedRef.current = false
+    streamDoneRef.current = false
   }, [])
 
   const handleStopSpeaking = () => {
     // Everything queued, not just what is playing — otherwise "stop" stops
-    // one sentence and the next starts a moment later.
+    // one sentence and the next starts a moment later. And everything still
+    // to ARRIVE in this answer, for the same reason.
+    hushedRef.current = true
     speechQueue.current = []
     stopSpeaking()
     speakingLockRef.current = false
@@ -812,8 +841,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     } catch (err) {
       console.error('Arnie error:', err)
       const errText = err.message?.includes('API key') || err.message?.includes('ANTHROPIC')
-        ? 'Ye gawds! The API key ain\'t set up yet, kid. Tell your admin to check the Supabase secrets.'
-        : `Ay, something went sideways. ${err.message || 'Unknown error'}. Try again, boss.`
+        // Plain words: this line is said by whichever assistant they chose,
+        // and Arnie's "Ye gawds… kid" in Jenny's mouth is the wrong-persona
+        // bug all over again.
+        ? 'The AI key is not set up yet. Ask your admin to check the Supabase secrets.'
+        : `Something went wrong: ${err.message || 'unknown error'}. Try that again.`
       setMessages(prev => prev.map(m =>
         m.id === assistantId ? { ...m, content: errText } : m
       ))
@@ -821,6 +853,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     } finally {
       setLoading(false)
       sendingRef.current = false
+      // However the turn ended, it has finished arriving — so an empty queue
+      // now really does mean done, and Stop can go.
+      streamDoneRef.current = true
+      if (!speakingLockRef.current && !speechQueue.current.length) setSpeaking(false)
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
     // assistant.personaRow is in here because it arrives AFTER the first
@@ -1093,7 +1129,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               margin: '0 2px 18px', fontSize: 12, color: dark.textMuted, textAlign: 'left',
             }}>
               <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: dark.textMuted }}>
-                Also reach him
+                Also reach {assistant.name}
               </span>
               {textNumber && (
                 <a href={`sms:${textNumber.raw}`} style={{ color: dark.textSecondary, textDecoration: 'none' }}>
@@ -1103,7 +1139,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               <a href={`mailto:${ARNIE_EMAIL}`} style={{ color: dark.textSecondary, textDecoration: 'none' }}>
                 {ARNIE_EMAIL}
               </a>
-              <span>or say &ldquo;every weekday at 7am, text me which rocks are off track&rdquo; and he sets up the routine</span>
+              <span>or say &ldquo;every weekday at 7am, text me which rocks are off track&rdquo; and it becomes a routine</span>
             </div>
             {/* Left, with the rest of it. Centred chips under a left-aligned
                 panel was the last thing still floating. */}
