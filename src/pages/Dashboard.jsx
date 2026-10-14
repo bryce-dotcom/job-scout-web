@@ -711,6 +711,15 @@ export default function Dashboard() {
       onClick={onClick}
       title={hint || ''}
       style={{
+        // One tile per row on a phone; otherwise at least 220px and share
+        // the line equally, growing to fill a part-empty last row.
+        flex: isMobile ? '1 1 100%' : '1 1 220px',
+        // A flex item defaults to min-width:auto and will not shrink below
+        // its content — a long currency string would push the row wider
+        // than the page, which is the clipping bug all over again.
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
         backgroundColor: theme.bgCard,
         borderRadius: '12px',
         border: `1px solid ${theme.border}`,
@@ -1008,7 +1017,10 @@ export default function Dashboard() {
 
       {/* ═══ Row 1: Key Metrics ═══ */}
       {prefs.metrics.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', alignItems: 'stretch',
+          gap: '16px', marginBottom: '24px',
+        }}>
           {prefs.metrics.map(id => {
             const def = METRIC_DEFS.find(m => m.id === id)
             if (!def) return null
