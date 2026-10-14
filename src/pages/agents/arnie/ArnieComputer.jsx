@@ -16,11 +16,12 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import {
   Monitor, ShieldCheck, Ban, Eye, MousePointerClick, Keyboard, Plus, Trash2,
-  AlertTriangle, Power, GraduationCap, RefreshCw, Download, Sparkles,
+  AlertTriangle, Power, GraduationCap, RefreshCw, Download, Sparkles, Check,
 } from 'lucide-react'
 import { myComputer, myGrants, myOffers, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import MachinePanel from './MachinePanel'
+import ScoutLoader from '../../../components/ScoutLoader'
 import { useRelease, agentIsStale, releaseBase } from '../../../lib/agentRelease'
 import { whatArnieCanDo, stateLabel, NEVER, READY } from '../../../lib/arnieCanDo'
 import { computerState, describeAction } from '../../../lib/agentStatus'
@@ -93,6 +94,9 @@ export default function ArnieComputer() {
   // Set when the permission just allowed is overridden by a narrower one
   // already in force on the same program.
   const [narrower, setNarrower] = useState(null)
+  // Somebody has downloaded the agent and is watching for it to appear.
+  // Twenty seconds is a long time to stare at nothing.
+  const [waiting, setWaiting] = useState(false)
 
   const load = useCallback(async () => {
     if (!employeeId) return
@@ -111,9 +115,9 @@ export default function ArnieComputer() {
   // keep up. Idle sessions do not need a poll every three seconds.
   useEffect(() => {
     const live = data.session?.status === 'live'
-    const id = setInterval(load, live ? 4000 : 20000)
+    const id = setInterval(load, live ? 4000 : waiting ? 2000 : 20000)
     return () => clearInterval(id)
-  }, [load, data.session?.status])
+  }, [load, data.session?.status, waiting])
 
   const status = useMemo(() => computerState({ session: data.session, latest: data.latest, actions: data.actions }), [data])
   // 'idle' means both "no computer at all" and "connected, nothing happening",
@@ -157,7 +161,7 @@ export default function ArnieComputer() {
     <div style={{ maxWidth: 940, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 18 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 9 }}>
-          <Monitor size={20} style={{ color: t.accent }} /> Arnie on your computer
+          <Monitor size={20} style={{ color: t.accent }} /> {who} on your computer
         </h2>
         <p style={{ margin: '5px 0 0', fontSize: 13.5, color: t.sub, lineHeight: 1.55 }}>
           Only the programs you have allowed here can be touched, a password is never typed,
@@ -181,12 +185,13 @@ export default function ArnieComputer() {
         busy={busy}
         onRefresh={load}
         onStop={doStop}
+        connecting={showConnect}
         onGetAgent={() => setShowConnect((v) => !v)}
       />
 
       {(showConnect || !data.session) && (
         <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: '4px 16px 16px', marginBottom: 14 }}>
-          <GetTheAgent />
+          <GetTheAgent who={who} connected={!!data.session && data.session.status === 'live'} onWaiting={setWaiting} />
         </section>
       )}
 
@@ -214,7 +219,7 @@ export default function ArnieComputer() {
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ShieldCheck size={17} style={{ color: t.accent }} /> What Arnie may touch
+            <ShieldCheck size={17} style={{ color: t.accent }} /> What {who} may touch
           </h3>
           <button onClick={() => setAdding((v) => !v)} style={btn(t.card2, t.sub)}>
             <Plus size={14} /> Allow a program
@@ -223,7 +228,7 @@ export default function ArnieComputer() {
 
         {!grants.length && !adding && (
           <p style={{ margin: 0, fontSize: 13, color: t.muted }}>
-            Nothing yet — so Arnie can do nothing at all on your computer. Allow one program to start.
+            Nothing yet — so {who} can do nothing at all on your computer. Allow one program to start.
           </p>
         )}
 
@@ -329,13 +334,13 @@ export default function ArnieComputer() {
       {connected && (
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <GraduationCap size={17} style={{ color: t.accent }} /> Teach Arnie a task
+          <GraduationCap size={17} style={{ color: t.accent }} /> Teach {who} a task
         </h3>
         <p style={{ margin: '0 0 10px', fontSize: 13, color: t.sub, lineHeight: 1.55 }}>
           Do a job once with the recorder on and he writes the steps down. You read them back in plain
           English and fix what he misunderstood before it is ever used on a real customer.
         </p>
-        <TeachButton employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
+        <TeachButton who={who} employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
       </section>
       )}
 
@@ -346,7 +351,7 @@ export default function ArnieComputer() {
           decision is what you scan, so it leads. */}
       {data.actions.length > 0 && (
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink }}>What Arnie has done</h3>
+        <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink }}>What {who} has done</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12.5, color: t.muted }}>
           Refusals are listed too — if he tried something he was not allowed to do, it is here.
         </p>
@@ -412,7 +417,7 @@ function WhatHeCanDo({ who = 'Arnie', connected, platform, grants, skills, canRe
   return (
     <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
       <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Sparkles size={17} style={{ color: t.accent }} /> What Arnie can do here
+        <Sparkles size={17} style={{ color: t.accent }} /> What {who} can do here
       </h3>
       <p style={{ margin: '0 0 12px', fontSize: 12.5, color: t.muted }}>
         {blocked === 0
@@ -498,7 +503,7 @@ const Step = ({ n, title, children }) => (
   </div>
 )
 
-function GetTheAgent() {
+function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
   // WHY THIS IS NOT JUST AN <a download>.
   //
   // It was, and Alayda clicked it and nothing happened at all — no file, no
@@ -513,6 +518,8 @@ function GetTheAgent() {
   // not that this always succeeds — it is that it can no longer fail in
   // silence: a refusal now says so and offers the command instead.
   const [dl, setDl] = useState('idle')   // idle | working | done | blocked
+  // The caveats, folded away until asked for or until something goes wrong.
+  const [help, setHelp] = useState(false)
 
   const grab = async (name) => {
     setDl('working')
@@ -532,8 +539,10 @@ function GetTheAgent() {
       // to outlive the click.
       setTimeout(() => URL.revokeObjectURL(url), 20000)
       setDl('done')
+      onWaiting?.(true)
     } catch {
       setDl('blocked')
+      onWaiting?.(false)
     }
   }
 
@@ -561,8 +570,13 @@ function GetTheAgent() {
   const other = pick(mac ? 'windows' : 'mac')
   const file = mine.name
 
+  // Connected while this panel was open — the moment worth showing. Without
+  // it the flow just stops: you run the file, something happens somewhere,
+  // and you go looking for whether it worked.
+  const arrived = connected && dl !== 'idle'
+
   return (
-    <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 14 }}>
+    <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 16 }}>
       {phone && (
         <div style={{
           background: t.amberBg, color: t.amber, borderRadius: 9, padding: '10px 12px',
@@ -573,95 +587,143 @@ function GetTheAgent() {
             {/* The old wording here was "Arnie works on a computer", on a
                 phone. Read on a phone that says he does not work on phones —
                 which is the opposite of true, and is exactly how somebody
-                concluded the whole thing was useless. He works fully here.
-                What needs a computer is the small program that gives him
-                HANDS on that computer, and nothing can install that from a
-                phone. Everything after it — allowing him, watching him,
-                stopping him — is done from here. */}
-            Arnie works fully on this phone. The one thing that needs a computer is the
-            small program that lets him work <em>inside</em> the programs on it — that has to be
-            downloaded there. After that you run him from here: you allow things, watch what
-            he does and stop him, all from your phone.
+                concluded the whole thing was useless. */}
+            {who} works fully on this phone. The one thing that needs a computer is the
+            small program that lets {who} work <em>inside</em> the programs on it — that has to be
+            downloaded there. After that you run it from here: you allow things, watch what
+            happens and stop it, all from your phone.
           </span>
         </div>
       )}
 
-      <Step n={1} title={`Download it${mac ? '' : ' on that computer'}`}>
-        One small file. It is what starts the agent and keeps it up to date, so keep it
-        somewhere you can find it again — the desktop is fine.
-        <div style={{ marginTop: 9, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => grab(file)} disabled={dl === 'working'} style={btn(t.accent, '#fff')}>
-            <Download size={14} /> {dl === 'working' ? 'Fetching…' : (mac ? 'Download for Mac' : 'Download for Windows')}
-          </button>
-          <a
-            href={`${base}/${encodeURIComponent(other.name)}`}
-            download
-            style={{ ...btn(t.card2, t.sub), textDecoration: 'none' }}
+      {arrived ? (
+        // ── It worked ─────────────────────────────────────────────────────
+        <div style={{
+          display: 'flex', gap: 11, alignItems: 'flex-start',
+          background: t.addBg, border: `1px solid ${t.add}`, borderRadius: 11, padding: '13px 15px',
+        }}>
+          <Check size={18} style={{ color: t.add, flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 650, color: t.ink }}>Connected.</div>
+            <div style={{ fontSize: 13, color: t.sub, lineHeight: 1.55, marginTop: 3 }}>
+              {who} has hands on that computer. Ask for something in a program and the one
+              permission it needs comes back here for you to allow.
+            </div>
+          </div>
+        </div>
+      ) : dl === 'done' ? (
+        // ── Downloaded, waiting for it to call home ───────────────────────
+        // The whole point of this state. The file is on their machine and the
+        // next move is theirs, so it says the one thing to do and then shows,
+        // live, that we are listening for it.
+        <div style={{ textAlign: 'center', padding: '6px 0 2px' }}>
+          <ScoutLoader label="Waiting for your computer…" size={56} />
+          <div style={{ fontSize: 13.5, color: t.ink, fontWeight: 600, marginTop: 10 }}>
+            Open <strong>{file}</strong> from your Downloads
+          </div>
+          <div style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.55, marginTop: 5, maxWidth: 420, margin: '5px auto 0' }}>
+            A window opens and a browser tab asks “Connect this computer?”. Press Connect —
+            nothing to type, nothing to copy. This page will say so the moment it lands.
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+            <button onClick={() => { setDl('idle'); setHelp(true) }} style={btn(t.card2, t.sub)}>
+              Nothing happened
+            </button>
+          </div>
+        </div>
+      ) : (
+        // ── The offer ─────────────────────────────────────────────────────
+        // One action, their platform, no caveats in front of it. Everything
+        // that might go wrong is one line below, folded away: leading with
+        // the warnings is what made this read as something cobbled together.
+        <>
+          <div style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.55, marginBottom: 12 }}>
+            One small file, on the computer you want {who} to work on. It starts the agent
+            and keeps it up to date — put it somewhere you will find it again.
+          </div>
+
+          <button
+            onClick={() => grab(file)}
+            disabled={dl === 'working'}
+            style={{
+              ...btn(t.accent, '#fff'),
+              width: '100%', justifyContent: 'center', minHeight: 46,
+              fontSize: 14.5, fontWeight: 650, borderRadius: 11,
+            }}
           >
-            {mac ? 'Windows version' : 'Mac version'}
-          </a>
-        </div>
-        <div style={{ fontSize: 12, color: t.muted, marginTop: 8, lineHeight: 1.5 }}>
-          {mine.signed
-            // A signed build is the whole point of signing: nothing to warn
-            // about, so nothing is said. Warning people about a box that will
-            // not appear teaches them to expect trouble.
-            ? 'It is signed by Hollow Hills Holdings, so it opens normally.'
-            : <>
-              Your browser will ask whether to keep it, because it is a program rather than a
-              document. Keep it. {mac
-                ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
-                : 'Windows may also show a blue "protected your PC" box — choose More info, then Run anyway.'}
-            </>}
-        </div>
+            {dl === 'working'
+              ? <>Fetching…</>
+              : <><Download size={16} /> {mac ? 'Download for Mac' : 'Download for Windows'}</>}
+          </button>
 
-        {/* THE ONE THAT CANNOT BE BLOCKED.
-            Nobody at this company has ever completed a connect, and one
-            person reported clicking the button and nothing happening.
-            Browsers quietly refuse to keep a downloaded .cmd — Chrome marks
-            it dangerous and the file never lands — which looks exactly like
-            "nothing happened". A command is text, so nothing can block it,
-            and on a locked-down work machine it is often the only way in. */}
-        {/* Whatever happened, it is said. The old failure mode was silence,
-            which a person can only read as "the button is broken". */}
-        {dl === 'done' && (
-          <div style={{ fontSize: 12.5, color: t.add, marginTop: 8, lineHeight: 1.5 }}>
-            Saved — look in your Downloads folder for <strong>{file}</strong>, and open it.
-            Nothing there? Your browser may have removed it; use the command below.
+          <div style={{
+            display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap',
+            marginTop: 10, fontSize: 12.5,
+          }}>
+            <a
+              href={`${base}/${encodeURIComponent(other.name)}`}
+              download
+              style={{ color: t.muted, textDecoration: 'underline' }}
+            >
+              {mac ? 'I need the Windows one' : 'I need the Mac one'}
+            </a>
+            <button
+              onClick={() => setHelp((v) => !v)}
+              style={{ background: 'none', border: 0, padding: 0, color: t.muted, textDecoration: 'underline', cursor: 'pointer', font: 'inherit', fontSize: 12.5 }}
+            >
+              What to expect
+            </button>
           </div>
-        )}
-        {dl === 'blocked' && (
-          <div style={{ fontSize: 12.5, color: t.amber, marginTop: 8, lineHeight: 1.5 }}>
-            Your browser would not keep that file. That is common on a work computer and it is
-            not something you did — use the command below instead.
-          </div>
-        )}
-        {!mine.signed && !mac && <PasteInstead open={dl === 'blocked'} />}
-      </Step>
 
-      <Step n={2} title="Open it">
-        A black window appears and a browser tab opens asking “Connect this computer?”.
-        Press Connect and you are done — nothing to type, nothing to copy. Leave the black
-        window open; closing it is how you stop Arnie on that machine.
-      </Step>
+          {dl === 'blocked' && (
+            <div style={{ fontSize: 12.5, color: t.amber, marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>
+              Your browser would not keep that file. That is common on a work computer and it
+              is not something you did — the command below does the same job.
+            </div>
+          )}
 
-      <div style={{
-        background: t.card2, borderRadius: 9, padding: '10px 12px', fontSize: 12.5,
-        color: t.sub, lineHeight: 1.55,
-      }}>
-        It connects outward only: nothing listens on the computer and no port is opened. The
-        first run installs what it needs, which takes a minute and never happens again.
-      </div>
+          {/* Folded away until asked for, or until something actually goes
+              wrong. These are all true and all worth knowing; none of them is
+              worth reading before you have decided to do it. */}
+          {(help || dl === 'blocked') && (
+            <div style={{
+              marginTop: 12, padding: '11px 13px', borderRadius: 10,
+              background: t.card2, fontSize: 12.5, color: t.sub, lineHeight: 1.6,
+            }}>
+              <div style={{ marginBottom: 7 }}>
+                {mine.signed
+                  // Signed is the whole point of signing: nothing to warn
+                  // about, so nothing is said. Warning somebody about a box
+                  // that will not appear teaches them to expect trouble.
+                  ? 'It is signed by Hollow Hills Holdings, so it opens normally.'
+                  : <>Your browser will ask whether to keep it, because it is a program rather than a
+                    document. Keep it. {mac
+                      ? 'The first time you open it, hold Control and click it, then choose Open — macOS only offers that choice on a first run.'
+                      : 'Windows may also show a blue “protected your PC” box — choose More info, then Run anyway.'}</>}
+              </div>
+              <div style={{ marginBottom: 7 }}>
+                Leave the window it opens running; closing it is how you stop {who} on that machine.
+              </div>
+              <div>
+                It connects outward only: nothing listens on the computer and no port is opened.
+                The first run installs what it needs, which takes a minute and never happens again.
+              </div>
+              {!mine.signed && !mac && <PasteInstead open={dl === 'blocked'} />}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
+
 
 /**
  * Teaching is one button here and the real work in the agent. The agent is the
  * only thing that can watch a screen, so this records an intent and the agent
  * picks it up on its next poll.
  */
-function TeachButton({ employeeId, companyId, session, onDone }) {
+function TeachButton({ who = 'Arnie', employeeId, companyId, session, onDone }) {
   const [outcome, setOutcome] = useState('')
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -697,7 +759,7 @@ function TeachButton({ employeeId, companyId, session, onDone }) {
       {open && (
         <div>
           <label style={{ display: 'block', fontSize: 13, color: t.ink, fontWeight: 600, marginBottom: 5 }}>
-            What will you be showing him?
+            What will you be showing {who}?
           </label>
           <input
             value={outcome} onChange={(e) => setOutcome(e.target.value)}

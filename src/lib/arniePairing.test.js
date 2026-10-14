@@ -463,9 +463,33 @@ describe('the button can no longer fail in silence', () => {
   })
 
   it('and every outcome is said out loud', () => {
-    expect(page).toMatch(/dl === 'done' &&/)
+    // A success now opens a live "waiting for your computer" panel rather
+    // than a line of text, so the flow does not just stop with the file in
+    // their Downloads and no idea whether it worked.
+    expect(page).toMatch(/dl === 'done' \? \(/)
+    expect(page).toMatch(/Waiting for your computer/)
     expect(page).toMatch(/dl === 'blocked' &&/)
     expect(page).toMatch(/would not keep that file/)
+  })
+
+  it('and the moment it connects is shown, not left to be discovered', () => {
+    // The old flow ended at "it is in your Downloads". You ran it, something
+    // happened somewhere, and you went looking for whether it had worked.
+    expect(page).toMatch(/const arrived = connected && dl !== 'idle'/)
+    expect(page).toMatch(/>Connected\.</)
+  })
+
+  it('the wait is polled fast enough to watch', () => {
+    // Twenty seconds is a long time to stare at a spinner that is not moving.
+    expect(page).toMatch(/live \? 4000 : waiting \? 2000 : 20000/)
+    expect(page).toMatch(/onWaiting\?\.\(true\)/)
+  })
+
+  it('the caveats are folded away until they are wanted', () => {
+    // Leading with "your browser will block this, Windows will warn you, a
+    // black window appears" is what made the whole thing read as a bodge.
+    expect(page).toMatch(/What to expect/)
+    expect(page).toMatch(/\{\(help \|\| dl === 'blocked'\) && \(/)
   })
 
   it('a refusal opens the fallback by itself', () => {

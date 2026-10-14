@@ -49,7 +49,7 @@ const ago = (iso) => {
 
 // `who` is the assistant's short name — this panel said "him" and "Arnie" to
 // people whose assistant is Jenny.
-export default function MachinePanel({ who = 'Arnie', session, status, connected, busy, outOfDate, onRefresh, onStop, onGetAgent }) {
+export default function MachinePanel({ who = 'Arnie', session, status, connected, busy, outOfDate, connecting = false, onRefresh, onStop, onGetAgent }) {
   const st = STATE[status?.state] || STATE.idle
   const live = session?.status === 'live'
 
@@ -177,7 +177,7 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
               gap: 8, background: c.sage, color: c.ink, border: 'none', borderRadius: 12,
               padding: '12px 14px', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', minHeight: 48,
             }}>
-              <Download size={16} /> Put {who} on this computer
+              <Download size={16} /> {connecting ? 'Hide the setup' : `Put ${who} on this computer`}
             </button>
           )}
           {/* It used to look identical whether it was working or ignoring
