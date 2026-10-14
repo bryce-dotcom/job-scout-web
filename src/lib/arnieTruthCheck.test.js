@@ -197,3 +197,33 @@ describe('the ways a card claim is actually phrased', () => {
     ]) expect(T.claimsACard(s), s).toBe(false)
   })
 })
+
+describe('blaming the app for a card he never made', () => {
+  // The excuse, not the claim — and the one that kept getting through. Arnie
+  // has no dev team to wait for: when something really is broken he files a
+  // ticket, which is a tool call. So "the approval card isn't showing, wait
+  // for the dev team" is him covering for a draft that was never made.
+  //
+  // It happened to Alayda, and then again out loud in front of Bryce hours
+  // after the first rail shipped — because that rail only recognised the
+  // CLAIM and never the excuse that follows it.
+  it('catches the excuse when nothing was drafted and nothing is pending', () => {
+    for (const s of [
+      "The approval card isn't showing — same bug as before. Wait for the dev team to fix it.",
+      "That's a known issue. Add it to the bug report.",
+      'The UI is broken, so you cannot approve it right now.',
+    ]) expect(T.fabricationIn(s, [], false), s).toBe('card')
+  })
+
+  it('leaves him alone when he ACTUALLY filed the ticket', () => {
+    // Filing one for a real fault is propose_create, so a turn that did it
+    // never reaches the check.
+    expect(T.fabricationIn("I'll file a ticket for that.", ['propose_create'], false)).toBeNull()
+  })
+
+  it('and does not fire on ordinary answers', () => {
+    for (const s of ['You have 3 open jobs.', 'Want me to draft that?']) {
+      expect(T.fabricationIn(s, [], false), s).toBeNull()
+    }
+  })
+})

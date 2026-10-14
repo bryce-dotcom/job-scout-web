@@ -90,6 +90,31 @@ export function claimsACard(text: string): boolean {
   return false
 }
 
+/**
+ * Does this text blame the app for something?
+ *
+ * The tell that matters most, and the one I kept missing. Arnie has no dev
+ * team to wait for — when something really is broken he files a ticket, which
+ * is a tool call. So "the approval card isn't showing, wait for the dev team
+ * to fix it" is, almost without exception, him covering for a card he never
+ * drafted: he invents the thing, the person cannot find it, and rather than
+ * check he blames the software and sends them away.
+ *
+ * It happened to Alayda yesterday and it was happening again, out loud, in
+ * front of Bryce, hours after I shipped a rail that was supposed to stop it —
+ * because that rail only recognised the claim, never the excuse.
+ */
+export function blamesTheApp(text: string): boolean {
+  const t = String(text || '')
+  if (!t) return false
+  return /\b(dev|development|engineering) team\b/i.test(t)
+    || /\b(file|submit|raise|add (it |this )?to) a? ?bug( report)?\b/i.test(t)
+    || /\bbug report\b/i.test(t)
+    || /\bknown (issue|bug)\b/i.test(t)
+    || /\bwait (for|until) (the |a )?(dev|fix|team|engineers)/i.test(t)
+    || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)
+}
+
 export type Fabrication = 'computer' | 'card'
 
 /**
@@ -143,6 +168,11 @@ export function fabricationIn(
 ): Fabrication | null {
   const names = new Set(used)
   if (claimsComputerWork(text) && !COMPUTER_TOOLS.some((n) => names.has(n))) return 'computer'
-  if (claimsACard(text) && !CARD_TOOLS.some((n) => names.has(n)) && cardPending === false) return 'card'
+  const noCardTool = !CARD_TOOLS.some((n) => names.has(n))
+  if (claimsACard(text) && noCardTool && cardPending === false) return 'card'
+  // Blaming the app, having drafted nothing and with nothing pending. Filing
+  // a ticket for a REAL fault is a tool call, so a turn that actually did
+  // that has propose_create in `used` and never reaches here.
+  if (blamesTheApp(text) && noCardTool && cardPending === false) return 'card'
   return null
 }
