@@ -47,6 +47,8 @@ import { selectPdfPages, pageIndicesFor, PAGES_FIRST } from '../lib/pdfPages'
 import { localDateStr } from '../lib/localDate'
 import { SUBMITTAL_METHODS, SUBMITTAL_METHOD_KEYS, logProblem, submittalRow } from '../lib/submittals'
 import { priorityOf, priorityValue, prioritiesFromSettings, NORMAL_PRIORITY } from '../lib/jobPriority'
+import { estimateLink, savePlan, propagateWarning, descriptionChanged } from '../lib/lineDescription'
+import { documentWord } from '../lib/documentVocabulary'
 import { toast } from '../lib/toast'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
@@ -361,6 +363,13 @@ function JobDetailInner() {
   // aren't done through the system, I am trying to accuratley track the
   // numbers" — the Scorecard only ever saw the ones attached here.
   const [loggedSubmittals, setLoggedSubmittals] = useState([])
+  // The estimate lines behind this job's lines, keyed by quote_lines.id, so
+  // a description edit can offer to change the estimate too. Empty for the
+  // ordinary job that never came from an estimate.
+  const [quoteLinesById, setQuoteLinesById] = useState({})
+  // A description edit waiting on the person's answer.
+  const [quoteDocsById, setQuoteDocsById] = useState({})
+  const [descPrompt, setDescPrompt] = useState(null)
   const [loggingSubmittal, setLoggingSubmittal] = useState(false)
   const [logForm, setLogForm] = useState({ submitted_at: localDateStr(new Date()), method: 'email', recipient: '', note: '' })
 
@@ -518,6 +527,32 @@ function JobDetailInner() {
         .order('id')
 
       setLineItems(lines || [])
+
+      // The estimate lines these came from, if any. Fetched by the ids the
+      // job lines already carry rather than by quote_id, so a line still
+      // resolves when the job has been re-pointed, and so a re-costed
+      // estimate (its lines are deleted and rebuilt) simply returns nothing
+      // and the edit quietly stops offering to propagate.
+      const qlIds = [...new Set((lines || []).map(l => l.quote_line_id).filter(Boolean))]
+      if (qlIds.length) {
+        const { data: qls } = await supabase
+          .from('quote_lines')
+          .select('id, quote_id, description')
+          .in('id', qlIds)
+        setQuoteLinesById(Object.fromEntries((qls || []).map(q => [q.id, q])))
+        // The parent documents, for their NUMBER and for what this company
+        // calls them — a tenant who sells by bid must not be warned about an
+        // 'estimate' they have never used the word for (lib/documentVocabulary).
+        const quoteIds = [...new Set((qls || []).map(q => q.quote_id).filter(Boolean))]
+        if (quoteIds.length) {
+          const { data: qs } = await supabase
+            .from('quotes').select('id, quote_id, document_type').in('id', quoteIds)
+          setQuoteDocsById(Object.fromEntries((qs || []).map(q => [q.id, q])))
+        }
+      } else {
+        setQuoteLinesById({})
+        setQuoteDocsById({})
+      }
 
       // Auto-calculate allotted time via the shared helper so JobDetail,
       // FieldScout, Payroll and bonusCalc all agree on one number.
@@ -1151,6 +1186,22 @@ function JobDetailInner() {
     await supabase.from('jobs').update(patch).eq('id', id)
   }
 
+  // Write a line description, and the estimate's copy of it when the person
+  // said so. lib/lineDescription decides WHAT to write; this performs it.
+  const applyDescription = async ({ line, text, link, alsoEstimate }) => {
+    const plan = savePlan({ line, text, link, alsoEstimate })
+    if (!plan.writes.length) return
+    for (const w of plan.writes) {
+      const { error } = await supabase.from(w.table).update({ description: w.description }).eq('id', w.id)
+      if (error) {
+        toast.error(`Could not save the description: ${error.message}`)
+        return
+      }
+    }
+    if (plan.reason === 'both') toast.success('Changed on the job and the estimate')
+    await fetchJobData()
+  }
+
   // Urgency, set in one click. No edit mode: the whole point is that a job
   // that just became urgent is marked while the phone is still warm.
   // Normal is written as NULL — lib/jobPriority#priorityValue is the rule.
@@ -1353,6 +1404,8 @@ function JobDetailInner() {
       const jobLines = quoteLines.map(ql => ({
         company_id: companyId,
         job_id: parseInt(id),
+        // Remember which estimate line this came from, same as the converter.
+        quote_line_id: ql.id,
         item_id: ql.item_id,
         quantity: ql.quantity,
         price: ql.price,
@@ -4934,10 +4987,14 @@ function JobDetailInner() {
                                   defaultValue={line.description || ''}
                                   onClick={(e) => e.stopPropagation()}
                                   onBlur={(e) => {
-                                    const val = e.target.value.trim()
-                                    if (val !== (line.description || '')) {
-                                      supabase.from('job_lines').update({ description: val }).eq('id', line.id).then(() => fetchJobData())
-                                    }
+                                    const val = e.target.value
+                                    if (!descriptionChanged(line.description, val)) return
+                                    // If this description came from an estimate the
+                                    // customer has read, changing it there is the
+                                    // person's call — ask before touching it.
+                                    const link = estimateLink(line, quoteLinesById[line.quote_line_id])
+                                    if (link) { setDescPrompt({ line, text: val, link }); return }
+                                    applyDescription({ line, text: val, link: null, alsoEstimate: false })
                                   }}
                                   onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }}
                                   style={{
@@ -7428,6 +7485,68 @@ function JobDetailInner() {
           </div>
         </>
       )}
+
+      {/* Changing a description the estimate wrote.
+          Asked, never assumed: the customer may have read that sentence, and
+          may have signed under it. The job always takes the edit; the estimate
+          only follows when they say so (lib/lineDescription). */}
+      {descPrompt && (() => {
+        const doc = quoteDocsById[descPrompt.link.quoteId]
+        const word = documentWord(doc)
+        const w = propagateWarning({ documentWord: word, reference: doc?.quote_id })
+        const close = () => setDescPrompt(null)
+        return (
+          <div
+            onClick={close}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 3000, backgroundColor: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: theme.bgCard, borderRadius: '14px', border: `1px solid ${theme.border}`,
+                padding: '20px', width: '100%', maxWidth: '440px', boxShadow: '0 16px 48px rgba(0,0,0,0.2)',
+              }}
+            >
+              <h3 style={{ margin: '0 0 8px', fontSize: '16px', fontWeight: 700, color: theme.text }}>
+                {w.title}
+              </h3>
+              <p style={{ margin: '0 0 12px', fontSize: '13px', color: theme.textSecondary, lineHeight: 1.5 }}>
+                {w.body}
+              </p>
+              <div style={{
+                fontSize: '12.5px', color: theme.text, backgroundColor: theme.bg,
+                border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '10px', marginBottom: '16px',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {descPrompt.text.trim() || <span style={{ color: theme.textMuted }}>(blank)</span>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={close}
+                  style={{ padding: '9px 14px', fontSize: '13px', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => { const p = descPrompt; close(); await applyDescription({ ...p, alsoEstimate: false }) }}
+                  style={{ padding: '9px 14px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', cursor: 'pointer', backgroundColor: 'transparent', color: theme.text, border: `1px solid ${theme.border}` }}
+                >
+                  {w.decline}
+                </button>
+                <button
+                  onClick={async () => { const p = descPrompt; close(); await applyDescription({ ...p, alsoEstimate: true }) }}
+                  style={{ padding: '9px 14px', fontSize: '13px', fontWeight: 700, borderRadius: '8px', cursor: 'pointer', backgroundColor: theme.accent, color: '#fff', border: 'none' }}
+                >
+                  {w.confirm}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Submittal Package Modal */}
       {showSubmittalModal && (

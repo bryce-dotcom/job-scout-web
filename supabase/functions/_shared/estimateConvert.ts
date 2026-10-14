@@ -348,7 +348,11 @@ export async function convertEstimate(r: Rest, companyId: number, quoteId: numbe
   // 3. The lines, then the photos that were on them.
   let linesCopied = 0
   if (plan.lines.length) {
-    const rows = plan.lines.map(({ _quote_line_id, job_line_id, ...l }) => ({ company_id: companyId, job_id: job.id, job_line_id: `JL-${job.id}-${job_line_id.slice(3)}`, ...l }))
+    // quote_line_id is PERSISTED now, not just used to re-point photos below.
+    // Without it the job line forgot which estimate line it came from the
+    // moment this function returned, so the job page had no way to offer
+    // "change this on the estimate too".
+    const rows = plan.lines.map(({ _quote_line_id, job_line_id, ...l }) => ({ company_id: companyId, job_id: job.id, job_line_id: `JL-${job.id}-${job_line_id.slice(3)}`, quote_line_id: _quote_line_id ?? null, ...l }))
     const lins = await fetch(`${r.url}/rest/v1/job_lines`, { method: 'POST', headers: { ...hdr(r), Prefer: 'return=representation' }, body: JSON.stringify(rows) })
     if (!lins.ok) warnings.push(`line items failed to copy: ${lins.status} ${await lins.text()}`)
     else {
