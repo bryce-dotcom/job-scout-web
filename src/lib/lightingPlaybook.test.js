@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseTakeoff, planEstimate, kindOf, playbookFor } from '../../supabase/functions/_shared/lightingPlaybook.ts'
+import { parseTakeoff, planEstimate, kindOf, playbookFor, templateProblems, compilePlaybook, ENERGY_SCOUT_TEMPLATE } from '../../supabase/functions/_shared/lightingPlaybook.ts'
 
 // HHH's live catalogue rows (company 3, type "Electrical Services (Bundles)"),
 // copied 2026-10-14. Prices are what the estimates below were built at.
@@ -147,10 +147,19 @@ describe('GMs keep the customer at $0, never more', () => {
     const p = plan([{ kind: 'cobra', qty: 1, existing_watts: 400 }], { rebateGiven: 10000 })
     expect(p.incentive).toBe(p.subtotal)
   })
-  it('Utah: no SRP numbers, so no GMs unless a rebate is given', () => {
+  it('Utah: RMP per new watt, capped at 75% of the project, and no GMs', () => {
+    // 4 cobras × 60W × $2.40 = $576 uncapped; 4 × $417 = $1,668 → cap $1,251.
     const p = plan([{ kind: 'cobra', qty: 4, existing_watts: 1000 }], { state: 'UT' })
-    expect(p.rebate).toBe(0)
-    expect(p.gm_note).toMatch(/Utah/)
+    expect(p.rebate).toBe(576)
+    expect(p.incentive).toBe(576)
+    expect(p.lines.filter((l) => l.role !== 'fixture')).toHaveLength(0)
+    expect(p.gm_note).toMatch(/Utah RMP pays at most 75%/)
+    // A big figure read off RMP's tool is still capped at 75%, and still no GMs.
+    const q = plan([{ kind: 'cobra', qty: 4, existing_watts: 1000 }], { state: 'UT', rebateGiven: 5000 })
+    expect(q.incentive).toBe(1251)
+    expect(q.out_of_pocket).toBe(417)
+    expect(q.lines.filter((l) => l.role !== 'fixture')).toHaveLength(0)
+    expect(q.assumptions.join(' ')).toMatch(/Cole: in Utah should GMs be added/)
   })
   it('a little room, not enough for one mount, says exactly that', () => {
     // Live on 10-14: $1.24 of room was reported as "does not cover more".
@@ -190,5 +199,42 @@ describe('reading the takeoff', () => {
     expect(playbookFor('"energy_scout_lighting"')?.business_unit).toBe('Energy Scout')
     expect(playbookFor('energy_scout_lighting')?.business_unit).toBe('Energy Scout')
     expect(playbookFor(null)).toBeNull()
+  })
+})
+
+describe("Cole's rules as a template other companies fill in", () => {
+  it('Energy Scout is a complete template, and the engine runs from it', () => {
+    expect(templateProblems(ENERGY_SCOUT_TEMPLATE)).toEqual([])
+  })
+  it('a second company is a settings row, not code', () => {
+    const acme = {
+      key: 'acme_lighting', name: 'Acme lighting', business_unit: 'Acme Energy', catalog_type: 'LED',
+      gm: { mount_price: 50, lift_product: 'LIFT HOUR', lift_hours_on: 1, lift_hours_off: 0 },
+      fixtures: {
+        cobra: { label: 'LED area light', from: 'HID area light', led: 75, product: { lift: 'Acme Area 75W Lift', no_lift: 'Acme Area 75W' }, mount: { default: 'Acme Slip Fitter' }, mount_rank: 0, rebate: 'per_watt_reduced', location: 'exterior', default_existing: 400 },
+      },
+    }
+    const pb = playbookFor(JSON.stringify(acme))
+    expect(pb?.business_unit).toBe('Acme Energy')
+    const cat = [
+      { id: 1, name: 'Acme Area 75W Lift', unit_price: 300, type: 'LED' },
+      { id: 2, name: 'Acme Slip Fitter', unit_price: 10, type: 'LED' },
+      { id: 3, name: 'LIFT HOUR', unit_price: 40, type: 'LED' },
+    ]
+    const items = parseTakeoff([{ kind: 'cobra', qty: 2, existing_watts: 400 }], pb)
+    const p = planEstimate(items, cat, { playbook: pb, rebateGiven: 2000 })
+    expect(p.lines[0]).toMatchObject({ item_name: 'Acme Area 75W Lift', quantity: 2, price: 300 })
+    expect(p.lines.find((l) => l.role === 'mount_gm')).toMatchObject({ item_name: 'Acme Slip Fitter', price: 50 })
+    expect(p.lines.find((l) => l.role === 'lift_gm')).toMatchObject({ quantity: 2, price: 40 })
+    // A kind its template does not cover is refused, not guessed.
+    expect(parseTakeoff([{ kind: 'flood', qty: 1 }], pb)).toMatch(/Acme lighting has no rule for flood/)
+  })
+  it('a half-filled template is not used at all', () => {
+    const bad = { key: 'x', name: 'X', business_unit: 'X', catalog_type: 'X', gm: { mount_price: 1, lift_product: 'L', lift_hours_on: 1, lift_hours_off: 1 }, fixtures: { cobra: { label: 'a', from: 'b', led: 60, rebate: 'whatever', location: 'exterior', product: { no_lift: 'p' } } } }
+    expect(templateProblems(bad)).toEqual(['fixtures.cobra: rebate must be per_watt_reduced, highbay_tier or none'])
+    expect(playbookFor(bad)).toBeNull()
+  })
+  it('compiled Energy Scout is the same engine the old rules were — Cole\'s estimates above still come out to the cent', () => {
+    expect(compilePlaybook(ENERGY_SCOUT_TEMPLATE).rules.cobra.product({ kind: 'cobra', qty: 1, location: 'exterior' }, true)).toBe('SMBE 60/80/100W Cobra Head LOW WATT')
   })
 })

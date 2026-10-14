@@ -58,7 +58,7 @@ export async function prepareSrpRebate(r: Rest, caller: Caller, f: Record<string
   const tk = q.takeoff
   const playbook = playbookFor(tk?.playbook)
   if (!tk || !playbook) return { ok: false, error: `${ref} was not built from a takeoff, so I do not know which fixtures are on a lift or how they mount. Set the GMs on the Estimates page, or ask me to rebuild it from the takeoff.` }
-  const items = parseTakeoff(tk.items)
+  const items = parseTakeoff(tk.items, playbook)
   if (typeof items === 'string') return { ok: false, error: `The takeoff saved on ${ref} no longer reads: ${items}` }
 
   const lines = await readRecordList(r, `quote_lines?select=${LINE_COLS}&company_id=eq.${companyId}&quote_id=eq.${q.id}&order=sort_order.asc&limit=500`)
@@ -67,7 +67,7 @@ export async function prepareSrpRebate(r: Rest, caller: Caller, f: Record<string
   const fixtureSubtotal = money(fixtures.reduce((s: number, l: Any) => s + (Number(l.line_total) || (Number(l.quantity) || 0) * (Number(l.price) || 0)), 0))
 
   const catalog = await readRecordList(r, `products_services?select=id,name,unit_price,type&company_id=eq.${companyId}&active=eq.true&type=eq.${encodeURIComponent(playbook.catalog_type)}&limit=3000`)
-  const plan = planEstimate(items, catalog, { rebateGiven: rebate, state: tk.state || null, fixtureSubtotal })
+  const plan = planEstimate(items, catalog, { rebateGiven: rebate, state: tk.state || null, fixtureSubtotal, playbook })
   if (!plan.ok) return { ok: false, error: plan.error }
   const newGms = plan.lines.filter((l) => l.role !== 'fixture')
 

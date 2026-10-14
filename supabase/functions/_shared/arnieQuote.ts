@@ -82,7 +82,7 @@ async function prepareTakeoffQuote(r: Rest, caller: Caller, f: Record<string, st
   const playbook = playbookFor(await playbookSetting(r, companyId))
   if (!playbook) return { ok: false, error: 'This company has no estimating playbook set up, so I cannot build from a takeoff. Give me the products as lines instead.' }
 
-  const items = parseTakeoff(f.takeoff)
+  const items = parseTakeoff(f.takeoff, playbook)
   if (typeof items === 'string') return { ok: false, error: items }
 
   // Who it is for: an existing lead or customer, or a new business.
@@ -133,7 +133,7 @@ async function prepareTakeoffQuote(r: Rest, caller: Caller, f: Record<string, st
   const state = (f.state && /^(az|ut|arizona|utah)$/i.test(f.state) ? (/^(az|arizona)$/i.test(f.state) ? 'AZ' : 'UT') : null) || stateOf(address, f.address)
   const catalog = await readRecordList(r, `products_services?select=id,name,unit_price,type&company_id=eq.${companyId}&active=eq.true&type=eq.${encodeURIComponent(playbook.catalog_type)}&limit=3000`)
   const rebateGiven = f.rebate ? Number(String(f.rebate).replace(/[$,\s]/g, '')) : null
-  const plan = planEstimate(items, catalog, { rebateGiven: Number.isFinite(rebateGiven as number) ? rebateGiven : null, state })
+  const plan = planEstimate(items, catalog, { rebateGiven: Number.isFinite(rebateGiven as number) ? rebateGiven : null, state, playbook })
   if (!plan.ok) return { ok: false, error: plan.error }
 
   const lines: IntakeLine[] = plan.lines.map((l) => ({

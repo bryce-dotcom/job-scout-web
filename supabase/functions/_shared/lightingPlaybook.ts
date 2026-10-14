@@ -113,107 +113,197 @@ interface FixtureRule {
 const SRP_EXTERIOR_PER_WATT = 0.75
 const srpHighBay = (reduced: number) => (reduced <= 0 ? 0 : reduced <= 250 ? 150 : reduced <= 400 ? 250 : 350)
 
-const tubeName = (lamps: number, base: string) => (lamps <= 1 ? base : base.replace(/^SMBE /, `SMBE ${lamps}L `))
-const liftName = (name: string, lift: boolean) => (lift ? `${name} w/ Lift` : name)
+// Utah — Rocky Mountain Power's Small/Medium Business Express, the table
+// Lenard's UT page uses: per NEW watt (exterior capped at 285 W a fixture),
+// and the incentive never more than 75% of the project. "Utah uses the same
+// concepts with Utah incentives" (Cole). An estimate, like SRP's.
+const RMP_EXTERIOR_PER_NEW_WATT = 2.40
+const RMP_INTERIOR_PER_NEW_WATT = 1.50
+const RMP_EXTERIOR_MAX_W = 285
+export const RMP_CAP = 0.75
+const rmpPerFixture = (led: number, location: 'exterior' | 'interior') =>
+  location === 'exterior' ? Math.min(led, RMP_EXTERIOR_MAX_W) * RMP_EXTERIOR_PER_NEW_WATT : led * RMP_INTERIOR_PER_NEW_WATT
 
-export const ENERGY_SCOUT: { key: string; name: string; business_unit: string; catalog_type: string; rules: Record<Kind, FixtureRule> } = {
+// ── THE TEMPLATE ───────────────────────────────────────────────────────────
+//
+// Phase 4 of the plan: "Cole's rules become the template other companies fill
+// in." A playbook is DATA — this shape — and compilePlaybook turns it into the
+// rules planEstimate runs. Energy Scout's is the first one filled in; another
+// company is a settings row (key estimating_playbook, value = its template as
+// JSON), not a code change. The utility programs (SRP, RMP) stay in code:
+// they are facts about the utility, not choices a company makes.
+
+export interface FixtureTemplate {
+  label: string
+  from: string
+  /** The LED watts: a number; or by the existing watts, [[up to, watts], …, [null, watts]]; or per lamp. */
+  led: number | { by_existing: [number | null, number][] } | { per_lamp: number; default_lamps: number }
+  /** The product, by name in the catalogue section. Tubes name it by lamp count with {n}. */
+  product: { lift?: string; no_lift: string } | { one_lamp: string; lamps: string; default_lamps: number }
+  mount?: { default: string; arm?: string }
+  mount_rank?: number
+  /** How the default program pays for it. */
+  rebate: 'per_watt_reduced' | 'highbay_tier' | 'none'
+  location: 'exterior' | 'interior'
+  never_lift?: boolean
+  default_height?: number
+  default_existing?: number
+  note?: string
+  note_below_existing?: [number, string]
+}
+
+export interface PlaybookTemplate {
+  key: string
+  name: string
+  business_unit: string
+  catalog_type: string
+  gm: { mount_price: number; lift_product: string; lift_hours_on: number; lift_hours_off: number }
+  fixtures: Partial<Record<Kind, FixtureTemplate>>
+}
+
+export const ENERGY_SCOUT_TEMPLATE: PlaybookTemplate = {
   key: 'energy_scout_lighting',
   name: 'Energy Scout lighting',
   business_unit: 'Energy Scout',
   catalog_type: 'Electrical Services (Bundles)',
-  rules: {
+  gm: { mount_price: 77, lift_product: 'ES LIFT', lift_hours_on: 2, lift_hours_off: 1 },
+  fixtures: {
     // "400W cobra or shoebox goes to a 60W LED cobra" — and 750W, and anything
     // over 750W, all go to 60W. A cobra marked "10" is a 400W.
     cobra: {
-      label: 'LED cobra head', from: 'MH cobra head / shoebox',
-      led: () => 60,
-      product: (_i, lift) => (lift ? 'SMBE 60/80/100W Cobra Head LOW WATT' : 'SMBE 60/80/100W Cobra Head LOW WATT w/o LIFT'),
-      mount: (i) => (/arm|flush/i.test(i.mount || '') ? 'MES Cobra Head Mount - Arm Fit' : 'MES Cobra Head Mount - Slip Fit'),
-      mountRank: 0,
-      rebate: (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT,
-      exteriorOnly: true,
-      defaultExisting: 400,
+      label: 'LED cobra head', from: 'MH cobra head / shoebox', led: 60,
+      product: { lift: 'SMBE 60/80/100W Cobra Head LOW WATT', no_lift: 'SMBE 60/80/100W Cobra Head LOW WATT w/o LIFT' },
+      mount: { default: 'MES Cobra Head Mount - Slip Fit', arm: 'MES Cobra Head Mount - Arm Fit' }, mount_rank: 0,
+      rebate: 'per_watt_reduced', location: 'exterior', default_existing: 400,
     },
     // 400W flood → 45W; 750W and over → 60W.
     flood: {
-      label: 'LED flood', from: 'MH flood',
-      led: (e) => (e > 400 ? 60 : 45),
-      product: (_i, lift) => liftName('SMBE 25/45/60W Flood', lift),
-      mount: () => 'MES Cobra Head Mount - Trunnion Fit',
-      mountRank: 1,
-      rebate: (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT,
-      exteriorOnly: true,
-      defaultExisting: 400,
+      label: 'LED flood', from: 'MH flood', led: { by_existing: [[400, 45], [null, 60]] },
+      product: { lift: 'SMBE 25/45/60W Flood w/ Lift', no_lift: 'SMBE 25/45/60W Flood' },
+      mount: { default: 'MES Cobra Head Mount - Trunnion Fit' }, mount_rank: 1,
+      rebate: 'per_watt_reduced', location: 'exterior', default_existing: 400,
     },
     // 400W wall pack → 30-40W. Set to 30: SRP pays per watt reduced, and the
     // TrakSmart step tests 30 against 40 and keeps whichever pays more.
     wall_pack: {
-      label: 'LED wall pack (set to 30W)', from: 'MH wall pack',
-      led: () => 30,
-      product: (_i, lift) => liftName('SMBE 10/20/30/40W Slim Cutoff Wall Pack', lift),
-      rebate: (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT,
-      exteriorOnly: true,
-      defaultExisting: 400,
-      assumption: (i) => ((i.existing_watts ?? 400) < 250
-        ? `The ${i.existing_watts}W wall pack is set to 30W like a 400W one — Cole's list only covers 400W wall packs.` : null),
+      label: 'LED wall pack (set to 30W)', from: 'MH wall pack', led: 30,
+      product: { lift: 'SMBE 10/20/30/40W Slim Cutoff Wall Pack w/ Lift', no_lift: 'SMBE 10/20/30/40W Slim Cutoff Wall Pack' },
+      rebate: 'per_watt_reduced', location: 'exterior', default_existing: 400,
+      note_below_existing: [250, 'The {w}W wall pack is set to 30W like a 400W one — Cole\'s list only covers 400W wall packs.'],
     },
     // "Mini 15W wall packs only for small security lights above doors" — 7-8 ft, no lift.
     mini_wall_pack: {
-      label: 'LED mini wall pack (set to 15W)', from: 'security light above a door',
-      led: () => 15,
-      product: () => 'SMBE 15/20/30W Mini Wallpack',
-      rebate: (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT,
-      exteriorOnly: true, neverLift: true, defaultHeight: 8, defaultExisting: 100,
+      label: 'LED mini wall pack (set to 15W)', from: 'security light above a door', led: 15,
+      product: { no_lift: 'SMBE 15/20/30W Mini Wallpack' },
+      rebate: 'per_watt_reduced', location: 'exterior', never_lift: true, default_height: 8, default_existing: 100,
     },
     // "dome goes to a 25W wall pack". The slim wall pack's settings are
     // 10/20/30/40, so 25 is set at the nearest step up.
     dome: {
-      label: 'LED wall pack (25W class, set to 30W)', from: 'MH dome',
-      led: () => 30,
-      product: (_i, lift) => liftName('SMBE 10/20/30/40W Slim Cutoff Wall Pack', lift),
-      rebate: (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT,
-      exteriorOnly: true, defaultExisting: 175,
-      assumption: () => 'A dome goes to "a 25W wall pack"; the slim wall pack steps are 10/20/30/40, so it is set to 30W.',
+      label: 'LED wall pack (25W class, set to 30W)', from: 'MH dome', led: 30,
+      product: { lift: 'SMBE 10/20/30/40W Slim Cutoff Wall Pack w/ Lift', no_lift: 'SMBE 10/20/30/40W Slim Cutoff Wall Pack' },
+      rebate: 'per_watt_reduced', location: 'exterior', default_existing: 175,
+      note: 'A dome goes to "a 25W wall pack"; the slim wall pack steps are 10/20/30/40, so it is set to 30W.',
     },
     // "high bays up to 400W go to a 60W LED high bay"; 750W high bays too.
     high_bay: {
-      label: 'LED high bay (set to 60W)', from: 'MH high bay',
-      led: () => 60,
-      product: () => 'SMBE 50/60/70/90/110W Highbay - 2ft',
-      rebate: (e, l) => srpHighBay(e - l),
-      interiorOnly: true, defaultExisting: 400,
+      label: 'LED high bay (set to 60W)', from: 'MH high bay', led: 60,
+      product: { no_lift: 'SMBE 50/60/70/90/110W Highbay - 2ft' },
+      rebate: 'highbay_tier', location: 'interior', default_existing: 400,
     },
     // "6-lamp T5s go to a full high bay" (it pays more than tubes).
     t5_high_bay: {
-      label: 'LED high bay (set to 60W)', from: 'T5HO high bay',
-      led: () => 60,
-      product: () => 'SMBE 50/60/70/90/110W Highbay - 2ft',
-      rebate: (e, l) => srpHighBay(e - l),
-      interiorOnly: true,
+      label: 'LED high bay (set to 60W)', from: 'T5HO high bay', led: 60,
+      product: { no_lift: 'SMBE 50/60/70/90/110W Highbay - 2ft' },
+      rebate: 'highbay_tier', location: 'interior',
     },
     // "T8s go to 4 ft LED tubes" — Type B, one kit per fixture by lamp count.
+    // SRP pays tubes as a re-lamp; only TrakSmart has that figure.
     t8_4ft: {
-      label: 'LED Type B tubes', from: '4 ft T8',
-      led: (_e, i) => 9 * (i.lamps || 2),
-      product: (i) => tubeName(i.lamps || 2, 'SMBE 9W 4FT T8 Type B Tube'),
-      // SRP pays tubes as a re-lamp; only TrakSmart has that figure.
-      rebate: () => 0,
-      interiorOnly: true,
+      label: 'LED Type B tubes', from: '4 ft T8', led: { per_lamp: 9, default_lamps: 2 },
+      product: { one_lamp: 'SMBE 9W 4FT T8 Type B Tube', lamps: 'SMBE {n}L 9W 4FT T8 Type B Tube', default_lamps: 2 },
+      rebate: 'none', location: 'interior',
     },
     t8_8ft: {
-      label: 'LED 8 ft tubes', from: '8 ft T8',
-      led: (_e, i) => 43 * (i.lamps || 1),
-      product: (i) => tubeName(i.lamps || 1, 'SMBE 43W 8ft Tube 40K').replace('SMBE 43W', 'SMBE 1L 43W'),
-      rebate: () => 0,
-      interiorOnly: true,
+      label: 'LED 8 ft tubes', from: '8 ft T8', led: { per_lamp: 43, default_lamps: 1 },
+      product: { one_lamp: 'SMBE 1L 43W 8ft Tube 40K', lamps: 'SMBE {n}L 43W 8ft Tube 40K', default_lamps: 1 },
+      rebate: 'none', location: 'interior',
     },
   },
 }
 
-const MOUNT_GM_PRICE = 77
-const LIFT_PRODUCT = 'ES LIFT'
-const LIFT_HOURS_ON = 2
-const LIFT_HOURS_OFF = 1
+/** A template that is missing what the engine needs, in words. Empty = usable. */
+export function templateProblems(t: Any): string[] {
+  const out: string[] = []
+  if (!t || typeof t !== 'object') return ['not a template']
+  for (const k of ['key', 'name', 'business_unit', 'catalog_type']) if (!String(t[k] || '').trim()) out.push(`${k} is missing`)
+  const gm = t.gm || {}
+  for (const k of ['mount_price', 'lift_hours_on', 'lift_hours_off']) if (!(Number(gm[k]) >= 0)) out.push(`gm.${k} must be a number`)
+  if (!String(gm.lift_product || '').trim()) out.push('gm.lift_product is missing')
+  const fx = t.fixtures || {}
+  if (!Object.keys(fx).length) out.push('no fixtures')
+  for (const [kind, f] of Object.entries(fx) as [string, Any][]) {
+    if (!(kind in KIND_LIST)) out.push(`fixtures.${kind}: not a fixture kind`)
+    if (!f?.label || !f?.from) out.push(`fixtures.${kind}: label and from are needed`)
+    if (!f?.product || !(f.product.no_lift || f.product.one_lamp)) out.push(`fixtures.${kind}: product is needed`)
+    if (!['per_watt_reduced', 'highbay_tier', 'none'].includes(f?.rebate)) out.push(`fixtures.${kind}: rebate must be per_watt_reduced, highbay_tier or none`)
+    if (!['exterior', 'interior'].includes(f?.location)) out.push(`fixtures.${kind}: location must be exterior or interior`)
+    const led = f?.led
+    if (!(typeof led === 'number' || Array.isArray(led?.by_existing) || Number(led?.per_lamp) > 0)) out.push(`fixtures.${kind}: led must be watts, by_existing, or per_lamp`)
+  }
+  return out
+}
+
+const KIND_LIST: Record<Kind, true> = { cobra: true, flood: true, wall_pack: true, mini_wall_pack: true, dome: true, high_bay: true, t5_high_bay: true, t8_4ft: true, t8_8ft: true }
+
+export interface CompiledPlaybook {
+  key: string; name: string; business_unit: string; catalog_type: string
+  gm: PlaybookTemplate['gm']
+  rules: Partial<Record<Kind, FixtureRule>>
+}
+
+/** A template, made runnable. */
+export function compilePlaybook(t: PlaybookTemplate): CompiledPlaybook {
+  const rules: Partial<Record<Kind, FixtureRule>> = {}
+  for (const [kind, f] of Object.entries(t.fixtures) as [Kind, FixtureTemplate][]) {
+    const ledOf = (existing: number, item: TakeoffItem): number => {
+      const l: Any = f.led
+      if (typeof l === 'number') return l
+      if (Array.isArray(l.by_existing)) {
+        for (const [upTo, w] of l.by_existing) if (upTo == null || existing <= upTo) return w
+        return l.by_existing[l.by_existing.length - 1][1]
+      }
+      return l.per_lamp * (item.lamps || l.default_lamps || 1)
+    }
+    const p: Any = f.product
+    rules[kind] = {
+      label: f.label,
+      from: f.from,
+      led: ledOf,
+      product: (item, lift) => p.one_lamp
+        ? ((item.lamps || p.default_lamps || 1) <= 1 ? p.one_lamp : String(p.lamps).replace('{n}', String(item.lamps || p.default_lamps)))
+        : (lift && p.lift ? p.lift : p.no_lift),
+      ...(f.mount ? { mount: (item: TakeoffItem) => (f.mount!.arm && /arm|flush/i.test(item.mount || '') ? f.mount!.arm! : f.mount!.default), mountRank: f.mount_rank ?? 9 } : {}),
+      rebate: f.rebate === 'per_watt_reduced'
+        ? (e, l) => Math.max(0, e - l) * SRP_EXTERIOR_PER_WATT
+        : f.rebate === 'highbay_tier' ? (e, l) => srpHighBay(e - l) : () => 0,
+      interiorOnly: f.location === 'interior',
+      exteriorOnly: f.location === 'exterior',
+      neverLift: f.never_lift === true,
+      defaultHeight: f.default_height,
+      defaultExisting: f.default_existing,
+      assumption: (item) => {
+        if (f.note) return f.note
+        const nb = f.note_below_existing
+        if (nb && (item.existing_watts ?? f.default_existing ?? 0) < nb[0]) return nb[1].replace('{w}', String(item.existing_watts))
+        return null
+      },
+    }
+  }
+  return { key: t.key, name: t.name, business_unit: t.business_unit, catalog_type: t.catalog_type, gm: t.gm, rules }
+}
+
+export const ENERGY_SCOUT: CompiledPlaybook = compilePlaybook(ENERGY_SCOUT_TEMPLATE)
 
 // ── Reading what the rep said ──────────────────────────────────────────────
 
@@ -232,14 +322,14 @@ const KIND_WORDS: [RegExp, Kind][] = [
 /** The kind, from an explicit value or the rep's words. */
 export function kindOf(raw: Any): Kind | null {
   const k = String(raw?.kind ?? '').toLowerCase().replace(/[\s-]+/g, '_')
-  if (k in ENERGY_SCOUT.rules) return k as Kind
+  if (k in KIND_LIST) return k as Kind
   const words = `${raw?.kind ?? ''} ${raw?.words ?? ''} ${raw?.fixture ?? ''}`.toLowerCase()
   for (const [re, kind] of KIND_WORDS) if (re.test(words)) return kind
   return null
 }
 
 /** Validate the takeoff JSON the model sends. A string is an error to show. */
-export function parseTakeoff(raw: unknown): TakeoffItem[] | string {
+export function parseTakeoff(raw: unknown, pb: CompiledPlaybook = ENERGY_SCOUT): TakeoffItem[] | string {
   let v: unknown = raw
   // The card stores raw fields JSON-encoded, so a list the model sent as a
   // string arrives encoded twice. Unwrap until it is not a string.
@@ -257,7 +347,8 @@ export function parseTakeoff(raw: unknown): TakeoffItem[] | string {
     // "A cobra head marked '10' is treated as 400W existing."
     if (/\b10\b/.test(String(o.marked ?? '')) && kind === 'cobra') existing = 400
     if (existing !== undefined && (!Number.isFinite(existing) || existing <= 0 || existing > 5000)) return `row ${i + 1}: existing watts "${o.existing_watts}" is not usable`
-    const rule = ENERGY_SCOUT.rules[kind]
+    const rule = pb.rules[kind]
+    if (!rule) return `row ${i + 1}: ${pb.name} has no rule for ${kind.replace(/_/g, ' ')} fixtures — build that line on the Estimates page`
     const loc = String(o.location ?? '').toLowerCase()
     const location: 'exterior' | 'interior' = rule.interiorOnly ? 'interior' : rule.exteriorOnly ? 'exterior' : (loc === 'interior' ? 'interior' : 'exterior')
     const lamps = o.lamps == null ? undefined : Number(o.lamps)
@@ -295,8 +386,12 @@ const MOUNT_TEXT: Record<string, string> = {
  * @param rebateGiven  the SRP rebate a rep read off TrakSmart, if they gave one
  *                     — it wins over the estimate, because it is the real one
  */
-export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { rebateGiven?: number | null; state?: string | null; fixtureSubtotal?: number | null } = {}): Plan | PlanError {
-  const pb = ENERGY_SCOUT
+export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { rebateGiven?: number | null; state?: string | null; fixtureSubtotal?: number | null; playbook?: CompiledPlaybook | null } = {}): Plan | PlanError {
+  const pb = opts.playbook || ENERGY_SCOUT
+  const MOUNT_GM_PRICE = pb.gm.mount_price
+  const LIFT_PRODUCT = pb.gm.lift_product
+  const LIFT_HOURS_ON = pb.gm.lift_hours_on
+  const LIFT_HOURS_OFF = pb.gm.lift_hours_off
   // Only the bundle section. A product of the same name elsewhere is not it.
   const book = catalog.filter((p) => !p.type || p.type === pb.catalog_type)
   const find = (name: string) => {
@@ -307,12 +402,14 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
   const lines: PlannedLine[] = []
   const assumptions: string[] = []
   let estimate = 0
+  let estimateUt = 0
   let unknownRebate = false
   const mounts: { product: string; qty: number; rank: number; height: number }[] = []
   let liftHours = 0
 
   for (const item of items) {
     const rule = pb.rules[item.kind]
+    if (!rule) return { ok: false, error: `${pb.name} has no rule for ${item.kind.replace(/_/g, ' ')} fixtures — build that line on the Estimates page.` }
     const existing = existingWatts(item, rule)
     if (existing == null) return { ok: false, error: `How many watts are the existing ${rule.from} fixtures? I need that to pick the replacement.` }
     const led = rule.led(existing, item)
@@ -338,7 +435,7 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     const desc = [
       `Replace ${what} with ${led}W ${rule.label.replace(/ \(.*\)$/, '')}.`,
       height ? `${height} ft off the ground, ${onLift ? 'lift' : 'no lift'}.` : 'Interior, no lift.',
-      mountProduct ? MOUNT_TEXT[mountProduct] || '' : '',
+      mountProduct ? MOUNT_TEXT[mountProduct] || `Mount: ${mountProduct}.` : '',
       item.area ? `Area: ${item.area}.` : '',
     ].filter(Boolean).join(' ')
 
@@ -347,6 +444,7 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     const per = rule.rebate(existing, led, item)
     if (per <= 0 && (item.kind === 't8_4ft' || item.kind === 't8_8ft')) unknownRebate = true
     estimate += per * item.qty
+    estimateUt += rmpPerFixture(led, item.location) * item.qty
     if (mountProduct) mounts.push({ product: mountProduct, qty: item.qty, rank: rule.mountRank ?? 9, height: height || 0 })
     liftHours += item.qty * (onLift ? LIFT_HOURS_ON : LIFT_HOURS_OFF)
     const a = rule.assumption?.(item)
@@ -361,14 +459,18 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     : money(lines.reduce((s, l) => s + l.quantity * l.price, 0))
   const rebateGiven = opts.rebateGiven != null && Number.isFinite(Number(opts.rebateGiven)) && Number(opts.rebateGiven) > 0 ? money(Number(opts.rebateGiven)) : null
   const ut = /^(ut|utah)$/i.test(String(opts.state || '').trim())
-  // Utah has its own incentives (RMP) — the same concepts, not these numbers.
-  const rebate = rebateGiven ?? (ut ? 0 : money(estimate))
+  // Utah has its own incentives: RMP's, per new watt, capped at 75%.
+  const rebate = rebateGiven ?? money(ut ? estimateUt : estimate)
   const rebateSource: 'given' | 'estimated' = rebateGiven != null ? 'given' : 'estimated'
 
   // ── GMs, keeping the customer at $0 ────────────────────────────────────
   // Room = what the rebate covers beyond the products. Mounts first (cobras
   // before floods), whole units; then the lift GM, all of its hours or none.
-  let room = money(rebate - productsSubtotal)
+  //
+  // NOT in Utah: RMP pays at most 75% of the project, so the customer always
+  // pays a quarter and a GM only raises what they pay. Cole's "$0 out of
+  // pocket" cannot hold there — a question for him, not a guess.
+  let room = ut ? 0 : money(rebate - productsSubtotal)
   const gmLines: PlannedLine[] = []
   let mountCount = 0
   const byProduct = new Map<string, { qty: number; height: number; rank: number }>()
@@ -400,19 +502,23 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
 
   const gmTotal = money(gmLines.reduce((s, l) => s + l.quantity * l.price, 0))
   const subtotal = money(productsSubtotal + gmTotal)
-  const incentive = money(Math.min(rebate, subtotal))
+  const incentive = money(Math.min(rebate, ut ? subtotal * RMP_CAP : subtotal))
 
-  const gmNote = rebate <= 0
-    ? (ut ? 'No GMs: Utah incentives come from RMP, and I have not got that figure — give me the rebate and I will add the GMs it allows.'
-      : 'No GMs: I have no rebate figure for these fixtures yet (tubes are priced by TrakSmart). Give me the SRP number and I will add the GMs it allows.')
+  const gmNote = ut
+    ? `No GMs: in Utah RMP pays at most ${Math.round(RMP_CAP * 100)}% of the project, so the customer pays at least a quarter and a GM would only add to it.`
+    : rebate <= 0
+    ? 'No GMs: I have no rebate figure for these fixtures yet (tubes are priced by TrakSmart). Give me the SRP number and I will add the GMs it allows.'
     : gmLines.length === 0
       ? (rebate > productsSubtotal
         ? `No GMs: the ${rebateSource === 'given' ? 'SRP rebate' : 'estimated rebate'} (${usd(rebate)}) leaves only ${usd(rebate - productsSubtotal)} past the fixtures — not enough for a $${MOUNT_GM_PRICE} mount or the lift hours.`
         : `No GMs: the ${rebateSource === 'given' ? 'SRP rebate' : 'estimated rebate'} (${usd(rebate)}) does not cover more than the fixtures (${usd(productsSubtotal)}).`)
       : `GMs added to keep the customer at $0: ${mountCount ? `${mountCount} mount${mountCount === 1 ? '' : 's'} at $77` : 'no mounts'}${liftAdded ? `, then ${liftHours} lift hours` : mounts.length ? ', no room left for the lift GM' : ''}.`
   if (rebateSource === 'estimated' && rebate > 0) {
-    assumptions.push(`The rebate is my ESTIMATE from SRP's small-business rates (${usd(rebate)}${unknownRebate ? ', tubes not counted' : ''}). TrakSmart gives the real one — read it to me and I will redo the GMs.`)
+    assumptions.push(ut
+      ? `The incentive is my ESTIMATE from RMP's Small/Medium Business Express rates (${usd(rebate)} uncapped, capped at ${Math.round(RMP_CAP * 100)}% of the project). RMP's own tool gives the real one.`
+      : `The rebate is my ESTIMATE from SRP's small-business rates (${usd(rebate)}${unknownRebate ? ', tubes not counted' : ''}). TrakSmart gives the real one — read it to me and I will redo the GMs.`)
   }
+  if (ut) assumptions.push('Cole: in Utah should GMs be added at all, given RMP never covers more than 75%? Until you say, I add none.')
 
   return {
     ok: true,
@@ -435,9 +541,19 @@ function usd(n: number) {
 }
 
 /** The playbook a company uses, from its settings value; null when none. */
-export function playbookFor(settingValue: unknown): typeof ENERGY_SCOUT | null {
+/**
+ * The playbook a company uses, from its settings value; null when none.
+ * Either the key of a built-in one ("energy_scout_lighting"), or a whole
+ * template of the company's own — which must pass templateProblems, or it is
+ * not used at all (a half-filled template building estimates would be worse
+ * than no playbook).
+ */
+export function playbookFor(settingValue: unknown): CompiledPlaybook | null {
   let v: unknown = settingValue
   if (typeof v === 'string') { try { v = JSON.parse(v) } catch { /* a bare key */ } }
-  const key = typeof v === 'string' ? v : (v as Any)?.key
-  return key === ENERGY_SCOUT.key ? ENERGY_SCOUT : null
+  if (typeof v === 'string') return v === ENERGY_SCOUT.key ? ENERGY_SCOUT : null
+  if (v && typeof v === 'object' && (v as Any).fixtures) {
+    return templateProblems(v).length ? null : compilePlaybook(v as PlaybookTemplate)
+  }
+  return (v as Any)?.key === ENERGY_SCOUT.key ? ENERGY_SCOUT : null
 }
