@@ -61,6 +61,7 @@ import { twilioConfigProblem, normalizeTwilioConfig, smsTestOutcome } from '../l
 import { smsTermsPath, smsTermsUrl } from '../lib/smsConsent'
 import { WALLETS } from '../lib/wallets'
 import { DOCUMENT_TYPES, DOCUMENT_TYPES_KEY, labelsFor, configFromSettings } from '../lib/documentVocabulary'
+import EstimatingPlaybookTab from './settings/EstimatingPlaybookTab'
 
 // Auto-format phone number as (XXX) XXX-XXXX while typing
 function formatPhoneInput(value) {
@@ -95,6 +96,8 @@ const baseTabs = [
   { id: 'tax', label: 'Payroll Tax / Compliance', icon: Building2 },
   { id: 'onboarding_docs', label: 'Onboarding Docs & Training', icon: FileStack },
   { id: 'estimate_packages', label: 'Good/Better/Best Packages', icon: Layers },
+  // How the assistant builds a lighting estimate from a spoken takeoff.
+  { id: 'estimating_playbook', label: 'Estimating Playbook', icon: FileStack },
   { id: 'billing', label: 'Subscription', icon: CreditCard },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Link2 }
@@ -694,6 +697,9 @@ export default function Settings() {
 
       case 'estimate_packages':
         return <EstimatePackagesTab theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
+
+      case 'estimating_playbook':
+        return <EstimatingPlaybookTab theme={theme} settings={settings} saveSetting={saveSetting} companyName={company?.company_name || company?.name} />
 
       case 'christmas_lighting':
         return <ChrisLightsSettings theme={theme} companyId={companyId} settings={settings} saveSetting={saveSetting} />
