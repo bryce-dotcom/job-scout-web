@@ -17,7 +17,8 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import useSmartBack from '../lib/useSmartBack'
 import { resolveMatLabSplit, splitLinePartsLabor, SUMMARY_ROW_LABELS } from '../lib/materialLaborSplit'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
-import { buildInvoiceSections, buildInvoicePages, deductionLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount } from '../lib/invoiceSections'
+import { buildInvoiceSections, buildInvoicePages, deductionLineLabel, invoiceDiscountBreakout, whoPaysWhat, invoiceUtilityName, lineAmount, invoiceCarriesIncentive } from '../lib/invoiceSections'
+import { DEDUCTION_KINDS, DEDUCTION_KIND_KEYS, describeDeduction, classifyProblem, classifyPatch, deductionKind } from '../lib/writeOff'
 import { recordUtilityPayment, reopenUtilityPayment, correctUtilityPaidAt } from '../lib/utilitySettlement'
 import { defaultUtilityProviderId } from '../lib/jobUtility'
 import { isLegacyNetShape, invoicePaymentStatus, invoiceCustomerTotal } from '../lib/arHelpers'
@@ -89,6 +90,9 @@ export default function InvoiceDetail() {
   const [savingBillTo, setSavingBillTo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // What the person is about to say this deduction was. Seeded from the
+  // invoice so an already-classified one opens on its own answer.
+  const [deductionDraft, setDeductionDraft] = useState({ kind: '', reason: '' })
   const [sendingReceipt, setSendingReceipt] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentData, setPaymentData] = useState({
@@ -265,6 +269,12 @@ export default function InvoiceDetail() {
 
     if (invoiceData) {
       setInvoice(invoiceData)
+      // Open the classifier on whatever was already recorded, so re-saving
+      // a reason does not silently blank the kind beside it.
+      setDeductionDraft({
+        kind: deductionKind(invoiceData) || '',
+        reason: invoiceData?.deduction_reason || '',
+      })
       setSendEmail(invoiceData.sent_to_email || invoiceData.customer?.email || '')
       setReceiptTo(invoiceData.sent_to_email || '')
 
@@ -2864,6 +2874,79 @@ ${CHANGE_INSTEAD}`)
               </button>
             </div>
           )}
+
+          {/* Why this deduction happened — Tracy's gift-vs-discount.
+              Internal only: the customer-facing line is still
+              deductionLineLabel's, and a utility incentive never asks, because
+              the customer never owed that money (lib/writeOff). */}
+          {(() => {
+            const carriesIncentive = invoiceCarriesIncentive(invoice, linkedUtilityInvoice, invoice.job)
+            const d = describeDeduction(invoice, { carriesIncentive })
+            if (!d || d.kind === 'incentive') return null
+            const unexplained = d.kind === null
+            return (
+              <div style={{
+                backgroundColor: theme.bgCard, borderRadius: '12px',
+                border: `1px solid ${unexplained ? '#eab308' : theme.border}`,
+                padding: '20px', marginBottom: '16px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: 0 }}>
+                    {formatCurrency(d.amount)} came off this invoice
+                  </h3>
+                  {!unexplained && (
+                    <span style={{
+                      padding: '2px 9px', borderRadius: '10px', fontSize: '11px', fontWeight: 700,
+                      backgroundColor: d.absorbed ? 'rgba(234,179,8,0.16)' : theme.accentBg,
+                      color: d.absorbed ? '#854d0e' : theme.accent,
+                    }}>{d.label}</span>
+                  )}
+                </div>
+                <p style={{ fontSize: '12.5px', color: theme.textMuted, margin: '0 0 12px', lineHeight: 1.5 }}>
+                  {unexplained
+                    ? 'Nothing records whether this was a price, or something the company gave away. Six months from now the difference is the whole story.'
+                    : (d.reason || 'No reason recorded.')}
+                </p>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select
+                    value={deductionDraft.kind}
+                    onChange={(e) => setDeductionDraft({ ...deductionDraft, kind: e.target.value })}
+                    style={{ padding: '7px 9px', fontSize: '13px', borderRadius: '7px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text }}
+                  >
+                    <option value="">What was it?</option>
+                    {DEDUCTION_KIND_KEYS.filter(k => k !== 'incentive').map(k => (
+                      <option key={k} value={k}>{DEDUCTION_KINDS[k].label}</option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="Why — in your own words"
+                    value={deductionDraft.reason}
+                    onChange={(e) => setDeductionDraft({ ...deductionDraft, reason: e.target.value })}
+                    style={{ flex: 1, minWidth: 180, padding: '7px 9px', fontSize: '13px', borderRadius: '7px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.text }}
+                  />
+                  <button
+                    onClick={async () => {
+                      const problem = classifyProblem(deductionDraft)
+                      if (problem) { toast.error(problem); return }
+                      const patch = classifyPatch(deductionDraft)
+                      const { error } = await supabase.from('invoices').update(patch).eq('id', invoice.id)
+                      if (error) { toast.error(`Could not save it: ${error.message}`); return }
+                      toast.success('Recorded')
+                      fetchInvoiceData()
+                    }}
+                    style={{ padding: '8px 14px', fontSize: '13px', fontWeight: 600, borderRadius: '7px', cursor: 'pointer', backgroundColor: theme.accent, color: '#fff', border: 'none' }}
+                  >
+                    Save
+                  </button>
+                </div>
+                {DEDUCTION_KINDS[deductionDraft.kind] && (
+                  <p style={{ fontSize: '11.5px', color: theme.textMuted, margin: '8px 0 0' }}>
+                    {DEDUCTION_KINDS[deductionDraft.kind].hint}
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Payments */}
           <div style={{
