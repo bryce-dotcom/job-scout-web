@@ -34,6 +34,9 @@ const t = {
   rm: '#b91c1c', rmBg: 'rgba(185,28,28,0.08)', amber: '#b45309', amberBg: 'rgba(180,83,9,0.10)',
 }
 
+// The same words the picker uses, for talking about a tier elsewhere.
+const TIER_LABEL = { watch: 'Watch only', click: 'Click, never type', full: 'Full' }
+
 const TIERS = [
   { id: 'watch', label: 'Watch only', icon: Eye, blurb: 'He can look at it. Nothing else.' },
   { id: 'click', label: 'Click, never type', icon: MousePointerClick, blurb: 'For anything where a stray keystroke would be worse than a click — a terminal, an editor.' },
@@ -87,6 +90,9 @@ export default function ArnieComputer() {
   const [showConnect, setShowConnect] = useState(false)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState({ app: '', host: '', tier: 'watch' })
+  // Set when the permission just allowed is overridden by a narrower one
+  // already in force on the same program.
+  const [narrower, setNarrower] = useState(null)
 
   const load = useCallback(async () => {
     if (!employeeId) return
@@ -131,7 +137,12 @@ export default function ArnieComputer() {
     if (!app) { setErr('Which program?'); return }
     setBusy(true); setErr('')
     try {
-      await addGrant({ app, host: draft.host.trim().toLowerCase() || '*', tier: draft.tier })
+      // The server splits a list into one grant per program and tells us if a
+      // NARROWER permission on the same program is already in force. That
+      // matters: the narrowest wins by design, so allowing Chrome at "do it"
+      // while an old "just watch" sits there looks like it did nothing.
+      const res = await addGrant({ app, host: draft.host.trim().toLowerCase() || '*', tier: draft.tier })
+      setNarrower(res?.narrower || null)
       setDraft({ app: '', host: '', tier: 'watch' }); setAdding(false); await load()
     } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
   }
@@ -240,12 +251,27 @@ export default function ArnieComputer() {
           )
         })}
 
+        {/* The narrowest permission on a program wins, so that an old "just
+            watch" can never be widened by accident. Correct, and baffling in
+            silence: you allow Chrome properly and nothing changes. */}
+        {narrower && (
+          <div style={{
+            marginTop: 10, padding: '10px 12px', borderRadius: 10,
+            background: t.amberBg, border: `1px solid ${t.amber}`,
+            fontSize: 12.5, color: t.ink, lineHeight: 1.5,
+          }}>
+            Allowed — but {narrower.map((n) => `${n.app} is also set to "${TIER_LABEL[n.tier] || n.tier}"`).join(', ')},
+            and the narrower one wins. Revoke that line above for the new permission to take effect.
+            <button onClick={() => setNarrower(null)} style={{ ...btn(t.card2, t.sub), marginLeft: 8 }}>Got it</button>
+          </div>
+        )}
+
         {adding && (
           <div style={{ borderTop: `1px solid ${t.line}`, marginTop: 10, paddingTop: 12 }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               <input
                 value={draft.app} onChange={(e) => setDraft({ ...draft, app: e.target.value })}
-                placeholder="Program (chrome, excel, outlook)"
+                placeholder="Program — chrome, excel, outlook (list several if you like)"
                 style={input} />
               <input
                 value={draft.host} onChange={(e) => setDraft({ ...draft, host: e.target.value })}

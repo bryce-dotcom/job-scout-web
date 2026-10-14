@@ -187,7 +187,7 @@ const live = (g: Grant, now: Date, forAction?: number | null): boolean => {
   return true
 }
 
-const TIER_RANK: Record<Tier, number> = { watch: 0, click: 1, full: 2 }
+export const TIER_RANK: Record<Tier, number> = { watch: 0, click: 1, full: 2 }
 
 /**
  * The least access that can do this kind of action, or null if no tier can.
@@ -355,4 +355,41 @@ export function hasExpired(row: { decision?: string; expires_at?: string | null 
   if (row.decision !== 'needs_approval' && row.decision !== 'needs_grant') return false
   if (!row.expires_at) return false
   return new Date(row.expires_at) <= now
+}
+
+/**
+ * What somebody typed into "which program?" → the app names to grant.
+ *
+ * A grant only works if its name is EXACTLY the name an action carries
+ * (grantFor compares `g.app.toLowerCase() === a.app.toLowerCase()`). The box
+ * that collects it is free text, so Bryce typed "chrome, google suite, exel,
+ * windows" and got ONE grant, named all of that, which could never match
+ * anything. It sat there at tier 'full' looking like permission and doing
+ * nothing — the same silent-no-op shape as the rest of today.
+ *
+ * So: a list becomes a list. Obvious spellings of the programs the agent can
+ * actually launch are corrected, because "exel" is not ambiguous. Anything
+ * else is left exactly as typed — a tenant's own web app is a legitimate name
+ * and guessing at it would be worse than leaving it alone.
+ */
+const APP_ALIAS: Record<string, string> = {
+  'exel': 'excel', 'excell': 'excel', 'ms excel': 'excel', 'microsoft excel': 'excel',
+  'google chrome': 'chrome', 'chrome browser': 'chrome', 'googlechrome': 'chrome',
+  'ms word': 'word', 'microsoft word': 'word', 'winword': 'word',
+  'ms outlook': 'outlook', 'microsoft outlook': 'outlook', 'outlook email': 'outlook',
+  'microsoft edge': 'edge', 'edge browser': 'edge',
+  'windows explorer': 'explorer', 'file explorer': 'explorer', 'files': 'explorer',
+  'note pad': 'notepad',
+}
+
+export function appNames(typed: string): string[] {
+  const out: string[] = []
+  for (const piece of String(typed || '').split(/[,;\n/]+|\s+and\s+/i)) {
+    const name = piece.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.]+$/, '')
+    if (!name || name.length > 60) continue
+    const real = APP_ALIAS[name] || name
+    if (!out.includes(real)) out.push(real)
+    if (out.length >= 10) break
+  }
+  return out
 }

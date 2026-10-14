@@ -31,7 +31,7 @@
 
 import { resolveCaller } from '../_shared/auth.ts'
 import {
-  approvalExpiry, decideWithRules, hasExpired, type Grant, type Rule,
+  appNames, approvalExpiry, decideWithRules, hasExpired, TIER_RANK, type Grant, type Rule,
 } from '../_shared/computerGrants.ts'
 
 const cors = {
@@ -584,25 +584,42 @@ Deno.serve(async (req) => {
     if (action === 'grants') return json({ ok: true, grants: await myGrants() })
 
     if (action === 'grant') {
-      const app = String(body.app || '').trim().toLowerCase()
+      // One name or several. "chrome, google suite, exel, windows" used to
+      // become a single grant called all of that, which matched no program
+      // ever — permission that looked granted and did nothing.
+      const apps = appNames(String(body.app || ''))
       const host = String(body.host || '*').trim().toLowerCase() || '*'
       const tier = String(body.tier || 'watch')
       const duration = body.duration === 'once' ? 'once' : 'always'
-      if (!app) return json({ error: 'Which program?' }, 400)
+      if (!apps.length) return json({ error: 'Which program?' }, 400)
       if (!['watch', 'click', 'full'].includes(tier)) return json({ error: 'tier must be watch, click or full' }, 400)
       // Granting is the person's own act, for their own machine. There is no
       // route by which one employee grants another — see the header.
       const made = await rest('arnie_computer_grants', {
         method: 'POST',
         headers: { ...H, Prefer: 'return=representation,resolution=merge-duplicates' },
-        body: JSON.stringify({
+        body: JSON.stringify(apps.map((app) => ({
           company_id: company, employee_id: me, app, host, tier, duration,
           granted_at: new Date().toISOString(),
           expires_at: typeof body.expires_at === 'string' ? body.expires_at : null,
           revoked_at: null, consumed_at: null, updated_at: new Date().toISOString(),
-        }),
+        }))),
       })
-      return json({ ok: true, grant: made?.[0] || null })
+      // A narrower grant on the same program WINS (grantFor takes the lowest
+      // tier, so a stale 'watch' cannot be widened by accident). Said out loud
+      // here, because otherwise allowing Chrome at 'full' appears to do
+      // nothing and there is no way to tell why.
+      const narrower = (await myGrants()).filter((g: Any) =>
+        apps.includes(String(g.app).toLowerCase()) &&
+        TIER_RANK[String(g.tier) as keyof typeof TIER_RANK] < TIER_RANK[tier as keyof typeof TIER_RANK])
+      return json({
+        ok: true,
+        grants: made || [],
+        grant: made?.[0] || null,
+        ...(narrower.length
+          ? { narrower: narrower.map((g: Any) => ({ app: g.app, tier: g.tier })) }
+          : {}),
+      })
     }
 
     if (action === 'revoke') {
