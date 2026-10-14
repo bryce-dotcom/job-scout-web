@@ -19,6 +19,7 @@ import type { Caller } from './auth.ts'
 import { readRecordList } from './arnieRest.ts'
 import { findQuote, forWhom, quoteLabel } from './arnieFollowup.ts'
 import { approveEstimate, convertEstimate, loadEstimate, planConversion, undoConversion } from './estimateConvert.ts'
+import { closesByPlaybook, loadClosingGaps } from './arnieClosing.ts'
 
 const usd = (n: number) => '$' + (Math.round(n * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 // Sent, Draft or Pending — or already Approved by hand but never turned into a job.
@@ -42,6 +43,20 @@ export async function prepareWon(r: Rest, caller: Caller, f: Record<string, stri
 
   const est = await loadEstimate(r, companyId, q.id)
   if (!est) return { ok: false as const, error: 'That estimate is gone.' }
+
+  // COLE'S CLOSING CHECK, for a company that closes by a playbook: "She
+  // never approves without all of it." Refused while anything is missing,
+  // with the list and the way out — the rep gets an email (closing_gaps).
+  let closingOk = false
+  const unit = await closesByPlaybook(r, companyId)
+  if (unit && String(est.quote.business_unit || '').trim().toLowerCase() === unit.toLowerCase()) {
+    const loaded = await loadClosingGaps(r, companyId, q.id)
+    if (loaded?.gaps.length) {
+      const ref = q.quote_id || `#${q.id}`
+      return { ok: false as const, error: `${ref} is not ready to approve — it is missing: ${loaded.gaps.map((g) => `${g.item} (${g.detail})`).join('; ')}. Offer to email ${loaded.rep?.name || 'the rep'} the list with propose_create target=closing_gaps; approve it once those are in.` }
+    }
+    closingOk = !!loaded
+  }
   const plan = planConversion(est)
   const who = await forWhom(r, companyId, q)
   const alreadyApproved = est.quote.status === 'Approved'
@@ -63,7 +78,8 @@ export async function prepareWon(r: Rest, caller: Caller, f: Record<string, stri
   else if (deposit) display.push({ label: 'Deposit', value: `${usd(deposit.amount)} ${deposit.method || ''} recorded as a payment on the estimate` })
   display.push({ label: 'Coverage', value: `labor to ${plan.coverage.laborUntil}, parts to ${plan.coverage.partsUntil}` })
   if (est.lead) display.push({ label: 'Lead', value: `${est.lead.status || 'open'} → ${plan.leadStatus}` })
-  display.push({ label: 'Then', value: 'the company is told, and the job waits on the Job Board to be scheduled' })
+  if (closingOk) display.push({ label: 'Closing check', value: 'customer name, phone, email and address; business unit; project name; notes on every line; signed terms; spec sheets; annual savings — all there' })
+  display.push({ label: 'Then', value: 'the company is told, and the job waits on the Job Board to be scheduled. Nothing goes to the customer.' })
 
   return {
     ok: true as const,

@@ -21,6 +21,7 @@ type Coords = { lat: number; lng: number; accuracy?: number } | null
 
 import { moneyAccess, myPay, payments, payroll, purchaseOrders } from '../_shared/arnieMoney.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
+import { jobscoutRefresh } from '../_shared/arnieRefresh.ts'
 import { accountSummary } from "../_shared/arnieAccount.ts";
 import { eosOverview } from "../_shared/arnieEos.ts";
 import { analyseFixturePhoto, lightingCatalogue } from "../_shared/arnieLighting.ts";
@@ -87,6 +88,24 @@ const TOOLS = [
       properties: {
         date: { type: 'string', description: 'YYYY-MM-DD, the user\'s local date from the Current User section' },
         timezone: { type: 'string', description: 'IANA timezone from the Current User section, e.g. America/Denver' },
+      },
+      required: ['date', 'timezone'],
+    },
+  },
+  {
+    // Cole's two routines (his write-up, 2026-10-10), each as one call.
+    name: 'query_jobscout_refresh',
+    description:
+      'The DAILY JOBSCOUT REFRESH and the MORNING LEAD SETTER CHECK, since the last workday, scoped to what this person may see. ' +
+      'part="lead_setter" → new meetings booked, and approved estimates that have not been converted to jobs. ' +
+      'Otherwise the whole refresh: those two, plus new leads, new draft estimates, estimates moved to Sent or Approved, today\'s meetings, open tickets and replies to this person\'s tickets, bank-sync banners (admin), stale-estimate (manager) and overdue-invoice (admin) counts. Release notes are in your instructions. ' +
+      'Use it for "daily refresh", "JobScout update", "lead setter check", and for routines that ask for them. Pass the date and timezone from the Current User section.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD, the user\'s local date' },
+        timezone: { type: 'string', description: 'IANA timezone from the Current User section' },
+        part: { type: 'string', description: '"lead_setter" for just the morning Lead Setter check; omit for the whole refresh' },
       },
       required: ['date', 'timezone'],
     },
@@ -526,7 +545,7 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book', 'won', 'schedule', 'srp_rebate'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only. memory = one line about THIS user to carry into every future conversation (a nickname for a job or customer, a preference, a standing fact about them) — kept only when they approve the card. expense = money the company spent — a receipt photo read off the paper (merchant, date, total) or told in words; logged on Expenses as Pending; the photo is attached when they approve. company_setup = the whole company profile from a name, an address, a trade and an entity type — the server derives time zone, state taxes, sales tax, SUI, the first business unit, service types, NAICS and the AI crew, and the card shows every derived item with its source; owner/admin only. employee = a new person on the team (name, title, email, phone, access, pay, start day) — the row the Employees page writes plus the login invite; admin only, and pay lands only when the caller may see pay. price_book = the items read off an attached price list, photo, PDF or spreadsheet, as rows — checked and deduped on the server; manager+. won = an estimate the customer accepted ("Halifax signed", "they went with us", "mark the Halifax estimate won") — on approve the estimate reads Approved, the job is created from it with its lines, the deposit invoice if the proposal has one, and the lead moves to delivery; the rep’s own estimate or a manager’s. schedule = put a job on the calendar ("schedule the Halifax job Thursday at 8 with Jordan and Mike") — the Job Board’s Schedule modal: start and end, the Scheduled status, the crew with a calendar entry each, the lead mirrored; clashes shown on the card; manager+.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book', 'won', 'schedule', 'srp_rebate', 'closing_gaps'], description: 'lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only. memory = one line about THIS user to carry into every future conversation (a nickname for a job or customer, a preference, a standing fact about them) — kept only when they approve the card. expense = money the company spent — a receipt photo read off the paper (merchant, date, total) or told in words; logged on Expenses as Pending; the photo is attached when they approve. company_setup = the whole company profile from a name, an address, a trade and an entity type — the server derives time zone, state taxes, sales tax, SUI, the first business unit, service types, NAICS and the AI crew, and the card shows every derived item with its source; owner/admin only. employee = a new person on the team (name, title, email, phone, access, pay, start day) — the row the Employees page writes plus the login invite; admin only, and pay lands only when the caller may see pay. price_book = the items read off an attached price list, photo, PDF or spreadsheet, as rows — checked and deduped on the server; manager+. won = an estimate the customer accepted ("Halifax signed", "they went with us", "mark the Halifax estimate won") — on approve the estimate reads Approved, the job is created from it with its lines, the deposit invoice if the proposal has one, and the lead moves to delivery; the rep’s own estimate or a manager’s. schedule = put a job on the calendar ("schedule the Halifax job Thursday at 8 with Jordan and Mike") — the Job Board’s Schedule modal: start and end, the Scheduled status, the crew with a calendar entry each, the lead mirrored; clashes shown on the card; manager+.' },
       fields: {
         type: 'object',
         description:
@@ -536,6 +555,7 @@ const PROPOSE_CREATE_TOOL = {
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
           'quote FROM A LIGHTING TAKEOFF (when the company has an estimating playbook — see that section): instead of lines, takeoff = an ARRAY of { kind (cobra|flood|wall_pack|mini_wall_pack|dome|high_bay|t5_high_bay|t8_4ft|t8_8ft), qty (HEADS, not poles), existing_watts, lamps (T5/T8), no_lift (true only if they said no lift), mount (pole|arm|flush for cobras; trunnion|knuckle for floods), words (their own words for it), area }; business_name (the business it is for — an existing lead is matched by name, otherwise a new lead is made on the same card), address and phone ONLY as found or said, state (AZ|UT), rebate (only a figure they read you from TrakSmart). The server picks the products, prices, notes, GMs and incentive by the playbook — never pass lines with a takeoff. ' +
+          'closing_gaps: email the estimate\'s sales rep what the closing check found missing (only the rep — never the customer) — quote (required). Use it when marking an estimate won was refused for missing items. ' +
           'srp_rebate: the REAL SRP rebate from TrakSmart, written back onto an estimate that was built from a takeoff — quote (required — its number or name), rebate (required — the dollar figure exactly as TrakSmart shows it), annual_savings (the annual $ savings TrakSmart shows, if it gave one). The fixture lines stay as they are; the GMs are redone to fit the rebate and the incentive set. ' +
           'routine: prompt (required — what to check, in the words they would use), when (required — the hour as said: "7am", "half six", "noon"), routine_name (a short name for it), how (app|sms|email, default app), every_day ("yes" only if they said every day — weekdays is the default). Standing work that runs as THEM, with their access, so it sees what they see; anything it would change still comes back as a card for them to approve. ' +
           'meeting_agenda: type (l10 | quarterly | annual — l10 is the weekly meeting and the default; a "quarterly", "Q4 meeting" or "planning session" is quarterly; two days at year end is annual), days and ends for a quarterly/annual ("Saturday and Sunday, done by 3 and by noon" → days 2, ends "3pm, noon"), when (only if they named a day — otherwise the team\'s own L10 day is used), to (only if they named people), how (email|app|both, default both), unit (one business unit only). The agenda itself is BUILT from the EOS page — the seven L10 sections, this quarter\'s rocks, the open issues, the outstanding to-dos, the scorecard with a blank per metric. Never compose or pass agenda content. ' +
@@ -929,7 +949,10 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       return await crewDay({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
     }
 
-    if (name === 'query_daily_brief') {
+    if (name === 'query_jobscout_refresh') {
+    return await jobscoutRefresh({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone, part: input?.part })
+  }
+  if (name === 'query_daily_brief') {
       return await dailyBrief({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
     }
 
@@ -1650,6 +1673,7 @@ Deno.serve(async (req) => {
         + await whoYouAreBlock(caller.employeeId)
         + await appMapFor(caller.employeeId)
         + await playbookBlock(companyId)
+        + await releasesBlock(companyId)
         + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
@@ -1839,6 +1863,30 @@ async function appMapFor(employeeId: number): Promise<string> {
 }
 
 /**
+ * WHAT CHANGED IN THE APP LATELY — written by `npm run ship` (app_releases)
+ * the moment a change is confirmed on main, so Arnie learns every update the
+ * day it lands. Commit notes are internal (they name HHH people and
+ * customers), so only the platform company's assistant sees them.
+ */
+async function releasesBlock(companyId: number): Promise<string> {
+  try {
+    const H = { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } }
+    const c = await fetch(`${SUPABASE_URL}/rest/v1/companies?select=is_platform&id=eq.${companyId}&limit=1`, H)
+    if (!c.ok || (await c.json())?.[0]?.is_platform !== true) return ''
+    const since = new Date(Date.now() - 14 * 86400_000).toISOString()
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/app_releases?select=subject,shipped_at&shipped_at=gte.${encodeURIComponent(since)}&order=shipped_at.desc&limit=25`, H)
+    const rows = r.ok ? await r.json() : []
+    if (!Array.isArray(rows) || !rows.length) return ''
+    const lines = rows.map((x: any) => `- ${String(x.shipped_at).slice(5, 10)}: ${String(x.subject).replace(/\s+/g, ' ')}`)
+    return `
+
+## What changed in JobScout lately (newest first — the release notes)
+${lines.join('\n')}
+When asked what is new, what changed, or for release notes, answer from this list in plain words — say what it means for them, not the commit wording. These are internal notes: never read them out to a customer.`
+  } catch { return '' }
+}
+
+/**
  * HOW THIS COMPANY BUILDS A LIGHTING QUOTE — only when it has an estimating
  * playbook (settings.estimating_playbook). Cole's flow, from his write-up:
  * "He opens his phone and tells his Jenny to create a new quote. He says the
@@ -1860,8 +1908,9 @@ When someone says "create a new quote" (or estimate, or bid) on site:
 1. If they have not said which business, ask — one short question.
 2. Find it from where they are standing with where_i_am, and ask "Is it <name> at <address>?" — use it only if they say yes. If you have no location, take the name and address as they say them; never invent an address or phone.
 3. Tell them to count it: "Say '<your name>, go into takeoff mode' and walk it — I'll stay quiet until you ask if I'm ready." (They can also just tell you the fixtures.)
-4. When the count arrives, read it back briefly — counts, wattages, lift or no-lift — then call propose_create target=quote with a takeoff (NOT lines) and business_name/address/phone/state. Ask about something only if the rules cannot decide it (existing watts for a fixture they did not give; whether a cobra is on a pole or an arm only if mounts matter). Do not ask about products, prices or business unit: the playbook decides those.
+4. When the count arrives, read it back briefly — counts, wattages, lift or no-lift — then call propose_create target=quote with a takeoff (NOT lines) and business_name/address/phone/state. Ask about something only if the rules cannot decide it (existing watts for a fixture they did not give; whether a cobra is on a pole or an arm only if mounts matter). Do not ask about products, prices or business unit: the playbook decides those. It stays a Draft — do not suggest sending it, making a PDF or DocuSign unless they ask.
 5. The SRP rebate from TrakSmart: before the estimate exists, pass it as rebate on the quote. After it exists, call propose_create target=srp_rebate with the estimate, the rebate and the annual savings — the GMs and incentive are redone to fit and the fixtures are left alone. That is also how a TrakSmart run on their computer finishes: read the incentive and savings off the Assessment Report, then write them back this way.
+6. Closing ("they signed", "mark it won"): the won card runs the closing check — customer name, phone, email and address; business unit; project name; notes on every line (height, existing wattage, mount); signed terms (Arizona); spec sheets from Products & Services; annual savings. If it refuses, say what is missing and offer to email that job's rep the list (closing_gaps). Approving is "Approve and Record": nothing goes to the customer.
 The playbook (do not override it, and explain it if asked): products only from the ${pb.catalog_type} section; business unit ${pb.business_unit}; quantities are heads, not poles; exterior is 20 ft on a lift unless marked no-lift (15 ft, the no-lift product), interior never on a lift; Arizona swaps — cobra or shoebox (400W, 750W or more) to a 60W LED cobra, 400W flood to 45W and 750W+ to 60W, 400W wall pack to 30-40W, mini 15W wall packs only for small security lights above doors, dome to a 25W wall pack, high bays up to 400W to a 60W LED high bay, 6-lamp T5 to a full high bay, 4 ft T8 to Type B tubes, 8 ft T8 to 43W 8 ft tubes; GMs only while the rebate keeps the customer at $0 — $77 mounts first (cobras before floods), then the ES LIFT item at $49.98 an hour (2 hours per fixture on a lift, 1 off); incentive = the lower of the rebate and the subtotal; never a discount; never sent, no PDF, never marked sent unless asked.`
   } catch { return '' }
 }

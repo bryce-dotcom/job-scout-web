@@ -112,6 +112,10 @@ describe('lift, heads, notes', () => {
     expect(p.lines[0].description).toMatch(/Arm fit mount/)
     expect(p.lines[1].description).toMatch(/Trunnion mount/)
   })
+  it('the rep\'s "400 watt" is not doubled into "400W 400 watt"', () => {
+    const d = plan([{ kind: 'cobra', qty: 4, existing_watts: 400, words: '400 watt shoeboxes on poles' }]).lines[0].description
+    expect(d).toMatch(/^Replace 400 watt shoeboxes on poles with 60W/)
+  })
   it('quantity is heads, as given — never multiplied by lamps', () => {
     expect(plan([{ kind: 't8_4ft', qty: 12, lamps: 4 }]).lines[0].quantity).toBe(12)
   })

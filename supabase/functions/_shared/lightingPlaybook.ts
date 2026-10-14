@@ -332,7 +332,9 @@ export function planEstimate(items: TakeoffItem[], catalog: Product[], opts: { r
     let what = tube
       ? `${item.lamps || (item.kind === 't8_4ft' ? 2 : 1)}-lamp ${rule.from} fixture (${existing}W)`
       : (item.words ? item.words.replace(/^\d+\s*(x|×)\s*/i, '').trim() : rule.from)
-    if (!tube && !/\d+\s*w\b/i.test(what)) what = `${existing}W ${what}`
+    // "400 watt shoeboxes" already says it — live on 10-14 this read
+    // "Replace 400W 400 watt shoeboxes" because only "400W" was recognised.
+    if (!tube && !/\d+\s*(w|watts?)\b/i.test(what)) what = `${existing}W ${what}`
     const desc = [
       `Replace ${what} with ${led}W ${rule.label.replace(/ \(.*\)$/, '')}.`,
       height ? `${height} ft off the ground, ${onLift ? 'lift' : 'no lift'}.` : 'Interior, no lift.',

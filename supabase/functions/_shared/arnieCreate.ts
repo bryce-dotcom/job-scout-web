@@ -22,6 +22,7 @@ import { RECORD_TARGETS, activeJobId, resolveEntity } from './arnieRecords.ts'
 import { applyAppointment, prepareAppointment, rollbackAppointment } from './arnieAppointment.ts'
 import { applyQuote, prepareQuote, rollbackQuote } from './arnieQuote.ts'
 import { applySrpRebate, prepareSrpRebate, rollbackSrpRebate } from './arnieSrpRebate.ts'
+import { applyClosingGaps, prepareClosingGaps, rollbackClosingGaps } from './arnieClosing.ts'
 import { applyFollowup, prepareFollowup, rollbackFollowup } from './arnieFollowup.ts'
 import { applyAgenda, prepareAgenda, rollbackAgenda } from './arnieEos.ts'
 import { prepareRoutine, rollbackRoutine } from './arnieRoutineTarget.ts'
@@ -216,7 +217,7 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       // the "Describe it to Arnie" button on an empty estimate (2026-09-29).
       quote:         { column: null, label: 'Into',     max: 80 },
     },
-    labelOf: (f) => (f.quote && !f.lead && !f.customer ? `Fill estimate ${f.quote}` : `Quote for ${f.lead || f.customer || 'someone'}`).slice(0, 120),
+    labelOf: (f) => (f.quote && !f.lead && !f.customer ? `Fill estimate ${f.quote}` : `Quote for ${f.lead || f.customer || f.business_name || 'someone'}`).slice(0, 120),
     prepare: prepareQuote,
     applyCustom: applyQuote,
     rollbackCustom: rollbackQuote,
@@ -229,7 +230,8 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     label: 'SRP rebate',
     table: 'quotes',
     minLevel: 0,
-    verb: 'Update estimate',
+    // The button reads verb + label: "Apply SRP rebate".
+    verb: 'Apply',
     done: 'Done — the GMs and the incentive on the estimate now match the SRP rebate. It is still a draft.',
     fields: {
       quote:          { column: null, label: 'Estimate', required: true, max: 160 },
@@ -240,6 +242,24 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareSrpRebate,
     applyCustom: applySrpRebate,
     rollbackCustom: rollbackSrpRebate,
+  },
+
+  // Cole's closing rule: "If something is missing, she emails that job's
+  // sales rep." The list comes from closingCheck.ts; the email goes to the
+  // rep only, never the customer. See arnieClosing.ts.
+  closing_gaps: {
+    label: 'the rep',
+    table: 'quotes',
+    minLevel: 0,
+    verb: 'Email',
+    done: 'Sent to the rep. Ask me to approve it once they have filled the gaps.',
+    fields: {
+      quote: { column: null, label: 'Estimate', required: true, max: 160 },
+    },
+    labelOf: (f) => `Missing items on ${f.quote}`.slice(0, 120),
+    prepare: prepareClosingGaps,
+    applyCustom: applyClosingGaps,
+    rollbackCustom: rollbackClosingGaps,
   },
 
   // A personal follow-up on a quote that went quiet. The one rail whose

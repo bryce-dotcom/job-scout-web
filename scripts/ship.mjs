@@ -244,6 +244,36 @@ say(`\nCONFIRMED on origin/main: ${landed.slice(0, 8)}`)
 say(`verify the deploy with a string unique to THIS commit, not one that already existed:`)
 say(`  node scripts/deployed.mjs "<some new string from your diff>"`)
 
+// ── tell Arnie what shipped ──────────────────────────────────────────────
+// Bryce, 2026-10-14: "it should learn every time an update happens". Each
+// landed commit becomes a row in app_releases, which arnie-chat reads for the
+// platform company (and Cole's daily refresh lists as release notes). FAILS
+// OPEN: no .env, offline, a 4xx — the ship already happened and must not be
+// reported as anything else.
+await recordReleases(shas)
+async function recordReleases(list) {
+  try {
+    const env = readFileSync(join(ROOT, '.env'), 'utf8')
+    const get = (k) => (env.match(new RegExp(`^${k}=(.*)$`, 'm')) || [])[1]?.trim().replace(/^["']|["']$/g, '')
+    const url = get('VITE_SUPABASE_URL'), key = get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!url || !key) return
+    const rows = list.map((s) => {
+      const subject = git(['log', '-1', '--format=%s', s]).slice(0, 300)
+      // The first paragraph of the body — the "why" — without the trailers.
+      const body = git(['log', '-1', '--format=%b', s]).split(/\n\s*\n/)[0].replace(/Co-Authored-By:.*$/gim, '').trim().slice(0, 1200)
+      return { sha: s, subject, summary: body || null }
+    })
+    const res = await fetch(`${url}/rest/v1/app_releases?on_conflict=sha`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
+      body: JSON.stringify(rows),
+    })
+    say(res.ok ? `  recorded ${rows.length} release note${rows.length === 1 ? '' : 's'} for Arnie` : `  note: release notes not recorded (${res.status})`)
+  } catch (e) {
+    say(`  note: release notes not recorded (${e?.message || e})`)
+  }
+}
+
 // ── then get off this branch ─────────────────────────────────────────────
 // Ship CHERRY-PICKS, so this branch was never merged and never will be. It is
 // now permanently "ahead" of a main that already has the change, and it can
