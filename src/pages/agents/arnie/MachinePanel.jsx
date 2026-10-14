@@ -49,7 +49,7 @@ const ago = (iso) => {
 
 // `who` is the assistant's short name — this panel said "him" and "Arnie" to
 // people whose assistant is Jenny.
-export default function MachinePanel({ who = 'Arnie', session, status, connected, busy, outOfDate, connecting = false, onRefresh, onStop, onGetAgent }) {
+export default function MachinePanel({ who = 'Arnie', session, status, connected, busy, outOfDate, connecting = false, checking = false, checkedAt = null, onRefresh, onStop, onGetAgent }) {
   const st = STATE[status?.state] || STATE.idle
   const live = session?.status === 'live'
 
@@ -161,8 +161,27 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
         {/* The stop is alone and full width. It used to be one of three grey
             buttons in a row, which is not what the most serious control on
             the page should look like. */}
+        {/* WHAT TO DO ABOUT IT, when it is not answering.
+            The panel said NOT ANSWERING and then offered, as its biggest
+            reddest button, "Stop Jenny on this computer" — stop a thing that
+            had already stopped. The way back was "Add one", a grey button
+            that sounds like buying a second machine. The buttons were keyed
+            off the session row saying 'live', which it still does for hours
+            after the agent has gone; only the heartbeat knows. */}
+        {live && !connected && (
+          <div style={{
+            marginTop: 14, padding: '11px 13px', borderRadius: 11,
+            background: 'rgba(255,255,255,0.04)', border: `1px solid ${c.edge}`,
+            color: c.dim, fontSize: 13, lineHeight: 1.5,
+          }}>
+            Open <strong style={{ color: c.text }}>JobScout Agent</strong> again on that computer
+            — the same file you ran before, in your Downloads. It picks up where it left off and
+            this turns green on its own.
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-          {live ? (
+          {connected ? (
             <button onClick={onStop} disabled={busy} style={{
               flex: 1, minWidth: 180, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               gap: 8, background: 'rgba(217,103,79,0.14)', color: c.stop,
@@ -180,19 +199,21 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
               <Download size={16} /> {connecting ? 'Hide the setup' : `Put ${who} on this computer`}
             </button>
           )}
-          {/* It used to look identical whether it was working or ignoring
-              you: "the Check button on BEES computer, it does nothing". It
-              spins while it is checking, and says so. */}
-          <button onClick={onRefresh} disabled={busy} title="Check again" style={{
+          {/* "the check button does nothing" — reported twice. It was wired
+              to the page's shared `busy` flag, which the refresh never set,
+              so the spinner it already had could never spin; and when the
+              answer was "still not answering", nothing on screen changed. It
+              owns its own state now and says what it found, below. */}
+          <button onClick={onRefresh} disabled={checking} title="Check again" style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
             background: 'rgba(255,255,255,0.04)', color: c.dim, border: `1px solid ${c.edge}`,
             borderRadius: 12, padding: '12px 14px', fontSize: 13, fontWeight: 600,
-            cursor: busy ? 'default' : 'pointer', minHeight: 48, opacity: busy ? 0.75 : 1,
+            cursor: checking ? 'default' : 'pointer', minHeight: 48, opacity: checking ? 0.75 : 1,
           }}>
             <RefreshCw
               size={15}
-              style={busy ? { animation: 'jsSpin 0.9s linear infinite' } : undefined}
-            /> {busy ? 'Checking…' : 'Check'}
+              style={checking ? { animation: 'jsSpin 0.9s linear infinite' } : undefined}
+            /> {checking ? 'Checking…' : 'Check'}
           </button>
           {live && (
             <button onClick={onGetAgent} title="Connect another computer" style={{
@@ -201,10 +222,21 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
               borderRadius: 12, padding: '12px 14px', fontSize: 13, fontWeight: 600,
               cursor: 'pointer', minHeight: 48,
             }}>
-              <Download size={15} /> Add one
+              <Download size={15} /> Another computer
             </button>
           )}
         </div>
+
+        {/* THE ANSWER, in words. A check whose result is "no change" is
+            indistinguishable from a check that never ran — which is exactly
+            what it looked like. */}
+        {checkedAt && !checking && (
+          <p style={{ margin: '10px 0 0', color: connected ? c.sage : c.faint, fontSize: 12.5 }}>
+            {connected
+              ? 'Answered just now.'
+              : 'Checked just now — still nothing from that computer.'}
+          </p>
+        )}
       </div>
     </div>
   )

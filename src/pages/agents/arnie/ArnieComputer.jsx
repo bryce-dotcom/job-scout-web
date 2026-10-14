@@ -116,6 +116,34 @@ export default function ArnieComputer() {
     } catch (e) { setErr(String(e.message || e)) }
   }, [employeeId, companyId])
 
+  // CHECK HAS TO VISIBLY DO SOMETHING.
+  //
+  // It called load() straight, which never touched `busy` — so the spinner
+  // the button already had could never spin, and when the answer was "still
+  // not answering" nothing on screen changed at all. Reported twice as the
+  // button doing nothing, and from where Bryce was sitting it WAS nothing:
+  // no motion, no result, no difference.
+  //
+  // It now owns its own state, takes a beat long enough to be seen, and says
+  // what it found either way.
+  const [checking, setChecking] = useState(false)
+  const [checkedAt, setCheckedAt] = useState(null)
+  const refresh = useCallback(async () => {
+    setChecking(true)
+    const started = Date.now()
+    try {
+      await load()
+    } finally {
+      // A reply in 80ms reads as a dead button. Half a second of "Checking…"
+      // is the difference between a thing that ran and a thing that ignored
+      // you.
+      const left = 500 - (Date.now() - started)
+      if (left > 0) await new Promise((r) => setTimeout(r, left))
+      setChecking(false)
+      setCheckedAt(Date.now())
+    }
+  }, [load])
+
   useEffect(() => { load() }, [load])
   // While he is working, the log is the only way to follow along, so it has to
   // keep up. Idle sessions do not need a poll every three seconds.
@@ -196,7 +224,9 @@ export default function ArnieComputer() {
         status={status}
         connected={connected}
         busy={busy}
-        onRefresh={load}
+        onRefresh={refresh}
+        checking={checking}
+        checkedAt={checkedAt}
         onStop={doStop}
         connecting={showConnect}
         onGetAgent={() => setShowConnect((v) => !v)}

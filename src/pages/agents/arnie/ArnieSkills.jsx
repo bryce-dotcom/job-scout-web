@@ -11,6 +11,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
+import { useAssistant } from '../../../components/AssistantAvatar'
+import { assistantShortName } from '../../../lib/arniePersonaClient'
 import {
   GraduationCap, Circle, FileText, CheckCircle2, Archive, Share2, Loader2, AlertTriangle, Trash2,
 } from 'lucide-react'
@@ -30,6 +32,10 @@ const STATUS = {
 }
 
 export default function ArnieSkills() {
+  // This page called her Arnie and called her "he", on the tab somebody opens
+  // specifically to teach HER something.
+  const assistant = useAssistant()
+  const who = assistantShortName({ personaRow: assistant.personaRow })
   const user = useStore((s) => s.user)
   const companyId = useStore((s) => s.companyId)
   const [rows, setRows] = useState([])
@@ -126,12 +132,33 @@ export default function ArnieSkills() {
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 16px 40px' }}>
       <header style={{ marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 9 }}>
-          <GraduationCap size={20} style={{ color: t.accent }} /> What Arnie has been taught
+          <GraduationCap size={20} style={{ color: t.accent }} /> What {who} has been taught
         </h2>
         <p style={{ margin: '5px 0 0', fontSize: 13.5, color: t.sub, lineHeight: 1.55 }}>
-          A job you showed him once. He writes down what he saw; you fix what he misunderstood before
-          it is ever used on a real customer. Start one from the Computer tab.
+          A job you show once, with the recorder on. The steps get written down, you fix whatever
+          was misunderstood, and only then is it used on a real customer.
         </p>
+
+        {/* THE WAY IN, on the page you are already looking at.
+            This said "Start one from the Computer tab" — which is a different
+            tab, where the button then hid itself whenever the agent was not
+            running. Bryce: "How the fuck do I teach her anything ... so damn
+            confusing." He was on the right page and there was nothing on it
+            to press. */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('arnie:tab', { detail: { tab: 'computer' } }))}
+          style={{
+            marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: t.accent, color: '#fff', border: 0, borderRadius: 10,
+            padding: '10px 15px', fontSize: 13.5, fontWeight: 650, cursor: 'pointer', minHeight: 44,
+          }}
+        >
+          <GraduationCap size={15} /> Teach {who} a job
+        </button>
+        <div style={{ margin: '7px 0 0', fontSize: 12, color: t.muted, lineHeight: 1.5 }}>
+          It happens on the computer — {who} watches you do it once — so this opens the Computer
+          tab, where the recorder lives.
+        </div>
       </header>
 
       {err && <div style={{ background: t.rmBg, border: `1px solid ${t.rm}33`, color: t.rm, borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 14 }}>{err}</div>}
@@ -139,7 +166,8 @@ export default function ArnieSkills() {
       {!rows.length && (
         <div style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 20, textAlign: 'center' }}>
           <p style={{ margin: 0, fontSize: 13.5, color: t.sub, lineHeight: 1.6 }}>
-            Nothing taught yet. Go to the Computer tab, connect a computer, and show him a job once.
+            Nothing taught yet. Use the button above — it opens the Computer tab, where you
+            connect the machine and show {who} the job once.
           </p>
         </div>
       )}
@@ -199,7 +227,7 @@ export default function ArnieSkills() {
                 {r.draft_notes && r.status === 'draft' && (
                   <div style={{ background: t.amberBg, border: `1px solid ${t.amber}44`, borderRadius: 10, padding: '10px 12px', marginBottom: 11 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: t.amber, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <AlertTriangle size={13} /> What Arnie is not sure about
+                      <AlertTriangle size={13} /> What {who} is not sure about
                     </div>
                     <div style={{ fontSize: 13, color: t.ink, whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{r.draft_notes}</div>
                   </div>

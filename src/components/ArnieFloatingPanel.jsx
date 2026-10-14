@@ -26,11 +26,11 @@ const TABS = [
   { key: 'chat', label: 'Chat', icon: MessageCircle, hint: 'Ask him anything about your business.' },
   {
     key: 'computer', label: 'My PC', icon: Monitor,
-    hint: 'Let him work in programs on your own computer — a utility portal, a spreadsheet — in the ones you allow, one at a time.',
+    hint: 'Work in the programs on your own computer — a utility portal, a spreadsheet — in the ones you allow, one at a time.',
   },
   {
     key: 'taught', label: 'Taught', icon: GraduationCap,
-    hint: 'Jobs somebody has shown him how to do once, written down in plain English.',
+    hint: 'Jobs somebody has shown how to do once, written down in plain English.',
   },
   {
     key: 'routines', label: 'Standing', icon: Clock,
@@ -164,7 +164,14 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
     // Let anything on the page pop the corner guy open — e.g. the onboarding
     // banner's "Chat with Arnie" button dispatches window event 'arnie:open'.
     window.addEventListener('arnie:open', openPanel)
-    return () => window.removeEventListener('arnie:open', openPanel)
+    // A tab asking to hand over to another one — the Taught tab's "Teach her
+    // a job" sends you to the Computer tab, where the recorder actually is.
+    const toTab = (e) => { const k = e?.detail?.tab; if (k) { setOpen(true); setTab(k) } }
+    window.addEventListener('arnie:tab', toTab)
+    return () => {
+      window.removeEventListener('arnie:open', openPanel)
+      window.removeEventListener('arnie:tab', toTab)
+    }
   }, [openPanel])
 
   const handleClose = () => {

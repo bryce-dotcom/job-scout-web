@@ -109,7 +109,7 @@ describe('what comes back is a draft, and only a person publishes it', () => {
   })
 
   it('the screen keeps the uncertainty above the steps', () => {
-    expect(skills).toMatch(/What Arnie is not sure about/)
+    expect(skills).toMatch(/What {who} is not sure about/)
     expect(skills.indexOf('What Arnie is not sure about')).toBeLessThan(skills.indexOf('The steps'))
   })
 

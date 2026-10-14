@@ -517,7 +517,13 @@ describe('you can see when he is working', () => {
   })
 
   it('and Check says it is checking', () => {
-    expect(panel).toMatch(/\{busy \? 'Checking…' : 'Check'\}/)
+    // Its OWN state, not the page's shared `busy` — which the refresh never
+    // set, so the spinner it already had could never spin and Check looked
+    // dead. Reported twice before this was believed.
+    expect(panel).toMatch(/\{checking \? 'Checking…' : 'Check'\}/)
+    // And it says what it found, because "no change" and "never ran" look
+    // identical otherwise.
+    expect(panel).toMatch(/Checked just now — still nothing from that computer/)
     expect(panel).toMatch(/animation: 'jsSpin/)
     // Declared in the component, because it renders in the drawer as well as
     // the page and a keyframe defined elsewhere goes missing in one of them.
