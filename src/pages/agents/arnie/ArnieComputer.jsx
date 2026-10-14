@@ -415,18 +415,37 @@ export default function ArnieComputer() {
       />
 
       {/* ── 3. Teach him something ───────────────────────────────────── */}
-      {connected && (
+      {/* THIS WHOLE SECTION USED TO VANISH when no agent was checking in.
+          Bryce, whose agent had gone quiet overnight: "you cant find a
+          button to teach it anything". He was right — there was no button,
+          because the feature hides rather than explaining itself, and a
+          feature you cannot see is one you conclude does not exist. It stays
+          on screen now and says what it is waiting for. */}
       <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
         <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
           <GraduationCap size={17} style={{ color: t.accent }} /> Teach {who} a task
         </h3>
         <p style={{ margin: '0 0 10px', fontSize: 13, color: t.sub, lineHeight: 1.55 }}>
-          Do a job once with the recorder on and he writes the steps down. You read them back in plain
-          English and fix what he misunderstood before it is ever used on a real customer.
+          Do a job once with the recorder on and the steps get written down. You read them back in
+          plain English and fix whatever was misunderstood before it is ever used on a real customer.
         </p>
-        <TeachButton who={who} employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
+        {connected
+          ? <TeachButton who={who} employeeId={employeeId} companyId={companyId} session={data.session} onDone={load} />
+          : (
+            <div style={{
+              display: 'flex', gap: 8, alignItems: 'flex-start',
+              background: t.card2, borderRadius: 9, padding: '10px 12px',
+              fontSize: 12.5, color: t.sub, lineHeight: 1.55,
+            }}>
+              <Monitor size={15} style={{ color: t.muted, flexShrink: 0, marginTop: 1 }} />
+              <span>
+                Teaching happens on the computer, so the agent has to be running there first —
+                it watches you do the job once. Start it on that machine and this turns into a
+                Start teaching button.
+              </span>
+            </div>
+          )}
       </section>
-      )}
 
       {/* ── 4. What he has done ──────────────────────────────────────── */}
       {/* The record is the trust surface: an admin asking "what has he been

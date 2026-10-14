@@ -60,10 +60,34 @@ export function claimsComputerWork(text: string): boolean {
 export function claimsACard(text: string): boolean {
   const t = String(text || '')
   if (!t) return false
-  const card = /\b(approval|change)\s+card\b|\bcard (to|for) approve\b/i
-  const drafted = /\b(i'?ve|i have|i just)\s+(drafted|created|set ?up|made|put together|built)\b/i
-  const pointing = /\byou should see\b|\blook for (the|an|a) (approval )?card\b|\bwaiting for (your |the )?approval\b/i
-  return (card.test(t) && (drafted.test(t) || pointing.test(t))) || (drafted.test(t) && card.test(t))
+
+  // The first cut of this wanted the words "approval card" AND a claim verb,
+  // which is only one of the ways it gets said. Bryce was told there was
+  // something to approve, found nothing, and his proposals table had no row
+  // at all — the claim was invented and this did not catch it, because it was
+  // not phrased the way I happened to write the pattern. Any of these is
+  // enough on its own now; each one asserts that something is waiting.
+  // ASKING for approval is not CLAIMING one is waiting. "I'll need your
+  // approval before I can do that — shall I draft it?" is him behaving
+  // correctly, and interrupting that would be the rail nagging somebody for
+  // doing the right thing. Checked first, because it beats everything below.
+  if (/\b(i'?ll|i will|i would|we'?ll|we will) need (your |an? )?(approval|ok|sign ?off)/i.test(t)) return false
+  if (/\b(shall|should|want me to|would you like me to) i? ?(draft|create|set|make)/i.test(t)) return false
+
+  const card = /\b(approval|change)\s+cards?\b|\bcard (to|for) approve\b/i
+  // Note "it's" with no space — the first version wrote `it (is|'s)`, which
+  // requires one, so "It's in your approvals now" sailed straight past.
+  const waiting = /\b(is|it'?s|that'?s|this is) waiting (for|on) (your |the )?(approval|ok|sign ?off)\b|\bawaiting (your )?approval\b|\b(that|this|it) needs (your )?approval\b/i
+  const pointing = /\byou should see\b|\blook for (the|an|a) [^.]{0,24}card\b|\bit(?:'s| is| has gone)? ?(in|on|to) your (approvals|notifications)\b|\bcheck your approvals\b/i
+  const drafted = /\b(i'?ve|i have|i just)\s+(drafted|created|set ?up|made|put together|built|queued|prepared)\b/i
+
+  if (waiting.test(t)) return true
+  if (pointing.test(t)) return true
+  if (card.test(t) && drafted.test(t)) return true
+  // "I've drafted the change for your approval" — no card named, but it says
+  // in as many words that a thing exists and is waiting on them.
+  if (drafted.test(t) && /\bfor (your |my )?(approval|review|sign ?off)\b/i.test(t)) return true
+  return false
 }
 
 export type Fabrication = 'computer' | 'card'

@@ -168,3 +168,32 @@ describe('whether they already read it changes what is owed', () => {
     expect(chat).toMatch(/correctionFor\(claim\) \}\)/)          // replaced wholesale
   })
 })
+
+describe('the ways a card claim is actually phrased', () => {
+  // Bryce was told something was waiting for him, found nothing, and his
+  // proposals table had no row at all. The claim was invented and the check
+  // did NOT catch it — not because the idea was wrong but because the first
+  // pattern only knew the words "approval card".
+  it('catches the phrasings that slipped through', () => {
+    for (const s of [
+      "I've set that up — it's waiting for your approval.",
+      'That needs your approval before it runs.',
+      'Done. Check your approvals.',
+      "It's in your approvals now.",          // "it's" has no space — the first pattern wanted one
+      "I've drafted the change for your approval.",
+      'You should see a card in a moment.',
+    ]) expect(T.claimsACard(s), s).toBe(true)
+  })
+
+  it('does NOT fire when he is asking for approval rather than claiming one', () => {
+    // Behaving correctly. Interrupting this would be the rail nagging him for
+    // doing the right thing.
+    for (const s of [
+      "I'll need your approval before I can do that — shall I draft it?",
+      'Want me to draft that as a change you can approve?',
+      'Anything I would change comes back as a card for you to approve.',
+      'I cannot create a product — use the import tool on that page.',
+      'You have 3 open jobs.',
+    ]) expect(T.claimsACard(s), s).toBe(false)
+  })
+})

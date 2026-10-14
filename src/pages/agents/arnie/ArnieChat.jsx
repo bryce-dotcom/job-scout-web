@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun, Bot, ClipboardList } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
-import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio, audioIsUnlocked } from './arnieVoice'
+import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, resolveVoice, unlockAudio, audioIsUnlocked } from './arnieVoice'
 import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
 import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvatar'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -178,6 +178,27 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     loadArnieVoices().then(({ voices: list, defaultId }) => { if (!live) return; setVoices(list); setSelectedVoice(defaultId) })
     return () => { live = false }
   }, [])
+
+  // THE VOICE ON THE ACCOUNT WINS.
+  //
+  // This chat never read it. It took whatever loadArnieVoices worked out,
+  // which starts from localStorage — so on any device where you had not
+  // personally picked a voice in THAT browser, it fell through to Arnie's own
+  // ElevenLabs voice. Which is a man. Somebody who had chosen Jenny, set her
+  // voice, and opened the app on a second device was answered by Arnie in
+  // Jenny's name: "Jenny now speaks as a man."
+  //
+  // The persona row is the account-level choice and the thing the Settings
+  // screen promises follows you to your phone, so it is applied here as soon
+  // as it arrives — unless you have picked something in this session, which
+  // is a deliberate act and outranks it.
+  const pickedHere = useRef(false)
+  useEffect(() => {
+    const saved = personaRow?.voice_id
+    if (!saved || pickedHere.current) return
+    const real = resolveVoice(saved)
+    if (real?.id) setSelectedVoice(real.id)
+  }, [personaRow?.voice_id, voices])
 
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -856,12 +877,18 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             // A real finger. On a phone this may be the only tap before the
             // first answer arrives, and iOS grants sound to an ELEMENT a
             // finger has touched — so this is the chance to take it.
+            // STOP FIRST, ALWAYS. This button was the only way to shut him
+            // up, and yesterday I put the sound-blocked check in front of it:
+            // on any machine where the unlock had not resolved, tapping it
+            // returned early and did nothing at all. Bryce: "you cant
+            // interrupt arnie he just keeps speaking". Interrupting is the
+            // one thing that must never depend on anything else working.
+            if (speaking || speechQueue.current.length) handleStopSpeaking()
             unlockAudio()
             noteSound()
-            // Tapping this while sound is blocked is a request FOR sound, not
-            // a request to turn the voice off.
+            // Only AFTER stopping: a tap while sound is blocked is a request
+            // FOR sound, not a request to turn the voice off.
             if (voiceOn && !audioIsUnlocked()) return
-            if (voiceOn) handleStopSpeaking()
             setVoiceOn(!voiceOn)
           }}
           style={{
@@ -876,6 +903,28 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           {voiceOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
           {voiceOn && !soundReady ? 'Tap for sound' : voiceOn ? 'Voice ON' : 'Voice OFF'}
         </button>
+
+        {/* A STOP, while he is talking, that says Stop.
+            There was no such control: the only way to cut him off was a
+            button labelled "Voice ON", which reads as a setting rather than
+            an interrupt — and turns the voice off for good rather than
+            stopping this answer. Nobody should have to switch a feature off
+            to get a word in. */}
+        {speaking && (
+          <button
+            onClick={handleStopSpeaking}
+            aria-label="Stop talking"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 16, marginLeft: 6,
+              border: `1px solid ${dark.red}`, backgroundColor: 'rgba(239,68,68,0.12)',
+              color: dark.red, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: dark.red, display: 'inline-block' }} />
+            Stop
+          </button>
+        )}
 
         {voiceOn && (
           <div style={{ position: 'relative' }}>
@@ -904,7 +953,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                 {voices.map(v => (
                   <div
                     key={v.id}
-                    onClick={() => { setSelectedVoice(v.id); rememberVoice(v.id); setShowVoiceSelect(false) }}
+                    onClick={() => { pickedHere.current = true; setSelectedVoice(v.id); rememberVoice(v.id); setShowVoiceSelect(false) }}
                     style={{
                       padding: '8px 12px', cursor: 'pointer',
                       backgroundColor: v.id === selectedVoice ? dark.orangeBg : 'transparent',
