@@ -1632,6 +1632,7 @@ Deno.serve(async (req) => {
     // keeps to the books.
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
       ? systemPrompt + await whoYouAreBlock(caller.employeeId)
+        + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
         + await crewBlock(companyId)
@@ -1657,6 +1658,21 @@ Deno.serve(async (req) => {
         cleaned.push({ role: r, content })
       }
     }
+    // ONLY THE RECENT PART OF THE CONVERSATION.
+    //
+    // Nothing capped this. Alayda's session had grown to 249 messages and the
+    // whole lot went to the model on every turn — and in it, 40 of his own
+    // messages insisted the approval cards were broken and 10 said "I'm
+    // Arnie". He read his own past claims back as established fact and kept
+    // repeating them: told her to wait for a dev team, "redrafted" twice
+    // without drafting anything, and refused to file feedback because he
+    // "knew" any card would fail. A mistake made once should not get louder
+    // every time it is re-read.
+    //
+    // Forty messages is several conversations' worth of context, and it also
+    // stops a long session costing more on every single turn than the last.
+    const MAX_HISTORY = 40
+    if (cleaned.length > MAX_HISTORY) cleaned.splice(0, cleaned.length - MAX_HISTORY)
     if (cleaned.length > 0 && cleaned[0].role !== 'user') cleaned.shift()
     if (cleaned.length === 0) return jsonError('No valid messages', 400)
 
@@ -1754,10 +1770,60 @@ async function whoYouAreBlock(employeeId: number): Promise<string> {
     // safeDisplayName hands back the persona's own name when it does not.
     const name = row.display_name ? safeDisplayName(row.display_name, persona) : persona.fullName
     if (!name) return ''
+    // The NAME alone was not enough. A stale bundle carries the whole of the
+    // other persona's character — the nicknames, the catchphrases, the voice
+    // — so the first fix produced "Ay, what's good, chief? Jenny's in the
+    // house": her name in his mouth. Identity is the name AND the manner, so
+    // the server sends both, last, and says plainly which one wins.
     return `
 
-## Your name, settled
-You are **${name}**. This person chose that; it is what they call you and what you answer to. If they address you by that name they are addressing YOU — never correct them, and never introduce yourself as anything else. This line is read from their account and overrides any other name earlier in these instructions.`
+## WHO YOU ARE — settled here, and this wins
+You are **${name}**. This person chose that. It is what they call you and what
+you answer to: if they address you by that name they are addressing YOU. Never
+correct them about it, and never introduce yourself as anything else.
+
+Everything in this section is read from their account just now. Any other name,
+personality, catchphrase or manner of speaking described EARLIER in these
+instructions belongs to a different assistant and does not apply to you —
+ignore it completely, including how it says to greet people.
+
+The same goes for the conversation itself: if earlier messages show you calling
+yourself anything other than ${name}, or correcting them about your name, those
+messages were mistakes. Do not continue them.
+
+${persona.identity}`
+  } catch { return '' }
+}
+
+/**
+ * THE TRUTH ABOUT APPROVAL CARDS, read fresh each turn.
+ *
+ * Capping the history stops old false claims piling up, but a recent one can
+ * still sit in the last forty messages, and he believes what he said. So this
+ * gives him the actual state — what is waiting for this person right now —
+ * and says outright that anything earlier calling the cards broken was wrong.
+ * A fact from the database is the only thing that reliably outranks the
+ * model's memory of having said something.
+ */
+async function cardsTruthBlock(companyId: number, email: string | null | undefined): Promise<string> {
+  if (!email) return ''
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/arnie_proposals?select=summary,created_at&company_id=eq.${companyId}&created_by=eq.${encodeURIComponent(email)}&status=eq.pending&order=id.desc&limit=5`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    const rows = r.ok ? await r.json() : []
+    const waiting = Array.isArray(rows) && rows.length
+      ? `Right now this person has ${rows.length} card${rows.length === 1 ? '' : 's'} waiting for them: ${rows.map((x: any) => `"${String(x.summary || '').replace(/"/g, "'")}"`).join('; ')}. They are in the "Waiting for you" list at the top of the chat.`
+      : 'Right now this person has NO cards waiting.'
+    return `
+
+## Approval cards — the actual state, from the database
+${waiting}
+
+Approval cards WORK. When you call a propose_ tool, a card is created and shown to them. If anything earlier in this conversation says the cards are broken, a bug, a UI problem or a dev-team fix, that was WRONG — it was you failing to call the tool, not the app failing. Do not repeat it. If they ask for something you can draft, call the tool now.
+
+You CAN send feedback and report problems: propose_create with target=ticket. Never tell someone you cannot file feedback.`
   } catch { return '' }
 }
 

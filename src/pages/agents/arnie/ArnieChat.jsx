@@ -239,6 +239,39 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   // deliberately no client-side admin check any more — the edge function
   // decides who may propose, from the JWT, and a check here would only be a
   // second copy of that rule that could drift out of step with it.
+  // ── Cards waiting for this person, from the database ────────────────
+  // Not just the ones drawn this turn: everything undecided, so a card made
+  // yesterday, on another device, or before a reload is still on screen.
+  const [pendingCards, setPendingCards] = useState([])
+  const loadPending = useCallback(async () => {
+    const me = useStore.getState().user
+    const co = useStore.getState().companyId
+    if (!me?.email || !co) return
+    // created_by is the person's EMAIL — the badge compared it to their id
+    // and so never counted a single card.
+    const { data } = await supabase.from('arnie_proposals')
+      .select('id,summary,target,created_at')
+      .eq('company_id', co).eq('created_by', me.email).eq('status', 'pending')
+      .order('id', { ascending: false }).limit(10)
+    setPendingCards((data || []).map((r) => ({ ...r, busy: false, error: null })))
+  }, [])
+  useEffect(() => { loadPending() }, [loadPending])
+  // A card already drawn in this conversation keeps its own buttons in place;
+  // listing it again at the top would be the same card twice.
+  const shownInline = new Set(messages.map((m) => m.proposal?.proposal?.id).filter(Boolean))
+  const waitingCards = pendingCards.filter((c) => !shownInline.has(c.id))
+
+  const decidePending = async (id, decision) => {
+    setPendingCards((prev) => prev.map((c) => (c.id === id ? { ...c, busy: true, error: null } : c)))
+    const res = await cfgInvoke({ action: decision, proposal_id: id })
+    if (!res || res.error) {
+      setPendingCards((prev) => prev.map((c) => (c.id === id ? { ...c, busy: false, error: res?.error || "That didn't go through." } : c)))
+      return
+    }
+    setPendingCards((prev) => prev.filter((c) => c.id !== id))
+    if (decision === 'apply') { try { await useStore.getState().fetchSettings?.() } catch { /* best-effort */ } }
+  }
+
   const cfgInvoke = async (body) => {
     try {
       const { data, error } = await supabase.functions.invoke('arnie-config', { body })
@@ -766,6 +799,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       }, files, { spoken, personaRow: assistant.personaRow })
 
       await saveMessage(sid, 'assistant', fullResponse)
+      // A card drawn this turn, or one decided elsewhere, shows or goes now.
+      loadPending()
 
       // Whatever is left after the last full stop — usually nothing, because
       // he has been talking the whole way down.
@@ -980,6 +1015,48 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         padding: isPanel ? '16px 14px' : (isMobile ? '16px 10px' : '24px 16px'),
         display: 'flex', flexDirection: 'column', gap: 18, backgroundColor: dark.bg,
       }}>
+        {/* WAITING FOR YOU — every undecided card, always visible.
+            A card used to exist only in the turn that drew it: reload the
+            page, open the app on your phone, or come back tomorrow and it was
+            gone from the screen while still sitting in the database. Alayda
+            had one waiting and was told for an afternoon that cards were
+            broken. They were never broken; they were invisible. */}
+        {waitingCards.length > 0 && (
+          <div style={{
+            border: `1px solid ${dark.orange}`, borderRadius: 12, padding: '11px 12px',
+            background: 'rgba(249,115,22,0.07)',
+          }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: dark.orange, marginBottom: 8 }}>
+              Waiting for you · {waitingCards.length}
+            </div>
+            {waitingCards.map((c) => (
+              <div key={c.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                padding: '8px 0', borderTop: `1px solid ${dark.border}`,
+              }}>
+                <div style={{ flex: '1 1 180px', minWidth: 0, fontSize: 13.5, color: dark.text, lineHeight: 1.4 }}>
+                  {c.summary || 'A change'}
+                  {c.error && <div style={{ fontSize: 12, color: dark.red, marginTop: 3 }}>{c.error}</div>}
+                </div>
+                <button
+                  onClick={() => decidePending(c.id, 'apply')}
+                  disabled={c.busy}
+                  style={{ border: 0, borderRadius: 9, padding: '8px 14px', minHeight: 40, cursor: 'pointer', background: dark.green, color: '#fff', fontWeight: 700, fontSize: 13 }}
+                >
+                  {c.busy ? '…' : 'Approve'}
+                </button>
+                <button
+                  onClick={() => decidePending(c.id, 'reject')}
+                  disabled={c.busy}
+                  style={{ border: `1px solid ${dark.border}`, borderRadius: 9, padding: '8px 12px', minHeight: 40, cursor: 'pointer', background: 'transparent', color: dark.textMuted, fontWeight: 600, fontSize: 13 }}
+                >
+                  Discard
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Welcome state */}
         {messages.length === 0 && !loading && (
           <div style={{ textAlign: 'center', padding: isPanel ? '28px 12px' : '6px 2px 0' }}>

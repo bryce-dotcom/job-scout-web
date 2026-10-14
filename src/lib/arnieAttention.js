@@ -30,7 +30,7 @@ const ARNIE_NOTIFICATION_TYPES = ['arnie_routine', 'arnie_nudge', 'arnie_brief']
  * What is waiting, and why. Returns zeroes rather than throwing: a badge is
  * never worth breaking a page for.
  */
-export async function arnieAttention({ employeeId, companyId } = {}) {
+export async function arnieAttention({ employeeId, companyId, email } = {}) {
   const empty = { total: 0, proposals: 0, computer: 0, notifications: 0, reasons: [] }
   if (!employeeId || !companyId) return empty
 
@@ -38,7 +38,11 @@ export async function arnieAttention({ employeeId, companyId } = {}) {
     // Their own drafts, still undecided.
     supabase.from('arnie_proposals')
       .select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId).eq('created_by', employeeId).eq('status', 'pending')
+      // created_by holds an EMAIL, not an id. Comparing it to employeeId
+      // matched nothing, ever — so this count was permanently zero and the
+      // badge never once said a card was waiting. Which is half of "no
+      // approval cards": there WAS one, and nothing on screen said so.
+      .eq('company_id', companyId).eq('created_by', email || 'nobody@invalid').eq('status', 'pending')
       .then((r) => r.count || 0, () => 0),
     // Stopped on their machine, waiting for them.
     supabase.from('arnie_computer_actions')
@@ -100,7 +104,7 @@ export function useArnieAttention() {
     let timer
     const tick = async () => {
       if (document.visibilityState === 'visible') {
-        const a = await arnieAttention({ employeeId: user.id, companyId })
+        const a = await arnieAttention({ employeeId: user.id, companyId, email: user.email })
         if (!alive) return
         // Only re-render when the number actually moves.
         setState((prev) => (prev.total === a.total ? prev : a))

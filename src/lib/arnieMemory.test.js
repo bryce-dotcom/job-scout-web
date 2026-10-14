@@ -22,7 +22,13 @@ describe('a memory is the person\'s own', () => {
     expect(keys).toEqual(['kind', 'text'])
   })
   it('read into the prompt server-side from the caller\'s identity — Arnie only, never Frankie', () => {
-    expect(chat).toMatch(/agent === 'arnie' && companyId != null && caller\.employeeId != null\s*\? systemPrompt \+ await memoriesBlock\(companyId, caller\.employeeId\)/)
+    // Inside the Arnie-only branch, keyed by the caller's own id. Not
+    // necessarily FIRST any more — who-you-are and the cards truth now come
+    // before it — which is fine: the property is that memories are read
+    // server-side, for Arnie, from the JWT, and never for Frankie.
+    const arnieOnly = chat.slice(chat.indexOf("agent === 'arnie' && companyId != null && caller.employeeId != null"))
+      .split(': systemPrompt')[0]
+    expect(arnieOnly).toMatch(/await memoriesBlock\(companyId, caller\.employeeId\)/)
     expect(chat).toMatch(/arnie_memories\?select=kind,text&company_id=eq\.\$\{companyId\}&employee_id=eq\.\$\{employeeId\}/)
     expect(chat).toMatch(/streamWithTools\(cleaned, systemPromptFinal/)
     expect(chat).toMatch(/callWithTools\(cleaned, systemPromptFinal/)
