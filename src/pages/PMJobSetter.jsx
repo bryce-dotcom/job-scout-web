@@ -3428,6 +3428,112 @@ export default function PMJobSetter() {
                                   {isExpanded ? <ChevronDown size={16} style={{ color: theme.textMuted }} /> : <ChevronRight size={16} style={{ color: theme.textMuted }} />}
                                 </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
+                                  {/* Urgency, and the repeat-customer count. The same two
+                                      signals the accordion carries — they were built there
+                                      and never reached this view, which is the one most
+                                      people actually look at. Badge absent at normal
+                                      (lib/jobPriority); the flag is a control, so it is
+                                      always offered. */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
+                                    {(() => {
+                                      const pb = priorityBadge(job, priorityConfig)
+                                      if (!pb) return null
+                                      return (
+                                        <span
+                                          title={pb.label}
+                                          aria-label={pb.label}
+                                          style={{
+                                            width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
+                                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '10px', fontWeight: 700, lineHeight: 1,
+                                            backgroundColor: pb.urgent ? pb.color : 'transparent',
+                                            color: pb.urgent ? '#fff' : pb.color,
+                                            border: pb.urgent ? 'none' : `1.5px solid ${pb.color}`,
+                                          }}
+                                        >{pb.level}</span>
+                                      )
+                                    })()}
+                                    {(() => {
+                                      const chip = repeatChip(repeatCounts[job.customer_id ?? job.customer?.id])
+                                      if (!chip) return null
+                                      return (
+                                        <span title={chip.label} style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: '2px',
+                                          padding: '1px 6px', borderRadius: '8px', fontSize: '10px', fontWeight: 700,
+                                          backgroundColor: theme.accentBg, color: theme.accent, flexShrink: 0,
+                                        }}>
+                                          <Repeat size={9} /> {chip.count}
+                                        </span>
+                                      )
+                                    })()}
+                                    <span style={{ flex: 1 }} />
+                                    <span style={{ position: 'relative', flexShrink: 0 }}>
+                                      <span
+                                        role="button"
+                                        aria-label="Set priority"
+                                        title={`Priority: ${priorityConfig.find(l => l.level === priorityOf(job))?.name}`}
+                                        // A drag that starts on this control would fight the
+                                        // picker, so the card does not drag from here.
+                                        draggable
+                                        onDragStart={(e) => { e.preventDefault(); e.stopPropagation() }}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setPriorityMenuJob(priorityMenuJob === job.id ? null : job.id)
+                                        }}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                          width: '20px', height: '20px', borderRadius: '6px', cursor: 'pointer',
+                                          color: priorityBadge(job, priorityConfig)?.color || theme.textMuted,
+                                          backgroundColor: theme.bg,
+                                        }}
+                                      >
+                                        <Flag size={11} />
+                                      </span>
+                                      {priorityMenuJob === job.id && (
+                                        <>
+                                          <span
+                                            onClick={(e) => { e.stopPropagation(); setPriorityMenuJob(null) }}
+                                            style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                          />
+                                          <span
+                                            onClick={(e) => e.stopPropagation()}
+                                            style={{
+                                              position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 41,
+                                              display: 'block', minWidth: '146px', padding: '4px',
+                                              backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                                              borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+                                            }}
+                                          >
+                                            {priorityConfig.map(lvl => {
+                                              const active = priorityOf(job) === lvl.level
+                                              return (
+                                                <span
+                                                  key={lvl.level}
+                                                  role="button"
+                                                  onClick={(e) => { e.stopPropagation(); setJobPriority(job, lvl.level) }}
+                                                  style={{
+                                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                                    padding: '7px 9px', borderRadius: '7px', cursor: 'pointer',
+                                                    fontSize: '13px', fontWeight: active ? 700 : 400,
+                                                    backgroundColor: active ? theme.accentBg : 'transparent',
+                                                    color: active ? theme.accent : theme.text,
+                                                  }}
+                                                >
+                                                  <span style={{
+                                                    width: '17px', height: '17px', borderRadius: '50%', flexShrink: 0,
+                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: '10px', fontWeight: 700, color: '#fff',
+                                                    backgroundColor: lvl.level === NORMAL_PRIORITY ? theme.textMuted : lvl.color,
+                                                  }}>{lvl.level}</span>
+                                                  {lvl.name}
+                                                </span>
+                                              )
+                                            })}
+                                          </span>
+                                        </>
+                                      )}
+                                    </span>
+                                  </div>
                                   <div style={{ fontSize: '14px', fontWeight: '700', color: theme.text, marginBottom: '3px', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                     {job.customer?.name || `Job #${job.id}`}
                                   </div>
