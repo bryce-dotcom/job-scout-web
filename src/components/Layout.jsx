@@ -1474,9 +1474,11 @@ export default function Layout() {
                 <LogOut size={18} />
                 Sign Out
               </button>
-              {/* Which build this is, and the way out of a stale one. */}
-              <BuildTag theme={theme} />
             </div>
+            {/* Which build this is, and the way out of a stale one. BELOW
+                the buttons, not beside them — as a third item in that flex
+                row it was 62px wide and wrapped to three lines. */}
+            <BuildTag theme={theme} />
           </div>
         </aside>
 
@@ -2048,8 +2050,8 @@ export default function Layout() {
                     <LogOut size={18} />
                     Sign Out
                   </button>
-                  <BuildTag theme={theme} />
                 </div>
+                <BuildTag theme={theme} />
               </div>
             </aside>
           </>
