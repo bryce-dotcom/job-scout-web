@@ -36,13 +36,21 @@ describe('rules add friction and can never remove it', () => {
   })
 
   it('an allow_auto cannot widen a tier', () => {
+    // The property this guards is unchanged and is the important one: a rule
+    // that says "do this without asking" must never turn a level somebody did
+    // not grant into one they did. What changed is the SHAPE of the no — a
+    // too-narrow tier is now a question put to a person rather than a dead
+    // end, and decideWithRules hands a failed floor straight back, so no rule
+    // can accept that question on their behalf.
     const d = decideWithRules(
       { kind: 'type', app: 'terminal', target: { label: 'prompt' } },
       [grant({ app: 'terminal', tier: 'click' })],
       [{ kind: 'allow_auto', app: 'terminal' }],
     )
     expect(d.ok).toBe(false)
-    expect(d.refuse).toMatch(/does not include type/i)
+    expect(d.needsGrant?.tier).toBe('full')
+    // Still waiting on a human — an offer is not an approval.
+    expect(d.needsGrant.why).toMatch(/does not stretch to type/i)
   })
 
   it('an allow_auto cannot hand Arnie a Submit button', () => {

@@ -76,12 +76,19 @@ describe('no grant means no', () => {
     expect(d.refuse).toMatch(/excel/)
   })
 
-  it('a too-narrow tier stays a plain refusal — it is a decision already made', () => {
-    // Offering to widen a grant somebody deliberately narrowed would be
-    // nagging them out of their own choice.
+  it('a too-narrow tier ASKS rather than refusing — reversed 2026-10-14', () => {
+    // This used to assert the opposite, on the reasoning that offering to
+    // widen a grant somebody deliberately narrowed would nag them out of
+    // their own choice. Trying it proved otherwise: Bryce had allowed Chrome
+    // on mail.google.com at watch, asked Jenny to read his Gmail, and got "I
+    // only have watch access" with no way out of it from where he stood. The
+    // reasoning was right about consent and wrong about the dead end — so it
+    // is a question now, answered by a person, and nothing is widened without
+    // one. Bryce: "instead of saying I cant do it bring up a permission box".
     const d = decideAction({ kind: 'type', app: 'chrome' }, [grant({ app: 'chrome', tier: 'watch' })])
-    expect(d.needsGrant).toBeUndefined()
-    expect(d.refuse).toMatch(/does not include type/)
+    expect(d.ok).toBe(false)
+    expect(d.needsGrant?.tier).toBe('full')      // what typing actually needs
+    expect(d.needsGrant.why).toMatch(/does not stretch to type/)
   })
 
   it('a grant for one app is not a grant for another', () => {

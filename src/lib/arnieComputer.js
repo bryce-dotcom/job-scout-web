@@ -26,6 +26,10 @@ async function call(action, body = {}) {
 export const hello = (device) => call('hello', device)
 
 export const grants = () => call('grants')
+/** Change the level on a program already allowed. Replaces, never adds —
+ *  a second grant does not widen anything, because the narrowest wins. */
+export const setTier = ({ app, host = '*', tier }) => call('set_tier', { app, host, tier })
+
 export const grant = ({ app, host = '*', tier = 'watch', duration = 'always', expires_at = null }) =>
   call('grant', { app, host, tier, duration, expires_at })
 export const revoke = ({ app, host }) => call('revoke', { app, host })

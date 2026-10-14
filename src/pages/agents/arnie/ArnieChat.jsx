@@ -17,6 +17,7 @@ import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import ArniePresence from './ArniePresence'
 import { startsTakeoff, endsTakeoff, joinSegments, TAKEOFF_HINT } from '../../../lib/takeoffMode'
+import { looksLikeEcho } from '../../../lib/micEcho'
 
 // Dark Arnie theme
 const dark = {
@@ -394,6 +395,9 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   // between feeling slow and feeling present.
   const speechQueue = useRef([])
   const spokenUpTo = useRef(0)
+  // The last thing said OUT LOUD, to compare the microphone against. Only
+  // what was actually spoken can come back as an echo.
+  const lastSpokenRef = useRef('')
 
   /** Play the next sentence; the mic comes back only when the queue empties. */
   const drainSpeech = useCallback(() => {
@@ -401,6 +405,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     const next = speechQueue.current.shift()
     if (!next) { resumeMic(); return }
     speakingLockRef.current = true
+    // Keep what was actually spoken, to compare the microphone against.
+    lastSpokenRef.current = `${lastSpokenRef.current} ${next}`.slice(-4000)
     speak(next, selectedVoice,
       () => setSpeaking(true),
       () => {
@@ -440,6 +446,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   const resetSpeech = useCallback(() => {
     speechQueue.current = []
     spokenUpTo.current = 0
+    lastSpokenRef.current = ''
   }, [])
 
   const handleStopSpeaking = () => {
@@ -531,6 +538,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         // Must be listening AND not already paused — recognition.stop() triggers a final
         // onresult which creates a new timer. Without the micState check, handleSend fires twice.
         if (text && listeningRef.current && micStateRef.current === 'listening') {
+          // Did we just hear HER, through the speakers? A loud speaker leaks
+          // into a microphone whatever the timing does, so this is checked on
+          // what was heard rather than on when we listened.
+          if (looksLikeEcho(text, lastSpokenRef.current)) {
+            console.warn('[Arnie] Ignored the mic hearing her own answer back')
+            setInput('')
+            transcriptRef.current = ''
+            return
+          }
           micStateRef.current = 'paused'
           try { recognition.stop() } catch {}
           setInput('')
@@ -656,12 +672,26 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
     // Safety timer: if mic is still paused after 30s, force-resume
     if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
-    safetyTimerRef.current = setTimeout(() => {
-      if (micStateRef.current === 'paused') {
-        console.warn('[Arnie] Safety timer: force-resuming mic after 30s')
-        resumeMic()
-      }
-    }, 30000)
+    // The mic is brought back if something went wrong and it was left paused.
+    // It must NEVER come back while she is still talking, which is what this
+    // used to do: her answers run well past thirty seconds, the mic opened
+    // mid-sentence, the speakers fed her own voice back in, and the silence
+    // timer sent it as the next question. Bryce's transcript has three of his
+    // "messages" that are her previous replies word for word.
+    //
+    // So it waits again instead of firing, and only gives up once nothing is
+    // being spoken and nothing is queued.
+    const armSafety = () => {
+      if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
+      safetyTimerRef.current = setTimeout(() => {
+        if (speakingLockRef.current || speechQueue.current.length) { armSafety(); return }
+        if (micStateRef.current === 'paused') {
+          console.warn('[Arnie] Safety timer: force-resuming mic')
+          resumeMic()
+        }
+      }, 30000)
+    }
+    armSafety()
 
     try {
       // The files themselves aren't stored, so the saved transcript has to name
@@ -1275,7 +1305,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               display: 'flex', alignItems: 'center', gap: 8, color: dark.orange, fontSize: 14,
             }}>
               <Loader2 size={16} style={{ animation: 'arnieSpin 1s linear infinite' }} />
-              Arnie's cookin' somethin' up...
+              {assistant.name || 'Arnie'} is working on it…
             </div>
           </div>
         )}

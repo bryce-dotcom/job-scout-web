@@ -266,7 +266,33 @@ export function decideAction(a: Action, grants: Grant[], now: Date = new Date())
     }
   }
   if (!TIER_ALLOWS[g.tier].includes(a.kind)) {
-    return { ok: false, refuse: `You gave me ${g.tier} access to ${g.app}, which does not include ${a.kind}.` }
+    // A level too narrow is a QUESTION, not a dead end.
+    //
+    // This used to refuse outright, and that refusal is what Bryce ran into
+    // asking Jenny to read his Gmail: he had allowed Chrome on mail.google.com
+    // at watch, she needed to click, and all she could say was "I only have
+    // watch access". Correct, useless, and with no way out of it from where he
+    // was standing. Bryce: "instead of saying I cant do it bring up a
+    // permission box that allows permission if the user wants to."
+    //
+    // It loosens nothing. The answer still has to come from a person tapping
+    // Allow, exactly as when nothing is granted at all — the only change is
+    // that they are asked instead of told. (Accepting it REPLACES the narrower
+    // grant; adding one would leave the narrower still winning and make the
+    // Allow button appear to do nothing.)
+    const wantTier = narrowestTierFor(a.kind)
+    if (!wantTier) {
+      return { ok: false, refuse: `You gave me ${g.tier} access to ${g.app}, which does not include ${a.kind}.` }
+    }
+    return {
+      ok: false,
+      needsGrant: {
+        app: String(a.app).toLowerCase(),
+        host: String(a.host || '*').toLowerCase(),
+        tier: wantTier,
+        why: `You have given me ${g.tier} on ${g.app}${a.host && a.host !== '*' ? ` for ${a.host}` : ''}, which does not stretch to ${a.kind}.`,
+      },
+    }
   }
   if (isIrreversibleTarget(a) && a.kind !== 'screenshot' && a.kind !== 'read_text') {
     return { ok: false, needsHuman: 'That one cannot be taken back, so you click it. Everything is filled in and ready for you to read.' }

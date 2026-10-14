@@ -408,13 +408,31 @@ Deno.serve(async (req) => {
       if (!app) return json({ error: 'That offer names no program.' }, 409)
       if (!['watch', 'click', 'full'].includes(tier)) return json({ error: 'That offer asks for an unknown tier.' }, 409)
 
+      const nowIso = new Date().toISOString()
+      // Retire anything NARROWER on the same program and site first.
+      //
+      // Without this the Allow button can appear to do nothing, and that is
+      // not hypothetical: an offer is now raised when a level is too narrow
+      // as well as when nothing is granted, and the narrowest grant in force
+      // wins. Allowing "click" while an old "watch" sat beside it would leave
+      // watch in charge and refuse the very action just approved.
+      const existing: Grant[] = await rest(
+        `arnie_computer_grants?select=id,tier&employee_id=eq.${me}&app=eq.${encodeURIComponent(app)}&host=eq.${encodeURIComponent(host)}&revoked_at=is.null`,
+      ) || []
+      for (const old of existing) {
+        if (TIER_RANK[old.tier] >= TIER_RANK[tier as Grant['tier']]) continue
+        await rest(`arnie_computer_grants?id=eq.${(old as Grant & { id: number }).id}`, {
+          method: 'PATCH', body: JSON.stringify({ revoked_at: nowIso, updated_at: nowIso }),
+        })
+      }
+
       await rest('arnie_computer_grants', {
         method: 'POST',
         headers: { ...H, Prefer: 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify({
           company_id: company, employee_id: me, app, host, tier, duration,
-          granted_at: new Date().toISOString(), expires_at: null,
-          revoked_at: null, consumed_at: null, updated_at: new Date().toISOString(),
+          granted_at: nowIso, expires_at: null,
+          revoked_at: null, consumed_at: null, updated_at: nowIso,
         }),
       })
 
@@ -582,6 +600,41 @@ Deno.serve(async (req) => {
 
     // ── what am I allowed to touch ───────────────────────────────────────
     if (action === 'grants') return json({ ok: true, grants: await myGrants() })
+
+    // Change the level on a program already allowed.
+    //
+    // Separate from 'grant' because it REPLACES rather than adds, and that is
+    // the whole point. Adding is what the Allow box does, and a second grant
+    // on the same program does not widen it — the narrowest in force wins, by
+    // design, so a stale 'watch' cannot be re-widened by accident. Which left
+    // only one way to change a level: revoke, then allow again, in that order,
+    // and getting it the wrong way round looked like the app ignoring you.
+    // Bryce hit exactly that on his own Chrome.
+    if (action === 'set_tier') {
+      const apps = appNames(String(body.app || ''))
+      const host = String(body.host || '*').trim().toLowerCase() || '*'
+      const tier = String(body.tier || '')
+      if (!apps.length) return json({ error: 'Which program?' }, 400)
+      if (!['watch', 'click', 'full'].includes(tier)) return json({ error: 'tier must be watch, click or full' }, 400)
+      const now = new Date().toISOString()
+      for (const app of apps) {
+        // Scoped to the same host as well, so a permission for one site is not
+        // retired by a change made to another.
+        await rest(
+          `arnie_computer_grants?employee_id=eq.${me}&app=eq.${encodeURIComponent(app)}&host=eq.${encodeURIComponent(host)}&revoked_at=is.null`,
+          { method: 'PATCH', body: JSON.stringify({ revoked_at: now, updated_at: now }) },
+        )
+      }
+      const made = await rest('arnie_computer_grants', {
+        method: 'POST',
+        headers: { ...H, Prefer: 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(apps.map((app) => ({
+          company_id: company, employee_id: me, app, host, tier, duration: 'always',
+          granted_at: now, expires_at: null, revoked_at: null, consumed_at: null, updated_at: now,
+        }))),
+      })
+      return json({ ok: true, grants: made || [] })
+    }
 
     if (action === 'grant') {
       // One name or several. "chrome, google suite, exel, windows" used to

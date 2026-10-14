@@ -16,9 +16,9 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import {
   Monitor, ShieldCheck, Ban, Eye, MousePointerClick, Keyboard, Plus, Trash2,
-  AlertTriangle, Power, GraduationCap, RefreshCw, Download, Sparkles, Check,
+  AlertTriangle, Power, GraduationCap, RefreshCw, Download, Sparkles, Check, ChevronDown,
 } from 'lucide-react'
-import { myComputer, myGrants, myOffers, grant as addGrant, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
+import { myComputer, myGrants, myOffers, grant as addGrant, setTier, revoke as dropGrant, stop as stopSession } from '../../../lib/arnieComputer'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import MachinePanel from './MachinePanel'
 import ScoutLoader from '../../../components/ScoutLoader'
@@ -37,6 +37,9 @@ const t = {
 
 // The same words the picker uses, for talking about a tier elsewhere.
 const TIER_LABEL = { watch: 'Watch only', click: 'Click, never type', full: 'Full' }
+// Narrowest first. The one in force on a program is the narrowest allowed,
+// so this order is what decides what the page reports.
+const TIER_ORDER = ['watch', 'click', 'full']
 
 const TIERS = [
   { id: 'watch', label: 'Watch only', icon: Eye, blurb: 'He can look at it. Nothing else.' },
@@ -97,6 +100,8 @@ export default function ArnieComputer() {
   // Somebody has downloaded the agent and is watching for it to appear.
   // Twenty seconds is a long time to stare at nothing.
   const [waiting, setWaiting] = useState(false)
+  // Which row has its level picker open.
+  const [tierFor, setTierFor] = useState(null)
 
   const load = useCallback(async () => {
     if (!employeeId) return
@@ -149,6 +154,13 @@ export default function ArnieComputer() {
       setNarrower(res?.narrower || null)
       setDraft({ app: '', host: '', tier: 'watch' }); setAdding(false); await load()
     } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+
+  const changeTier = async (g, tier) => {
+    if (tier === g.tier) { setTierFor(null); return }
+    setBusy(true); setErr('')
+    try { await setTier({ app: g.app, host: g.host || '*', tier }); setTierFor(null); setNarrower(null); await load() }
+    catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
   }
 
   const removeGrant = async (g) => {
@@ -221,9 +233,36 @@ export default function ArnieComputer() {
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: t.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
             <ShieldCheck size={17} style={{ color: t.accent }} /> What {who} may touch
           </h3>
-          <button onClick={() => setAdding((v) => !v)} style={btn(t.card2, t.sub)}>
-            <Plus size={14} /> Allow a program
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* What they may do, at a glance. The NARROWEST level in force,
+                because that is the one that actually governs — a page showing
+                "Full" while a watch-only grant quietly outranks it would be
+                worse than showing nothing. */}
+            {!!grants.length && (() => {
+              const low = grants.reduce((lo, g) =>
+                (TIER_ORDER.indexOf(g.tier) < TIER_ORDER.indexOf(lo) ? g.tier : lo), 'full')
+              const mixed = grants.some((g) => g.tier !== low)
+              const def = TIERS.find((x) => x.id === low) || TIERS[0]
+              const LIcon = def.icon
+              return (
+                <span
+                  title={mixed
+                    ? 'The level differs by program — the one on each row is what counts.'
+                    : `Everything allowed is set to “${def.label}”.`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: t.accentBg, color: t.accent, borderRadius: 999,
+                    padding: '5px 11px', fontSize: 12.5, fontWeight: 650,
+                  }}
+                >
+                  <LIcon size={13} /> {mixed ? `${def.label} or more` : def.label}
+                </span>
+              )
+            })()}
+            <button onClick={() => setAdding((v) => !v)} style={btn(t.card2, t.sub)}>
+              <Plus size={14} /> Allow a program
+            </button>
+          </div>
         </div>
 
         {!grants.length && !adding && (
@@ -248,6 +287,50 @@ export default function ArnieComputer() {
                 <div style={{ fontSize: 12, color: t.muted }}>
                   {tier.label}{g.duration === 'once' ? ' · once only' : ''} · allowed {ago(g.granted_at)}
                 </div>
+              </div>
+              {/* The level, as a control rather than a label. Changing it used
+                  to mean revoking the program and allowing it again — and
+                  allowing it again at a wider level does nothing on its own,
+                  because the narrowest in force wins. So the only way to widen
+                  something was a two-step dance in the right order, which
+                  nobody could be expected to guess. */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                <button
+                  onClick={() => setTierFor(tierFor?.id === g.id ? null : { id: g.id, app: g.app, host: g.host })}
+                  disabled={busy}
+                  title="Change what they may do with this program"
+                  style={{ ...btn(t.accentBg, t.accent), fontWeight: 650 }}
+                >
+                  <Icon size={14} /> {tier.label} <ChevronDown size={13} />
+                </button>
+                {tierFor?.id === g.id && (
+                  <div style={{
+                    position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 20,
+                    background: t.card, border: `1px solid ${t.line}`, borderRadius: 10,
+                    boxShadow: '0 10px 28px rgba(0,0,0,0.14)', padding: 5, minWidth: 210,
+                  }}>
+                    {TIERS.map((x) => {
+                      const XIcon = x.icon
+                      const on = x.id === g.tier
+                      return (
+                        <button
+                          key={x.id}
+                          onClick={() => changeTier(g, x.id)}
+                          disabled={busy}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                            background: on ? t.accentBg : 'transparent', color: on ? t.accent : t.ink,
+                            border: 0, borderRadius: 8, padding: '9px 10px', cursor: 'pointer',
+                            font: 'inherit', fontSize: 13, fontWeight: on ? 650 : 500, minHeight: 40,
+                          }}
+                        >
+                          <XIcon size={14} style={{ flexShrink: 0 }} /> {x.label}
+                          {on && <Check size={13} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
               <button onClick={() => removeGrant(g)} disabled={busy} title="Revoke" style={btn(t.rmBg, t.rm)}>
                 <Trash2 size={14} /> Revoke
