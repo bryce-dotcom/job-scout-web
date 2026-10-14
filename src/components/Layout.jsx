@@ -5,6 +5,7 @@ import BuildTag from './BuildTag'
 import { configFromSettings, navLabel } from '../lib/documentVocabulary'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
+import { pageVisible } from '../../supabase/functions/_shared/appMap.ts'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import NavCustomizer from './NavCustomizer'
 import { applyNavPrefs, loadNavPrefs, resetNavPrefs, saveNavPrefs } from '../lib/navPrefs'
@@ -459,52 +460,32 @@ export default function Layout() {
     return map[user.user_role] ?? map[user.role] ?? 0
   })()
   const userIsFieldTech = (user?.role || '').toLowerCase() === 'field tech' && userAccessLevel <= 0
-  const userIsAdmin = userAccessLevel >= 3
   // HR access is a separate flag; Developers always have it, everyone else
   // requires an explicit has_hr_access=true set by a Super Admin.
   const userHasHR = userAccessLevel >= 5 || user?.is_developer || user?.has_hr_access === true
 
-  // Filter base nav sections by access level
+  // WHO SEES WHICH PAGE — one rule, in _shared/appMap.ts.
+  //
+  // This used to be a hand-written chain of section and blocklist checks.
+  // Its payroll blocklist named '/payroll' and '/payroll/inbox' but not
+  // '/payroll/setup' — every employee's salary, SSN last four and bank
+  // details sat in the sidebar for anyone (found 2026-10-14). Its "hide
+  // Employees below Team Lead" line could never run (the payroll branch
+  // returned first), so Employees has always shown to every non-field-tech;
+  // the map keeps that, because it is what people have.
+  //
+  // Arnie reads the SAME function on the server to tell each person which
+  // pages they have, so the menu and Arnie cannot disagree. A page added to
+  // App.jsx without an entry in the map fails guard.mjs. Nav is still not
+  // access control — pages holding guarded data refuse on their own.
+  const navWho = { level: userAccessLevel, fieldTech: userIsFieldTech, hr: !!userHasHR }
   const filteredNavSections = useMemo(() => {
-    return baseNavSections.filter(section => {
-      // Field Techs: only OPERATIONS and TEAM
-      if (userIsFieldTech) {
-        return section.key === 'OPERATIONS' || section.key === 'TEAM'
-      }
-      // Financial: Admin+ only (level 3+)
-      if (section.key === 'FINANCIAL') return userAccessLevel >= 3
-      return true
-    }).map(section => {
-      // Field Tech: filter OPERATIONS to only Field Scout and Job Board
-      if (userIsFieldTech && section.key === 'OPERATIONS') {
-        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/field-scout' || i.to === '/job-board') }
-      }
-      // Field Tech: TEAM collapses to just My Pay (they use Field Scout for
-      // their daily workflow and clock-in, but they still need to check their
-      // own commissions, bonuses, and hours).
-      if (userIsFieldTech && section.key === 'TEAM') {
-        return { ...section, baseItems: section.baseItems.filter(i => i.to === '/my-pay') }
-      }
-      // Payroll: Admin+ only (level 3+) AND requires the HR access flag.
-      // Regular Admins without has_hr_access (e.g. office admins) never see
-      // the Payroll link in nav; only Super Admins can grant HR access.
-      //
-      // This is a BLOCKLIST, so every payroll route has to be named here. It
-      // named only '/payroll', which meant '/payroll/inbox' — tax filings, SSN
-      // last-4, direct-deposit last-4, everyone's gross pay — was left in the
-      // sidebar for every non-field-tech, Project Managers included. Anything
-      // payroll-shaped added later must go in this list too.
-      if (section.key === 'TEAM' && (userAccessLevel < 3 || !userHasHR)) {
-        const hrOnly = ['/payroll', '/payroll/inbox']
-        return { ...section, baseItems: section.baseItems.filter(i => !hrOnly.includes(i.to)) }
-      }
-      // Team Lead (level 1) and below: hide Employees page
-      if (section.key === 'TEAM' && userAccessLevel < 1) {
-        return { ...section, baseItems: section.baseItems.filter(i => i.to !== '/employees') }
-      }
-      return section
-    })
-  }, [userAccessLevel, userIsFieldTech, userHasHR])
+    return baseNavSections
+      .map(section => ({ ...section, baseItems: section.baseItems.filter(i => pageVisible(i.to, navWho)) }))
+      // A section with nothing left in it goes (Supply for a field tech,
+      // Financial below Admin) — and takes any agents placed in it, as before.
+      .filter(section => section.baseItems.length > 0)
+  }, [userAccessLevel, userIsFieldTech, userHasHR])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build dynamic nav sections with agents injected
   const navSections = useMemo(() => {
@@ -646,7 +627,7 @@ export default function Layout() {
   }
 
   // Admin section - shown to Admin+ (level 3+)
-  const adminSection = userIsAdmin ? {
+  const adminSection = pageVisible('/settings', navWho) ? {
     title: 'ADMIN',
     description: 'Settings, reports & documents',
     sectionIcon: Settings,
@@ -658,7 +639,7 @@ export default function Layout() {
   } : null
 
   // Management section - shown to Manager+ (level 2+)
-  const managementSection = userAccessLevel >= 2 ? {
+  const managementSection = pageVisible('/reports', navWho) ? {
     title: 'MANAGEMENT',
     description: 'Reports, EOS & analytics',
     sectionIcon: BarChart3,
@@ -682,7 +663,7 @@ export default function Layout() {
   }
 
   // Dev section - Developer only (level 5)
-  const devSection = userAccessLevel >= 5 ? {
+  const devSection = pageVisible('/admin/data-console', navWho) ? {
     title: 'DEV & MAINT.',
     description: 'Database, tools & diagnostics',
     sectionIcon: Wrench,

@@ -15,6 +15,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { payrollSetupProblems } from '../lib/payrollSetupGate'
+import { canViewHR, isAdmin } from '../lib/accessControl'
 import { SUI_SOURCES, SUI_STATES, validateSuiRate, suiStateFor } from '../lib/suiRate'
 import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from '../lib/achFromPlaid'
 import { parseLocalDate } from '../lib/localDate'
@@ -86,8 +87,20 @@ export default function PayrollSetup() {
   const [lastImported, setLastImported] = useState(null)
   const [guideOpen, setGuideOpen] = useState(false)
 
+  // THIS PAGE HAD NO ACCESS CHECK AT ALL.
+  //
+  // It loads every employee's SSN last four, home address, hourly rate and
+  // annual salary, plus the EIN and every payroll run's gross — straight into
+  // the browser of whoever opens it. Payroll.jsx and PayrollInbox.jsx both
+  // refuse anyone who is not an Admin with the HR flag; this one was added
+  // later and never got the same line, and the sidebar did not hide it
+  // either. Found 2026-10-14 while mapping who can see what. Same rule as its
+  // two siblings, applied BEFORE the query, because a page that hides the
+  // data after fetching it has already handed it to the network tab.
+  const allowed = canViewHR(user) && isAdmin(user)
+
   const load = async () => {
-    if (!companyId) return
+    if (!companyId || !allowed) return
     const [co, cfg, emps, dd, rn, st] = await Promise.all([
       supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
       supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
@@ -113,7 +126,7 @@ export default function PayrollSetup() {
     })
     setLoading(false)
   }
-  useEffect(() => { load() }, [companyId])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [companyId, allowed])   // eslint-disable-linereact-hooks/exhaustive-deps
 
   const problems = useMemo(() => company ? payrollSetupProblems({ company, payrollConfig: config, employees }) : [], [company, config, employees])
   const companyProblems = problems.filter(p => p.fix !== 'employee')
@@ -238,6 +251,19 @@ export default function PayrollSetup() {
   const done3 = achReady || (config.payMethod === 'check')
   const done4 = imp.stage === 'done' || ranThisYear.length > 0
   const allDone = done1 && done2
+
+  // After every hook, so the order React relies on never changes.
+  if (user && !allowed) {
+    return (
+      <div style={{ padding: isMobile ? 16 : 24, maxWidth: 640, margin: '0 auto' }}>
+        <h1 style={{ margin: 0, fontSize: 22, color: theme.text }}>Payroll setup</h1>
+        <p style={{ fontSize: 14, color: theme.textMuted, marginTop: 8, lineHeight: 1.55 }}>
+          Payroll setup holds everyone's pay, tax and bank details, so it is open only to an Admin
+          with HR access. A Super Admin can grant that from the Employees page.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: isMobile ? 16 : 24, maxWidth: 980, margin: '0 auto' }}>

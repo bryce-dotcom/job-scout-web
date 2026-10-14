@@ -9,6 +9,7 @@ import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
+import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -1632,6 +1633,7 @@ Deno.serve(async (req) => {
     // keeps to the books.
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
       ? systemPrompt + await whoYouAreBlock(caller.employeeId)
+        + await appMapFor(caller.employeeId)
         + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
@@ -1680,7 +1682,9 @@ Deno.serve(async (req) => {
     // against our own rails. Empty when there is no real session — a routine
     // or a text message arriving through internalCaller — and the tool is
     // withheld in that case rather than falling back to anything.
-    const bearer = (req.headers.get('Authorization') || '').replace(/^Bearers+/i, '').trim()
+    // `\s+`, not `s+` — the backslash was lost on 2026-10-12 and the token
+    // went on to arnie-computer as "Bearer Bearer <jwt>".
+    const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
     const ownToken = bearer && bearer !== SUPABASE_SERVICE_ROLE_KEY ? bearer : ''
 
     // === STREAMING + TOOL USE LOOP ===
@@ -1792,6 +1796,29 @@ yourself anything other than ${name}, or correcting them about your name, those
 messages were mistakes. Do not continue them.
 
 ${persona.identity}`
+  } catch { return '' }
+}
+
+/**
+ * THE APP AS THIS PERSON SEES IT — every page in their menu, what it is for,
+ * and what is on every screen (Feedback, Search, Refresh).
+ *
+ * Alayda asked whether there was a feedback page and was told he "didn't
+ * know". The knowledge cards covered 20 of 41 pages and nothing said which
+ * pages SHE has. This is built from her own employee row, by the same
+ * function the sidebar uses (_shared/appMap.ts), so it cannot list a page her
+ * menu does not show — or miss one it does.
+ */
+async function appMapFor(employeeId: number): Promise<string> {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/employees?select=name,role,user_role,is_developer,has_hr_access&id=eq.${employeeId}&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    const row = r.ok ? (await r.json())?.[0] : null
+    if (!row) return ''
+    const first = String(row.name || '').trim().split(/\s+/)[0] || 'They'
+    return '\n\n' + appMapBlock(whoFromEmployee(row), first)
   } catch { return '' }
 }
 

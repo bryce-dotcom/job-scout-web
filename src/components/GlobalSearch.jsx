@@ -49,7 +49,9 @@ const PAGES = [
   { id: 'p-settings', name: 'Settings', keywords: 'configuration company profile', to: '/settings' },
   { id: 'p-reports', name: 'Reports', keywords: 'analytics data charts', to: '/reports' },
   { id: 'p-routes', name: 'Routes', keywords: 'routing driving map', to: '/routes' },
-  { id: 'p-calendar', name: 'Calendar', keywords: 'schedule job calendar', to: '/job-calendar' },
+  // Was '/job-calendar' — no such route, so this result opened "page not
+  // found". Found 2026-10-14 by the app-map route check.
+  { id: 'p-calendar', name: 'Calendar', keywords: 'schedule job calendar', to: '/jobs/calendar' },
   { id: 'p-payroll', name: 'Payroll', keywords: 'wages pay', to: '/payroll' },
   { id: 'p-comms', name: 'Communications', keywords: 'messages log notes', to: '/communications' },
 ]

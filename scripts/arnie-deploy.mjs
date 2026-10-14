@@ -24,8 +24,31 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ALL = ['arnie-chat', 'arnie-config', 'arnie-brief-push', 'arnie-nudge', 'convert-estimate', 'approve-document']
 const PROJECT = 'tzrhfhisdeahrrmeksif'
-const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'))
+// Any flag stops here. Flags used to be silently dropped, so
+// `arnie-deploy --help` meant "deploy all six" — and on 2026-10-14 it did,
+// from a worktree 27 commits behind main, briefly reverting a conversion fix.
+if (process.argv.slice(2).some((a) => a.startsWith('-'))) {
+  console.log('usage: npm run arnie:deploy [-- <function> ...]   (no flags; no names = all of: ' + ['arnie-chat', 'arnie-config', 'arnie-brief-push', 'arnie-nudge', 'convert-estimate', 'approve-document'].join(', ') + ')')
+  process.exit(2)
+}
+const wanted = process.argv.slice(2)
 const fns = wanted.length ? wanted : ALL
+
+// Never deploy over newer code. A deploy uploads THIS checkout, so a worktree
+// that is behind main on supabase/functions quietly reverts whatever landed
+// since — for every tenant, with no commit to show for it.
+try {
+  execSync('git fetch -q origin main', { cwd: root, stdio: 'ignore' })
+  const behind = execSync('git log --oneline HEAD..origin/main -- supabase/functions', { cwd: root, encoding: 'utf8' }).trim()
+  if (behind) {
+    console.error('\narnie:deploy — main has edge-function commits this checkout does not. Nothing was deployed.\n')
+    console.error(behind.split('\n').map((l) => '  ' + l).join('\n'))
+    console.error('\n  Rebase onto origin/main first, then deploy.\n')
+    process.exit(1)
+  }
+} catch {
+  console.warn('arnie:deploy — could not compare with origin/main (offline?). Deploying anyway.')
+}
 
 for (const fn of fns) {
   const entry = resolve(root, 'supabase/functions', fn, 'index.ts')

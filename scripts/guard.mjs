@@ -18,7 +18,66 @@ const SCAN_DIRS = ['src', 'supabase/functions']
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'build', 'coverage'])
 const EXTS = /\.(js|jsx|ts|tsx)$/
 
+// The routes the app map (supabase/functions/_shared/appMap.ts) knows about.
+// Read as text so the guard stays plain Node with no TypeScript loader.
+function appMapRoutes() {
+  try {
+    const src = readFileSync(join(ROOT, 'supabase', 'functions', '_shared', 'appMap.ts'), 'utf8')
+    return new Set([...src.matchAll(/\broute:\s*'([^']+)'/g)].map((m) => m[1]))
+  } catch { return null }
+}
+
 const RULES = [
+  {
+    id: 'page-missing-from-app-map',
+    // Two files decide what pages exist and who sees them: App.jsx (routes)
+    // and Layout.jsx (the menu). Every in-app page in either must have an
+    // entry in the app map, or Arnie will not know it exists.
+    allow: [],
+    fileTest: (src, rel) => {
+      const norm = rel.split(sep).join('/')
+      if (norm !== 'src/App.jsx' && norm !== 'src/components/Layout.jsx') return []
+      const known = appMapRoutes()
+      if (!known) return [{ line: 1, text: 'could not read supabase/functions/_shared/appMap.ts' }]
+      const lines = src.split(/\r?\n/)
+      const hits = []
+      // App.jsx: only the signed-in pages — the block between <Layout /> and
+      // the catch-all. Public pages and agent workspaces (/agents/*, which
+      // Arnie learns from the company's recruited crew) are out of scope.
+      let from = 0, to = lines.length
+      if (norm === 'src/App.jsx') {
+        from = lines.findIndex((l) => /<Layout \/>/.test(l))
+        to = lines.findIndex((l, i) => i > from && /path="\*"/.test(l))
+        if (from < 0 || to < 0) return [{ line: 1, text: 'could not find the <Layout /> route block' }]
+      }
+      const re = norm === 'src/App.jsx' ? /<Route path="(\/[^"]*)"/g : /\bto:\s*'(\/[^']*)'/g
+      for (let i = from; i < to; i++) {
+        for (const m of lines[i].matchAll(re)) {
+          const route = m[1].replace(/\/\*$/, '')
+          if (route.includes(':') || route.startsWith('/agents/')) continue
+          // A sub-page of a mapped page (/fleet/calendar under /fleet) is
+          // covered by its parent — unless it is a menu item in its own right.
+          const parent = route.replace(/\/[^/]+$/, '')
+          if (known.has(route)) continue
+          if (norm === 'src/App.jsx' && parent && known.has(parent)) continue
+          hits.push({ line: i + 1, text: `${route} — not in the app map` })
+        }
+      }
+      return hits
+    },
+    why: [
+      'A page exists that Arnie has never been told about.',
+      '',
+      '  Add it to MENU_PAGES (if it is in the sidebar) or OFF_MENU_PAGES in',
+      '  supabase/functions/_shared/appMap.ts: its label, who can open it, and',
+      '  one plain sentence on what it is for. Then deploy arnie-chat.',
+      '',
+      'On 2026-10-14 Jenny told Alayda she "didn\'t know" if there was a feedback',
+      'page. Arnie\'s knowledge covered 20 of 41 menu pages and nothing told him',
+      'which pages the person in front of him can open. The map is the one list',
+      'the sidebar AND Arnie read, and this check is how it stays complete.',
+    ],
+  },
   {
     id: 'legacy-net-rederived',
     // Matches: disc >= gross, discountApplied >= grossAmount, pdfDiscount >= pdfGross ...
