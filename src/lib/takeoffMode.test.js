@@ -82,3 +82,28 @@ describe('stitching speech across long pauses', () => {
       .toBe('front office and and the hallway')
   })
 })
+
+describe("Cole's phrases — the spec's own words", () => {
+  // His write-up, 2026-10-10: "'Jenny, go into takeoff mode' means silence
+  // until 'Jenny, are you ready?'". The first version accepted neither.
+  it('"Jenny, go into takeoff mode" starts it', () => {
+    expect(startsTakeoff('Jenny, go into takeoff mode', 'Jenny JobScouter').hit).toBe('takeoff mode')
+    expect(startsTakeoff('jenny go into takeoff mode back room four highbays', 'Jenny JobScouter').rest).toBe('back room four highbays')
+    expect(startsTakeoff('Hey Jenny, can you go into take off mode').hit).toBeTruthy()
+  })
+  it('a renamed assistant is addressed by her own name', () => {
+    expect(startsTakeoff('Sadie, go into takeoff mode', 'Sadie').hit).toBeTruthy()
+  })
+  it('still not armed by a sentence that merely mentions it', () => {
+    expect(startsTakeoff('Jenny, tell Cole about takeoff mode', 'Jenny JobScouter').hit).toBeNull()
+  })
+  it('"Jenny, are you ready?" ends it, and her name stays out of the count', () => {
+    const done = endsTakeoff('two wall packs by the door. Jenny, are you ready?', 'Jenny JobScouter')
+    expect(done.hit).toBe('are you ready')
+    expect(done.rest).toBe('two wall packs by the door')
+    expect(endsTakeoff('Jenny are you ready', 'Jenny JobScouter').rest).toBe('')
+  })
+  it('"are you ready for the warehouse" mid-count is still counting', () => {
+    expect(endsTakeoff('ok are you ready for the warehouse, twelve highbays').hit).toBeNull()
+  })
+})

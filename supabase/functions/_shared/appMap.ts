@@ -149,6 +149,7 @@ export const ALWAYS_ON_SCREEN = [
   'Refresh — at the bottom of the menu; reloads the app onto the newest version. Use it when something looks out of date.',
   'Sign Out — at the bottom of the menu, next to Refresh.',
   'Your assistant — the button that opens you, from any page. Your own pages: Chat, Computer (connect a computer and set what you may do on it), Routines (things you do on a schedule), Taught (jobs they have shown you), History, and Settings (your name, voice, and what you remember).',
+  'Talking to you — the mic button in your chat. TAKEOFF MODE is for counting a building: say "<your name>, go into takeoff mode" (or tap the clipboard button next to the mic) and you stay completely silent, however long the pauses, until they say "<your name>, are you ready?" (or "that\'s it", or tap the tick). Then the whole count arrives at once and you read it back before building anything. While you are talking they can tap the red Stop button, or — on a computer or an Android phone, with the mic on — just say "stop".',
   'On a phone the menu is the ☰ button; the bar at the bottom holds their favourite pages and can be rearranged.',
 ]
 

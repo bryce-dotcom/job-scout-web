@@ -463,7 +463,7 @@ describe('he talks while he thinks', () => {
     // Live, 2026-10-14: Stop vanished six seconds into an eight-sentence
     // answer, because `speaking` went false at the end of every clip.
     const drain = chat.slice(chat.indexOf('const drainSpeech'), chat.indexOf('const speakAsItArrives'))
-    expect(drain).toMatch(/if \(streamDoneRef\.current\) setSpeaking\(false\)/)
+    expect(drain).toMatch(/if \(streamDoneRef\.current\) \{\s*setSpeaking\(false\)/)
     // The per-sentence end hands straight on to the next — no setSpeaking(false).
     const perSentence = drain.slice(drain.indexOf('speak(next'))
     expect(perSentence).not.toMatch(/setSpeaking\(false\)/)

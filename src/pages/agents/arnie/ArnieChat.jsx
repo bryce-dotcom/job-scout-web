@@ -16,7 +16,8 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import ArniePresence from './ArniePresence'
-import { startsTakeoff, endsTakeoff, joinSegments, TAKEOFF_HINT } from '../../../lib/takeoffMode'
+import { startsTakeoff, endsTakeoff, joinSegments, takeoffHint } from '../../../lib/takeoffMode'
+import { isStopCommand, bargeInAllowed } from '../../../lib/bargeIn'
 import { looksLikeEcho } from '../../../lib/micEcho'
 
 // Dark Arnie theme
@@ -396,9 +397,17 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
   // ── Mic helpers (state machine) ───────────────────────────────────────
 
+  // 'bargein' is the third state: she is talking, and the mic is still on —
+  // but it acts only on a spoken stop (lib/bargeIn). Every way into "she is
+  // about to talk" goes through micWhileTalking() so the two cannot diverge.
+  const micWhileTalking = () => (bargeInAllowed() ? 'bargein' : 'paused')
+
   const pauseMic = useCallback(() => {
     if (micStateRef.current !== 'listening') return // only pause if actively listening
-    micStateRef.current = 'paused'
+    micStateRef.current = micWhileTalking()
+    // Stopped either way: in 'paused' it stays stopped; in 'bargein' onend
+    // starts a FRESH run, so nothing the person already said is still sitting
+    // in the results to be mistaken for a command.
     if (recognitionRef.current) {
       try { recognitionRef.current.stop() } catch {}
     }
@@ -406,6 +415,14 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   }, [])
 
   const resumeMic = useCallback(() => {
+    if (micStateRef.current === 'bargein') {
+      // Back to ordinary listening. Restarted so the run starts empty — what
+      // it heard while she talked was mostly her.
+      micStateRef.current = 'listening'
+      transcriptRef.current = ''
+      try { recognitionRef.current?.stop() } catch {}
+      return
+    }
     if (micStateRef.current !== 'paused') return // only resume if we were paused
     micStateRef.current = 'listening'
     // 100ms delay to avoid racing with recognition.onend
@@ -476,8 +493,13 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       // so Stop vanished between sentences and was gone by the time anyone
       // reached for it. Found live on Bryce's account, 2026-10-14: Stop
       // disappeared six seconds into an eight-sentence answer.
-      if (streamDoneRef.current) setSpeaking(false)
-      resumeMic()
+      // Same for the mic: an empty queue mid-answer is a pause between
+      // sentences, and handing the mic back then let it hear her NEXT
+      // sentence and send it as the person's question.
+      if (streamDoneRef.current) {
+        setSpeaking(false)
+        resumeMic()
+      }
       return
     }
     speakingLockRef.current = true
@@ -576,6 +598,18 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
     recognition.onresult = (event) => {
       const full = Array.from(event.results).map(r => r[0].transcript).join('')
+
+      // ── She is talking: listen for "stop" and nothing else ──────────
+      // Checked before anything else, and nothing heard here is kept: while
+      // she speaks, most of what the mic picks up is her own voice.
+      if (micStateRef.current === 'bargein') {
+        const latest = event.results[event.results.length - 1]?.[0]?.transcript || ''
+        if (isStopCommand(latest, assistant.name) || isStopCommand(full, assistant.name)) {
+          console.log('[Arnie Mic] heard "stop" — stopping')
+          handleStopSpeaking()
+        }
+        return
+      }
       transcriptRef.current = full
 
       // ── Takeoff mode ────────────────────────────────────────────────
@@ -587,13 +621,13 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         // No silence timer at all. A pause means they are counting.
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
 
-        const done = endsTakeoff(full)
+        const done = endsTakeoff(full, assistant.name)
         if (done.hit) {
           const text = joinSegments(takeoffTextRef.current, done.rest).trim()
           takeoffRef.current = false
           takeoffTextRef.current = ''
           setTakeoff(false)
-          micStateRef.current = 'paused'
+          micStateRef.current = micWhileTalking()
           try { recognition.stop() } catch {}
           setInput('')
           transcriptRef.current = ''
@@ -604,7 +638,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
       // Asked for it out loud rather than reaching for the button — likely,
       // since both hands are busy.
-      const start = startsTakeoff(full)
+      const start = startsTakeoff(full, assistant.name)
       if (start.hit) {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
         takeoffRef.current = true
@@ -635,7 +669,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
             transcriptRef.current = ''
             return
           }
-          micStateRef.current = 'paused'
+          micStateRef.current = micWhileTalking()
           try { recognition.stop() } catch {}
           setInput('')
           transcriptRef.current = ''
@@ -662,7 +696,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       }
       // Only auto-restart if mic state is 'listening' (natural silence end)
       // Do NOT restart if 'paused' (we intentionally stopped) or 'idle' (user toggled off)
-      if (micStateRef.current === 'listening' && listeningRef.current) {
+      // 'bargein' restarts too: that is the mic staying on while she talks.
+      if ((micStateRef.current === 'listening' || micStateRef.current === 'bargein') && listeningRef.current) {
         try { recognition.start() } catch {}
       }
     }
@@ -856,7 +891,12 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       // However the turn ended, it has finished arriving — so an empty queue
       // now really does mean done, and Stop can go.
       streamDoneRef.current = true
-      if (!speakingLockRef.current && !speechQueue.current.length) setSpeaking(false)
+      // Nothing playing and nothing queued — voice off, an empty answer, or
+      // all of it already said — so nothing else will hand the mic back.
+      if (!speakingLockRef.current && !speechQueue.current.length) {
+        setSpeaking(false)
+        resumeMic()
+      }
       if (safetyTimerRef.current) clearTimeout(safetyTimerRef.current)
     }
     // assistant.personaRow is in here because it arrives AFTER the first
@@ -872,7 +912,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     takeoffTextRef.current = ''
     setTakeoff(false)
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-    micStateRef.current = 'paused'
+    micStateRef.current = micWhileTalking()
     try { recognitionRef.current?.stop() } catch { /* already stopped */ }
     setInput('')
     transcriptRef.current = ''
@@ -1580,7 +1620,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               width: 8, height: 8, borderRadius: 4, background: dark.orange, flexShrink: 0,
               animation: 'arniePulse 1.5s ease-in-out infinite',
             }} />
-            <span>{TAKEOFF_HINT}</span>
+            <span>{takeoffHint(assistant.name)}</span>
           </button>
         )}
 
