@@ -706,6 +706,28 @@ export default function Dashboard() {
   }
 
   // ── Reusable components ──
+
+  // A money figure must never break mid-number.
+  //
+  // The three comparison values sit in ~70px columns inside the tile, and
+  // they carried overflowWrap:'anywhere' to stop them pushing the card
+  // wider. That stops the overflow by breaking the NUMBER: on HHH's board
+  // $2,298,743 rendered as "$2,29" above "8,743", and $335,998 as "$335,"
+  // above "98". Two numbers, neither of them true.
+  //
+  // Shrink to fit instead. Every digit survives, nothing wraps, and the
+  // headline figure above is untouched — this only governs the small print.
+  // A gentle step, not a crush. The figures wrap to their own line when they
+  // are long, so this only has to stop two mid-length numbers fighting over
+  // one line — it never has to squeeze $2,298,743 into 55px, which is how you
+  // end up at 11px bold and unreadable.
+  const fitValue = (v, mobile) => {
+    const n = String(v ?? '').length
+    if (n <= 7) return mobile ? 18 : 20
+    if (n <= 10) return mobile ? 16 : 17
+    return mobile ? 14 : 15
+  }
+
   const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, avgLabel, avgValue, hint }) => (
     <div
       onClick={onClick}
@@ -752,27 +774,27 @@ export default function Dashboard() {
         // without a scrollbar at 375px.
         <div style={{
           marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}`,
-          display: 'grid',
-          // One track per number shown. minmax(0,1fr) throughout — plain 1fr
-          // lets a long currency string push the card past its track and the
-          // page clips it without a scrollbar at 375px.
-          gridTemplateColumns: `repeat(${1 + (lastValue !== undefined ? 1 : 0) + (avgValue !== undefined ? 1 : 0)}, minmax(0,1fr))`,
-          gap: '10px',
+          // Wrapping items, not fixed tracks. Three equal tracks gave each
+          // figure ~69px on a wide screen and 55px at 1024 — measured — while
+          // $2,298,743 needs 62px even at 12px. The old answer was to break the
+          // number; the right one is to let a long figure take a line of its
+          // own and keep every digit.
+          display: 'flex', flexWrap: 'wrap', gap: '10px 14px',
         }}>
           {lastValue !== undefined && (
-            <div style={{ minWidth: 0 }}>
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{lastLabel || 'Last Month'}</div>
-              <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.textSecondary, overflowWrap: 'anywhere' }}>{lastValue}</div>
+              <div style={{ fontSize: fitValue(lastValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{lastValue}</div>
             </div>
           )}
-          <div style={{ minWidth: 0 }}>
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
             <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
-            <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text, overflowWrap: 'anywhere' }}>{ytdValue}</div>
+            <div style={{ fontSize: fitValue(ytdValue, isMobile), fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{ytdValue}</div>
           </div>
           {avgValue !== undefined && (
-            <div style={{ minWidth: 0 }}>
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
               <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{avgLabel || '90-Day Avg'}</div>
-              <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.textSecondary, overflowWrap: 'anywhere' }}>{avgValue}</div>
+              <div style={{ fontSize: fitValue(avgValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{avgValue}</div>
             </div>
           )}
         </div>
