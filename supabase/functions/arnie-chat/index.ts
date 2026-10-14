@@ -8,6 +8,7 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
+import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -1630,7 +1631,8 @@ Deno.serve(async (req) => {
     // client cannot hand him someone else's head. Arnie only; Frankie
     // keeps to the books.
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
-      ? systemPrompt + await memoriesBlock(companyId, caller.employeeId)
+      ? systemPrompt + await whoYouAreBlock(caller.employeeId)
+        + await memoriesBlock(companyId, caller.employeeId)
         + await computerBlock(companyId, caller.employeeId)
         + await crewBlock(companyId)
         + await houseLightingBlock(companyId)
@@ -1724,6 +1726,41 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
 
 // Run a non-streaming completion with tool use support (multi-turn)
 /** The remembered lines as a prompt section — empty string when there are none. */
+/**
+ * WHO THEY ARE, settled by the server from the database.
+ *
+ * The prompt is built in the browser, so the assistant's identity used to
+ * arrive only if the client sent it — and a phone running last week's bundle
+ * sends nothing. The server then fell back to the default, which is Arnie.
+ *
+ * Alayda, whose assistant is Jenny and who addressed her as Jenny three
+ * times, was told "Boss, I'm **Arnie**, not Jenny" three times back. Her row
+ * said jenny the whole way through; her bundle was just old. Nobody should
+ * have to clear a cache to be called the right name, so the one place that
+ * always knows — the database, keyed by the JWT — now says it last, after
+ * whatever the client claimed.
+ */
+async function whoYouAreBlock(employeeId: number): Promise<string> {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/arnie_personas?select=persona,display_name&employee_id=eq.${employeeId}&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    if (!r.ok) return ''
+    const row = (await r.json())?.[0]
+    if (!row) return ''
+    const persona = personaFor(row.persona)
+    // A renamed assistant wins, but only a name the naming rules accept —
+    // safeDisplayName hands back the persona's own name when it does not.
+    const name = row.display_name ? safeDisplayName(row.display_name, persona) : persona.fullName
+    if (!name) return ''
+    return `
+
+## Your name, settled
+You are **${name}**. This person chose that; it is what they call you and what you answer to. If they address you by that name they are addressing YOU — never correct them, and never introduce yourself as anything else. This line is read from their account and overrides any other name earlier in these instructions.`
+  } catch { return '' }
+}
+
 async function memoriesBlock(companyId: number, employeeId: number): Promise<string> {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/arnie_memories?select=kind,text&company_id=eq.${companyId}&employee_id=eq.${employeeId}&order=created_at&limit=40`,
