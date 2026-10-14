@@ -239,8 +239,17 @@ export async function generateAndUploadTemplate(template, dataContext, { entityT
       // stamp it onto the filled PDF. Happens on top of any fill/overlay
       // the legacy `_sig_*` path already did, so both approaches coexist.
       try {
-        const sigFields = Array.isArray(template.signature_fields) ? template.signature_fields : []
-        if (sigFields.length > 0) {
+        // Where the signature goes. A box placed on the template wins; where
+        // none was placed we read the form's own signature fields, because
+        // `signature_fields` has never been written by anything in the app —
+        // so requiring it meant no generated document was ever signed. Robert
+        // Anderson's General Application came out dated and unsigned nine days
+        // after he signed the proposal (lib/signatureTargets).
+        const { PDFDocument } = await import('pdf-lib')
+        const { signatureRects } = await import('./signatureTargets')
+        const probe = await PDFDocument.load(filledBytes, { ignoreEncryption: true })
+        const { rects } = signatureRects(probe, template.signature_fields)
+        if (rects.length > 0) {
           const { resolveCustomerSignature } = await import('./customerSignature')
           const { stampSignatureOnPdf } = await import('./attachmentSignatureFiller')
           const sig = await resolveCustomerSignature({
@@ -251,7 +260,7 @@ export async function generateAndUploadTemplate(template, dataContext, { entityT
             filledBytes = await stampSignatureOnPdf(filledBytes, {
               signatureBytes: sig.pngBytes,
               typedText: sig.typedText,
-              signatureFields: sigFields,
+              signatureFields: rects,
             })
           }
         }

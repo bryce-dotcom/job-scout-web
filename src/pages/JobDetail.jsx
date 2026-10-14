@@ -2562,6 +2562,30 @@ function JobDetailInner() {
     await fetchJobData()
   }
 
+  // Put the customer's signature on a document made after they signed.
+  //
+  // The documents a job needs are worked out once the job is real — days
+  // after the proposal was signed — so they generate blank where the
+  // signature belongs. This applies the signature already on the job
+  // (lib/signExistingDocument); it does not ask for a new one, because
+  // re-signing is not re-consenting.
+  const handleApplySignature = async (att) => {
+    const { applySignatureToAttachment } = await import('../lib/signExistingDocument')
+    toast.info(`Signing ${att.file_name}…`)
+    const result = await applySignatureToAttachment(att, {
+      jobId: job?.id || null,
+      leadId: job?.lead_id || null,
+    })
+    if (!result.success) {
+      toast.error(result.error)
+      return
+    }
+    const { places, method, signedAt } = result.applied
+    const when = signedAt ? new Date(signedAt).toLocaleDateString() : 'earlier'
+    toast.success(`Signed in ${places} place${places === 1 ? '' : 's'} — ${method === 'typed' ? 'typed' : 'drawn'} signature from ${when}`)
+    await fetchJobData()
+  }
+
   // Fetch library templates and supplementary data when generate modal opens
   const handleOpenGenerateModal = async () => {
     setShowGenerateModal(true)
@@ -7198,6 +7222,32 @@ function JobDetailInner() {
                           <Download size={12} />
                           Download
                         </button>
+                        {/* Only where there is a signature to apply and a PDF
+                            to apply it to. A customer who has not signed
+                            anything gets no button rather than a button that
+                            explains itself after the fact. */}
+                        {(job?.customer_signature_path || job?.customer_signature_typed) && /\.pdf$/i.test(att.file_name || '') && (
+                          <button
+                            onClick={() => handleApplySignature(att)}
+                            title="Apply the signature this customer already gave"
+                            style={{
+                              padding: '6px 10px',
+                              backgroundColor: 'rgba(90,99,73,0.12)',
+                              color: theme.accent,
+                              border: `1px solid ${theme.accent}`,
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '12px',
+                              fontWeight: '500'
+                            }}
+                          >
+                            <Pencil size={12} />
+                            Sign
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteAttachment(att)}
                           style={{
