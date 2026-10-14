@@ -18,6 +18,7 @@ import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import ArniePresence from './ArniePresence'
 import { startsTakeoff, endsTakeoff, joinSegments, takeoffHint } from '../../../lib/takeoffMode'
 import { isStopCommand, bargeInAllowed } from '../../../lib/bargeIn'
+import { holdAppUpdate } from '../../../lib/appUpdate'
 import { looksLikeEcho } from '../../../lib/micEcho'
 
 // Dark Arnie theme
@@ -218,7 +219,18 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
   // the whole point.
   const takeoffTextRef = useRef('')
 
-  // Mic state machine: 'idle' | 'listening' | 'paused'
+  // NO SELF-UPDATE IN THE MIDDLE OF SOMETHING.
+  //
+  // The app reloads itself onto a new build when someone comes back after two
+  // minutes away — and a rep on a takeoff puts the phone in a pocket for far
+  // longer than that between rooms. A reload then would throw away the whole
+  // count. Same for an answer still arriving or being spoken, the mic open,
+  // or a half-typed message. While any of those is true the update waits and
+  // shows its banner instead; the moment they are all done it can go.
+  const busyForUpdate = takeoff || loading || speaking || listening || !!input.trim()
+  useEffect(() => (busyForUpdate ? holdAppUpdate('Arnie chat in use') : undefined), [busyForUpdate])
+
+  // Mic state machine: 'idle' | 'listening' | 'paused' | 'bargein'
   // Replaces the old boolean pausedRef to prevent double-start race conditions
   const micStateRef = useRef('idle')
 

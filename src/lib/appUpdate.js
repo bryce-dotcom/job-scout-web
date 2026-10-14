@@ -41,7 +41,14 @@ export function appUpdateHeld() {
 /** How long away counts as "not in the middle of anything". */
 export const AWAY_MS = 2 * 60 * 1000
 /** Re-check cadence while the app stays in the foreground. */
-export const POLL_MS = 15 * 60 * 1000
+export const POLL_MS = 5 * 60 * 1000
+/**
+ * Untouched this long while VISIBLE counts as away too. A phone propped on a
+ * dashboard with the chat open is never "hidden", so the away rule never
+ * fired for it — it sat on a banner nobody looked at, on the old build, for
+ * days. Ten minutes with no tap and no key is nobody mid-form.
+ */
+export const IDLE_MS = 10 * 60 * 1000
 
 /**
  * The rule. Pure, so it is tested.
@@ -54,7 +61,7 @@ export const POLL_MS = 15 * 60 * 1000
  * @param {boolean} a.firstCheck  the check a few seconds after a cold start
  * @returns {'reload'|'banner'|'none'}
  */
-export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false, firstCheck = false }) {
+export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false, firstCheck = false, idleMs = 0 }) {
   if (!running || !served || typeof served !== 'string') return 'none'
   if (served === running) return 'none'
   // Reloading once for a build that still reads as different afterwards means
@@ -75,7 +82,7 @@ export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor =
   // banner is protecting work that does not exist yet. Reload instead. Later
   // checks, when someone is actually using the app, still ask.
   if (firstCheck) return 'reload'
-  return hiddenForMs >= AWAY_MS ? 'reload' : 'banner'
+  return hiddenForMs >= AWAY_MS || idleMs >= IDLE_MS ? 'reload' : 'banner'
 }
 
 const RELOADED_KEY = 'app_reloaded_for_build'
@@ -127,6 +134,9 @@ export function installAppUpdateCheck({ running } = {}) {
   if (typeof window === 'undefined' || !running) return () => {}
   let hiddenAt = 0
   let checking = false
+  let lastTouch = Date.now()
+  const touched = () => { lastTouch = Date.now() }
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, touched, { passive: true, capture: true })
 
   const check = async (hiddenForMs, firstCheck = false) => {
     if (checking || !navigator.onLine) return
@@ -140,7 +150,7 @@ export function installAppUpdateCheck({ running } = {}) {
       const served = await servedBuild()
       let reloadedFor = null
       try { reloadedFor = sessionStorage.getItem(RELOADED_KEY) } catch { /* private mode */ }
-      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld(), firstCheck })
+      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld(), firstCheck, idleMs: Date.now() - lastTouch })
       if (d === 'reload') reloadFor(served)
       else if (d === 'banner') showBanner(served)
     } finally {
@@ -163,6 +173,7 @@ export function installAppUpdateCheck({ running } = {}) {
   const first = setTimeout(() => check(0, true), 4000)
 
   return () => {
+    for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.removeEventListener(ev, touched, { capture: true })
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('online', onOnline)
     clearInterval(timer); clearTimeout(first)

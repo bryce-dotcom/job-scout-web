@@ -102,7 +102,10 @@ describe('the assistant answers to the name on the screen', () => {
     // where people actually use this — Jenny introduced herself as Arnie.
     expect(chat).toMatch(/\{ spoken, personaRow: assistant\.personaRow \}/)
     expect(engine).toMatch(/personaRow: who \} = \{\}/)
-    expect(engine).toMatch(/const row = who \|\| personaRow/)
+    // Since 2026-10-14 the SERVER reads it, from the caller's own row, every
+    // turn — no cache and no browser copy can be wrong about it.
+    const server = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../supabase/functions/_shared/arnieServerPrompt.ts'), 'utf8')
+    expect(server).toMatch(/arnie_personas\?select=persona,display_name&employee_id=eq\.\$\{caller\.employeeId\}/)
   })
 
   it('the caller’s persona beats the cache, never the other way round', () => {

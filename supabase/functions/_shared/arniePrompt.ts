@@ -81,19 +81,27 @@ cannot see what you heard, so the first thing you do is say it back.
 export function buildArniePrompt(
   user: Any, company: Any, role: string, mode = 'office', knowledge = '',
   personaKey: unknown = DEFAULT_PERSONA, displayName: unknown = '',
-  opts: { spoken?: boolean } = {},
+  opts: { spoken?: boolean; timeZone?: string | null } = {},
 ): string {
   // The model has no clock. Everything "today" — the brief, overdue,
   // "this week" — is wrong by whatever the server's UTC day happens to be
   // unless the user's own date and zone are in front of it.
-  const localDate = new Date().toLocaleDateString('en-CA')
+  //
+  // Built on the server now (arnie-chat), where "the local zone" is UTC — so
+  // after 6pm in Utah, "today" would be tomorrow. The person's own zone is
+  // passed in; a browser caller that passes nothing keeps its own zone.
+  let localTz = 'UTC'
+  try { localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { /* keep UTC */ }
+  if (opts.timeZone) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: opts.timeZone }); localTz = opts.timeZone } catch { /* not a real zone — keep the default */ }
+  }
+  const tzOpt = { timeZone: localTz }
+  const localDate = new Date().toLocaleDateString('en-CA', tzOpt)
   // The weekday too — and the week ahead as a table. A model handed a bare
   // date put a tech on "Thursday" a day late, and handed the weekday it did
   // it again: it does not count days, it guesses. A lookup it can copy.
-  const localWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
-  const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.toLocaleDateString('en-CA')}` }).join(', ')
-  let localTz = 'UTC'
-  try { localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { /* keep UTC */ }
+  const localWeekday = new Date().toLocaleDateString('en-US', { weekday: 'long', ...tzOpt })
+  const weekAhead = Array.from({ length: 7 }, (_, i) => { const d = new Date(Date.now() + (i + 1) * 86400000); return `${d.toLocaleDateString('en-US', { weekday: 'short', ...tzOpt })} ${d.toLocaleDateString('en-CA', tzOpt)}` }).join(', ')
   const roleNames = { developer: 'Developer', super_admin: 'Owner/Super Admin', admin: 'Admin', manager: 'Manager', team_lead: 'Team Lead', user: 'User' }
   const roleName = roleNames[role] || 'User'
 

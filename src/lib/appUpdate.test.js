@@ -84,3 +84,18 @@ describe('a stale cold start fixes itself', () => {
     expect(src).toMatch(/setInterval\(\(\) => \{ if \(document\.visibilityState === 'visible'\) check\(0\) \}/)
   })
 })
+
+describe('an app left open and untouched updates itself', () => {
+  it('ten minutes with no tap, still visible, reloads — unless something holds it', async () => {
+    const { updateDecision, IDLE_MS } = await import('./appUpdate')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS })).toBe('reload')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS - 1 })).toBe('banner')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS, held: true })).toBe('banner')
+  })
+  it('the Arnie chat holds updates during a takeoff, a reply, speech, the mic or a draft', async () => {
+    const { readFileSync } = await import('node:fs')
+    const chat = readFileSync(new URL('../pages/agents/arnie/ArnieChat.jsx', import.meta.url), 'utf8')
+    expect(chat).toMatch(/const busyForUpdate = takeoff \|\| loading \|\| speaking \|\| listening \|\| !!input\.trim\(\)/)
+    expect(chat).toMatch(/busyForUpdate \? holdAppUpdate\('Arnie chat in use'\)/)
+  })
+})

@@ -353,6 +353,21 @@ let undefFailed = false
   }
 }
 
+// ── Arnie's server-side knowledge is current ────────────────────────────
+// Arnie's instructions are built on the server from a rendering of the
+// feature cards. A card edited without regenerating that rendering would
+// leave Arnie answering from the old text with nothing to say so.
+{
+  const { execFileSync } = await import('node:child_process')
+  try {
+    execFileSync(process.execPath, [join(ROOT, 'scripts', 'build-arnie-knowledge.mjs'), '--check'],
+      { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (e) {
+    undefFailed = true
+    console.error('\nguard: FAILED — ' + String(e.stderr || e.stdout || e.message).trim() + '\n')
+  }
+}
+
 if (violations.length === 0 && !undefFailed) {
   console.log(`guard: ok — ${files.length} files, ${RULES.length} rule${RULES.length === 1 ? '' : 's'}, 0 violations, 0 undefined refs`)
   process.exit(0)

@@ -145,7 +145,7 @@ describe('spoken instructions are read back before they are carried out', () => 
   it('the rule only applies when the instruction was spoken', () => {
     // Typed input needs none of this — you can see what you asked for.
     expect(promptSrc).toMatch(/opts\.spoken \? SPOKEN_READBACK : ''/)
-    expect(promptSrc).toMatch(/opts: \{ spoken\?: boolean \} = \{\}/)
+    expect(promptSrc).toMatch(/opts: \{ spoken\?: boolean; timeZone\?: string \| null \} = \{\}/)
   })
 
   it('it repeats back AND acts, in one reply', () => {
@@ -173,6 +173,8 @@ describe('spoken instructions are read back before they are carried out', () => 
     expect(chat).toMatch(/\{ canned = false, spoken = false \} = \{\}/)
     expect(chat).toMatch(/\}, files, \{ spoken,/)
     expect(engine).toMatch(/\{ spoken = false, personaRow: who \} = \{\}/)
-    expect(engine).toMatch(/buildSystemPrompt\(user, company, role, detectMode\(role, userId\), spoken, who\)/)
+    // The flag travels to the server, which builds the prompt (2026-10-14).
+    expect(engine).toMatch(/spoken: !!spoken,/)
+    expect(engine).toMatch(/callClaude\(conversationHistory, dataContext, onChunk, coords, \{ spoken \}\)/)
   })
 })

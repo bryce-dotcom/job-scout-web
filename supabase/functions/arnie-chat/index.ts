@@ -10,6 +10,7 @@ import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
+import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -1631,8 +1632,13 @@ Deno.serve(async (req) => {
     // text"). Read here, server-side, from the caller's identity, so a
     // client cannot hand him someone else's head. Arnie only; Frankie
     // keeps to the books.
+    //
+    // And the RULES themselves are built here too, not taken from the body —
+    // see _shared/arnieServerPrompt.ts. A phone on an old build used to send
+    // its own copy of the rules; now only its data snapshot is used.
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
-      ? systemPrompt + await whoYouAreBlock(caller.employeeId)
+      ? await serverArniePrompt({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, body)
+        + await whoYouAreBlock(caller.employeeId)
         + await appMapFor(caller.employeeId)
         + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)

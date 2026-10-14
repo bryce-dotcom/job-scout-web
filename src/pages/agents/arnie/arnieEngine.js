@@ -1,9 +1,7 @@
 import { getUserRole, assembleDataContext, getDataLoadStatus, isClockedIn } from './arnieTools'
 import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
-import { JOBSCOUT_KNOWLEDGE, getFeatureContextForMessage } from './arnieKnowledge'
 import { asksAboutHere, getPosition } from '../../../lib/arnieLocation'
-import { buildArniePrompt } from '../../../../supabase/functions/_shared/arniePrompt.ts'
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
 
 /**
@@ -57,18 +55,11 @@ export function detectMode(role, userId) {
 //
 // So the persona now travels WITH the message — whoever is sending knows who
 // their assistant is. The cache is only a fallback for callers that do not.
-let personaRow = null
-export function setPersona(row) { personaRow = row || null }
-
-function buildSystemPrompt(user, company, role, mode = 'office', spoken = false, who = undefined) {
-  // The row the caller handed us wins; the module cache is only the fallback.
-  const row = who || personaRow
-  return buildArniePrompt(
-    user, company, role, mode, JOBSCOUT_KNOWLEDGE,
-    row?.persona, row?.display_name,
-    { spoken },
-  )
-}
+//
+// Since 2026-10-14 the persona is read by the SERVER from arnie_personas, so
+// none of this decides anything any more. setPersona stays so its callers
+// keep compiling.
+export function setPersona() { /* the server reads the persona itself */ }
 
 // Keyword-based intent detection to determine which data domains to fetch
 export function detectIntent(message) {
@@ -195,15 +186,21 @@ export function detectIntent(message) {
   return Array.from(domains)
 }
 
-// Call Claude via Supabase edge function — streams responses via SSE
-async function callClaude(conversationHistory, systemPrompt, dataContext, onChunk, coords = null) {
-  const contextMessage = dataContext
-    ? `\n\n## Current Data Context (REAL DATA — use ONLY these facts)\nBelow is the ACTUAL company data pulled from the database. Use ONLY these numbers and facts when answering data questions. If something is not listed here AND no tool can fetch it, you do NOT have it. This governs facts about THIS COMPANY only — it does not limit your trade, technical or general knowledge, which you should use freely when helping someone diagnose or fix something.\n\n${dataContext}`
-    : '\n\n## Current Data Context\nNo preloaded data — call a query_* tool to fetch what you need.'
+// The person's own timezone, so "today" on the server is THEIR today.
+function deviceTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch { return null }
+}
 
+// Call Claude via Supabase edge function — streams responses via SSE.
+//
+// NO RULES TRAVEL FROM HERE ANY MORE. Arnie's instructions are built by the
+// server (supabase/functions/_shared/arnieServerPrompt.ts) from the database
+// on every turn. This used to send the whole prompt, so a phone holding last
+// week's build sent last week's rules — and Jenny called herself Arnie. All
+// this sends now is what only the phone knows: the data it has loaded, whether
+// the message was spoken, and its timezone.
+async function callClaude(conversationHistory, dataContext, onChunk, coords = null, { spoken = false } = {}) {
   const messages = toApiMessages(conversationHistory)
-
-  const fullSystemPrompt = systemPrompt + contextMessage
 
   // Stream via fetch directly so we can read SSE
   const session = await supabase.auth.getSession()
@@ -222,7 +219,10 @@ async function callClaude(conversationHistory, systemPrompt, dataContext, onChun
     // exactly the hole that let one company read another's data.
     body: JSON.stringify({
       messages,
-      systemPrompt: fullSystemPrompt,
+      promptVersion: 2,
+      dataContext: dataContext || '',
+      spoken: !!spoken,
+      tz: deviceTimeZone(),
       stream: true,
       // Approval cards this build knows how to draw. The server withholds any
       // tool whose result we could not render, so the two halves of a feature
@@ -307,15 +307,10 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
     throw new Error('Failed to get user role: ' + e.message)
   }
 
-  const { user, company } = useStore.getState()
-
-  let systemPrompt
-  try {
-    systemPrompt = buildSystemPrompt(user, company, role, detectMode(role, userId), spoken, who)
-  } catch (e) {
-    console.error('[Arnie] buildSystemPrompt failed:', e)
-    throw new Error('Failed to build prompt: ' + e.message)
-  }
+  // `who` (the persona row) is no longer needed here — the server reads the
+  // person's chosen assistant from the database. Kept in the signature so
+  // callers do not change.
+  void who
 
   let dataContext
   try {
@@ -354,19 +349,8 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
     }
   }
 
-  // Feature-specific deep context — if the user's message names a
-  // feature in our knowledge cards, prepend the full card so Arnie
-  // cites setup steps + gotchas + FAQs accurately instead of
-  // improvising from the high-level feature index. Empty string when
-  // nothing matches (cheap no-op for casual chitchat).
-  try {
-    const featureContext = getFeatureContextForMessage(message)
-    if (featureContext) {
-      dataContext = featureContext + '\n\n' + (dataContext || '')
-    }
-  } catch (e) {
-    console.error('[Arnie] feature context injection failed:', e)
-  }
+  // The feature cards this message is about are added by the server now, from
+  // the same cards (see _shared/arnieKnowledge.ts).
 
   const conversationHistory = withCurrentTurn(history, message, attachments)
 
@@ -377,7 +361,7 @@ export async function sendMessageStream(message, history = [], onChunk, attachme
   // got it rather than guessing an address.
   const coords = asksAboutHere(message) ? await getPosition() : null
 
-  const response = await callClaude(conversationHistory, systemPrompt, dataContext, onChunk, coords)
+  const response = await callClaude(conversationHistory, dataContext, onChunk, coords, { spoken })
   return response
 }
 

@@ -19,7 +19,10 @@ describe('the brief is one call, and "today" is the user\'s day', () => {
   })
 
   it('the prompt tells Arnie what day it is — he has no clock', () => {
-    expect(engine).toMatch(/const localDate = new Date\(\)\.toLocaleDateString\('en-CA'\)/)
+    // In the person's zone, not the server's — the prompt is built on the
+    // server now, where the default zone is UTC (2026-10-14).
+    expect(engine).toMatch(/const localDate = new Date\(\)\.toLocaleDateString\('en-CA', tzOpt\)/)
+    expect(engine).toMatch(/if \(opts\.timeZone\)/)
     expect(engine).toMatch(/Intl\.DateTimeFormat\(\)\.resolvedOptions\(\)\.timeZone/)
     // The weekday and the week ahead ride along: a model handed a bare date put a tech on "Thursday" a day late.
     expect(engine).toMatch(/- Today: \$\{localWeekday\} \$\{localDate\} \(\$\{localTz\}\)/)
