@@ -204,6 +204,8 @@ export default function PMJobSetter() {
   const priorityConfig = prioritiesFromSettings(storeSettings)
   // Which card's priority picker is open, by job id.
   const [priorityMenuJob, setPriorityMenuJob] = useState(null)
+  // Which card's status picker is open, by job id.
+  const [statusMenuJob, setStatusMenuJob] = useState(null)
   // Completed jobs per customer, counted in the DB — the store excludes
   // archived jobs and most of HHH's history is archived (lib/customerRepeat).
   const [repeatCounts, setRepeatCounts] = useState({})
@@ -1735,89 +1737,113 @@ export default function PMJobSetter() {
     setDragOverStatus(statusId)
   }
 
+  // Moving a job to a status — the ONE writer.
+  //
+  // Drag is not the only way to do this. Below 768px the board renders the
+  // accordion, which has no draggable cards at all, and browser zoom puts a
+  // full-screen desktop under that threshold without anyone realising: a
+  // 1366 laptop at 175% reports about 780 CSS pixels, at 200% about 683.
+  // Doug reported "cannot drag and drop on the job board" from a maximised
+  // window. So the accordion gets a status picker, and it calls THIS rather
+  // than growing a second copy of the completion invoice and notification.
+  const moveJobToStatus = async (job, statusId) => {
+    // Dropping a whole job onto a status column — update job status
+    // If not Scheduled, clear start_date so it leaves the calendar
+    const updateData = {
+      status: statusId,
+      updated_at: new Date().toISOString()
+    }
+    if (statusId !== 'Scheduled') {
+      updateData.start_date = null
+    }
+    // Doug, 2026-10-14: "can't drag and drop on the job board."
+    //
+    // The error was never read. If this update is refused — RLS, one of the
+    // 25 intra-tenant guard triggers, a constraint — nothing was shown,
+    // nothing was logged, and the fetchData() at the end of this function
+    // brought the old status straight back. The card flew home and the board
+    // said nothing, which is indistinguishable from drag being broken.
+    //
+    // Worse, the code carried on: a refused move to Completed still sent the
+    // company-wide "Job Completed!" notification and still auto-created an
+    // invoice, for a job that had not moved.
+    const { error: moveError } = await supabase
+      .from('jobs')
+      .update(updateData)
+      .eq('id', job.id)
+    if (moveError) {
+      console.error('[job-board] status move refused:', moveError)
+      toast.error(`Could not move that job to ${statusId}: ${moveError.message}`)
+      await fetchData()
+      return false
+    }
+    // Send company-wide notification when job is completed
+    if (statusId === 'Complete' || statusId === 'Completed') {
+      const customerName = job.customer?.name || job.customer_name || 'Unknown'
+      const amount = parseFloat(job.job_total) || 0
+      const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
+      companyNotify({
+        companyId,
+        type: 'job_completed',
+        title: 'Job Completed!',
+        message: `${customerName}${amountStr} (${job.job_id || ''})`,
+        metadata: { job_id: job.id, customer_name: customerName, amount },
+        createdBy: user?.id
+      })
+    }
+    // Auto-create invoice when job is marked Completed
+    if (statusId === 'Complete' || statusId === 'Completed') {
+      const jobForInvoice = job
+      // Fetch job_lines to calculate total
+      const { data: jobLines } = await supabase
+        .from('job_lines')
+        .select('item_id, quantity, price, total, description, item_name, discount, labor_cost, in_utility_scope, item:products_services(name)')
+        .eq('job_id', jobForInvoice.id)
+      const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
+      const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
+      // The utility incentive is the customer's credit. This path billed the
+      // full project with no credit, so a rebate job dragged to Completed
+      // invoiced the customer for the utility's share too. Same treatment
+      // FieldScout gives it; the full rule (deposits, down payments, the
+      // rep's discount) lives on the job page, which is where a rebate
+      // invoice should really be raised.
+      const jobIncentive = parseFloat(jobForInvoice.utility_incentive) || 0
+      const { data: newInvoice, error: invError } = await supabase
+        .from('invoices')
+        .insert([{
+          company_id: companyId,
+          invoice_id: invoiceNumber,
+          customer_id: jobForInvoice.customer?.id || jobForInvoice.customer_id || null,
+          job_id: jobForInvoice.id,
+          amount: jobTotal,
+          discount_applied: jobIncentive > 0 ? jobIncentive : null,
+          payment_status: 'Pending',
+          job_description: jobForInvoice.job_title || jobForInvoice.job_id || null,
+          updated_at: new Date().toISOString()
+        }])
+        .select()
+        .single()
+      if (invError) {
+        console.error('[AutoInvoice] Error creating invoice:', invError)
+      } else {
+        console.log('[AutoInvoice] Created invoice', invoiceNumber, 'for $' + jobTotal)
+        // Copy the job lines onto the invoice. This path computed its
+        // total FROM these rows and then discarded them, so every
+        // auto-invoice landed with no line items — which is why the
+        // in-scope / out-of-scope split had nothing to render on them.
+        await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: newInvoice.id })
+        // The job's invoice_status follows from the insert above — the
+        // sync_job_invoice_status trigger derives it from the invoices table.
+      }
+    }
+    return true
+  }
   const handleStatusDrop = async (e, statusId) => {
     e.preventDefault()
     setDragOverStatus(null)
 
     if (draggedJob) {
-      // Dropping a whole job onto a status column — update job status
-      // If not Scheduled, clear start_date so it leaves the calendar
-      const updateData = {
-        status: statusId,
-        updated_at: new Date().toISOString()
-      }
-      if (statusId !== 'Scheduled') {
-        updateData.start_date = null
-      }
-      await supabase
-        .from('jobs')
-        .update(updateData)
-        .eq('id', draggedJob.id)
-
-      // Send company-wide notification when job is completed
-      if (statusId === 'Complete' || statusId === 'Completed') {
-        const customerName = draggedJob.customer?.name || draggedJob.customer_name || 'Unknown'
-        const amount = parseFloat(draggedJob.job_total) || 0
-        const amountStr = amount > 0 ? ` — $${amount.toLocaleString()}` : ''
-        companyNotify({
-          companyId,
-          type: 'job_completed',
-          title: 'Job Completed!',
-          message: `${customerName}${amountStr} (${draggedJob.job_id || ''})`,
-          metadata: { job_id: draggedJob.id, customer_name: customerName, amount },
-          createdBy: user?.id
-        })
-      }
-
-      // Auto-create invoice when job is marked Completed
-      if (statusId === 'Complete' || statusId === 'Completed') {
-        const jobForInvoice = draggedJob
-        // Fetch job_lines to calculate total
-        const { data: jobLines } = await supabase
-          .from('job_lines')
-          .select('item_id, quantity, price, total, description, item_name, discount, labor_cost, in_utility_scope, item:products_services(name)')
-          .eq('job_id', jobForInvoice.id)
-
-        const jobTotal = jobLines?.reduce((sum, l) => sum + (l.total || l.quantity * l.price || 0), 0) || jobForInvoice.job_total || 0
-        const invoiceNumber = await nextInvoiceNumber(supabase, companyId)
-        // The utility incentive is the customer's credit. This path billed the
-        // full project with no credit, so a rebate job dragged to Completed
-        // invoiced the customer for the utility's share too. Same treatment
-        // FieldScout gives it; the full rule (deposits, down payments, the
-        // rep's discount) lives on the job page, which is where a rebate
-        // invoice should really be raised.
-        const jobIncentive = parseFloat(jobForInvoice.utility_incentive) || 0
-
-        const { data: newInvoice, error: invError } = await supabase
-          .from('invoices')
-          .insert([{
-            company_id: companyId,
-            invoice_id: invoiceNumber,
-            customer_id: jobForInvoice.customer?.id || jobForInvoice.customer_id || null,
-            job_id: jobForInvoice.id,
-            amount: jobTotal,
-            discount_applied: jobIncentive > 0 ? jobIncentive : null,
-            payment_status: 'Pending',
-            job_description: jobForInvoice.job_title || jobForInvoice.job_id || null,
-            updated_at: new Date().toISOString()
-          }])
-          .select()
-          .single()
-
-        if (invError) {
-          console.error('[AutoInvoice] Error creating invoice:', invError)
-        } else {
-          console.log('[AutoInvoice] Created invoice', invoiceNumber, 'for $' + jobTotal)
-          // Copy the job lines onto the invoice. This path computed its
-          // total FROM these rows and then discarded them, so every
-          // auto-invoice landed with no line items — which is why the
-          // in-scope / out-of-scope split had nothing to render on them.
-          await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: newInvoice.id })
-          // The job's invoice_status follows from the insert above — the
-          // sync_job_invoice_status trigger derives it from the invoices table.
-        }
-      }
-
+      await moveJobToStatus(draggedJob, statusId)
       setDraggedJob(null)
       await fetchData()
       return
@@ -3092,6 +3118,83 @@ export default function PMJobSetter() {
                                         )
                                       })()}
                                       <span style={{ flex: 1 }} />
+                                      {/* Move the job without dragging. This view has no
+                                          draggable cards at all, and it is what you get
+                                          below 768px — which browser zoom reaches on a
+                                          maximised desktop window without anyone noticing.
+                                          Calls the same writer the drop handler does. */}
+                                      <span style={{ position: 'relative', flexShrink: 0 }}>
+                                        <span
+                                          role="button"
+                                          aria-label="Move to status"
+                                          title={`Status: ${job.status} — tap to move`}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setStatusMenuJob(statusMenuJob === job.id ? null : job.id)
+                                          }}
+                                          style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                            padding: '2px 8px', borderRadius: '9px', cursor: 'pointer',
+                                            fontSize: '10px', fontWeight: 700,
+                                            backgroundColor: (status.color || theme.accent) + '1c',
+                                            color: status.color || theme.accent,
+                                          }}
+                                        >
+                                          {status.name || job.status}
+                                          <ChevronDown size={10} />
+                                        </span>
+                                        {statusMenuJob === job.id && (
+                                          <>
+                                            <span
+                                              onClick={(e) => { e.stopPropagation(); setStatusMenuJob(null) }}
+                                              style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                                            />
+                                            <span
+                                              onClick={(e) => e.stopPropagation()}
+                                              style={{
+                                                position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 41,
+                                                display: 'block', minWidth: '172px', maxHeight: '260px', overflowY: 'auto',
+                                                padding: '4px', backgroundColor: theme.bgCard,
+                                                border: `1px solid ${theme.border}`, borderRadius: '10px',
+                                                boxShadow: '0 8px 24px rgba(0,0,0,0.14)',
+                                              }}
+                                            >
+                                              {jobStatuses.map(st => {
+                                                const here = st.id === job.status
+                                                return (
+                                                  <span
+                                                    key={st.id}
+                                                    role="button"
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation()
+                                                      setStatusMenuJob(null)
+                                                      if (here) return
+                                                      const ok = await moveJobToStatus(job, st.id)
+                                                      if (ok) {
+                                                        toast.success(`Moved to ${st.name || st.id}`)
+                                                        await fetchData()
+                                                      }
+                                                    }}
+                                                    style={{
+                                                      display: 'flex', alignItems: 'center', gap: '8px',
+                                                      padding: '7px 9px', borderRadius: '7px', cursor: 'pointer',
+                                                      fontSize: '13px', fontWeight: here ? 700 : 400,
+                                                      backgroundColor: here ? theme.accentBg : 'transparent',
+                                                      color: here ? theme.accent : theme.text,
+                                                    }}
+                                                  >
+                                                    <span style={{
+                                                      width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                                                      backgroundColor: st.color || theme.textMuted,
+                                                    }} />
+                                                    {st.name || st.id}
+                                                  </span>
+                                                )
+                                              })}
+                                            </span>
+                                          </>
+                                        )}
+                                      </span>
                                       <span style={{ position: 'relative', flexShrink: 0 }}>
                                         <span
                                           role="button"
