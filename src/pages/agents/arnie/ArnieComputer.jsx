@@ -591,6 +591,8 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
   const navigate = useNavigate()
   // Typed in when the browser hop did not land where they are signed in.
   const [pairCode, setPairCode] = useState('')
+  // The code box stays folded until asked for — see below.
+  const [showCode, setShowCode] = useState(false)
   // WHY THIS IS NOT JUST AN <a download>.
   //
   // It was, and Alayda clicked it and nothing happened at all — no file, no
@@ -720,33 +722,53 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
               always works: the agent prints the code, and typing it here
               stays inside the app. It routes to the same /connect page rather
               than claiming here, so there is still only one way in. */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); const c = pairCode.trim().toUpperCase(); if (c) navigate(`/connect?code=${encodeURIComponent(c)}`) }}
-            style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 14 }}
-          >
-            <input
-              value={pairCode}
-              onChange={(e) => setPairCode(e.target.value)}
-              placeholder="Code from the agent window"
-              aria-label="Code from the agent window"
-              style={{
-                ...input, flex: '0 1 230px', minWidth: 0, textAlign: 'center',
-                letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 650,
-              }}
-            />
-            <button type="submit" disabled={!pairCode.trim()} style={btn(t.accent, '#fff')}>
-              Connect
-            </button>
-          </form>
-          <div style={{ fontSize: 12, color: t.muted, marginTop: 8 }}>
-            Only needed if the browser did not open, or opened somewhere you are not signed in.
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+          {/* FOLDED AWAY, and that matters. Shown outright it reads as a
+              demand — Doug looked at this screen and reported that his
+              computer was "asking for a pin". It is a fallback for one case,
+              and a box you have nothing to type in is worse than no box: it
+              stops people doing the thing that actually works, which is
+              opening the file. */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 14 }}>
+            {!showCode && (
+              <button
+                onClick={() => setShowCode(true)}
+                style={{ background: 'none', border: 0, padding: 0, color: t.muted, textDecoration: 'underline', cursor: 'pointer', font: 'inherit', fontSize: 12.5 }}
+              >
+                No browser tab opened?
+              </button>
+            )}
             <button onClick={() => { setDl('idle'); setHelp(true) }} style={btn(t.card2, t.sub)}>
               Nothing happened
             </button>
           </div>
+
+          {showCode && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12.5, color: t.sub, lineHeight: 1.55, maxWidth: 420, margin: '0 auto 9px' }}>
+                The window that opened on that computer shows a code. Type it here and you stay
+                in the app.
+              </div>
+              <form
+                onSubmit={(e) => { e.preventDefault(); const c = pairCode.trim().toUpperCase(); if (c) navigate(`/connect?code=${encodeURIComponent(c)}`) }}
+                style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}
+              >
+                <input
+                  value={pairCode}
+                  onChange={(e) => setPairCode(e.target.value)}
+                  placeholder="Code from the agent window"
+                  aria-label="Code from the agent window"
+                  autoFocus
+                  style={{
+                    ...input, flex: '0 1 230px', minWidth: 0, textAlign: 'center',
+                    letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 650,
+                  }}
+                />
+                <button type="submit" disabled={!pairCode.trim()} style={btn(t.accent, '#fff')}>
+                  Connect
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       ) : (
         // ── The offer ─────────────────────────────────────────────────────
