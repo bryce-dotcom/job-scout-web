@@ -31,7 +31,8 @@ import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/p
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction, autoLinkReceipts } from '../lib/expenseMatch'
 import { captureReceipt, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
-import { Receipt as ReceiptIcon } from 'lucide-react'
+import { Receipt as ReceiptIcon , Gift} from 'lucide-react'
+import { absorbedTotal, isAbsorbed, deductionKind, deductionAmount, DEDUCTION_KINDS } from '../lib/writeOff'
 import { computeRevenue, computeExpenses, collectedIncentives as incentivesCollectedIn } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR, invoiceBalance, isInvoiceOpen, paymentsByInvoiceIndex } from '../lib/arHelpers'
@@ -480,6 +481,31 @@ export default function Books() {
     try { payrollConfig = cfg.data?.value ? (typeof cfg.data.value === 'string' ? JSON.parse(cfg.data.value) : cfg.data.value) : null } catch { payrollConfig = null }
     setBooksExtra({ payrollRuns: runs.data || [], paystubs: stubs.data || [], taxLiabilities: liab.data || [], payrollConfig, memberships: mem.data || [], paymentPlans: plans.data || [], fleetRecurringCosts: fleetRec.data || [], loans: loanRows.data || [], loanPayments: loanPays.data || [] })
   }
+
+  // What the company gave away rather than charged for — Tracy's gift,
+  // write-off and warranty deductions (lib/writeOff). Dated by created_at,
+  // which is how every other invoice figure on this page is dated: only 3
+  // HHH invoices have an invoice_date at all, and updated_at is never a date
+  // money happened.
+  const [giveaways, setGiveaways] = useState([])
+  // Declared inside the effect so the dependency list is honestly just
+  // companyId — a function defined in the body would be a new reference
+  // every render and the exhaustive-deps warning is right about that.
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    const since = `${new Date().getFullYear() - 1}-01-01`
+    supabase
+      .from('invoices')
+      .select('id, invoice_id, amount, discount_applied, deduction_kind, deduction_reason, created_at, utility_owes, customer:customers(name)')
+      .eq('company_id', companyId)
+      .not('deduction_kind', 'is', null)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(500)
+      .then(({ data }) => { if (live) setGiveaways(data || []) })
+    return () => { live = false }
+  }, [companyId])
 
   const [accrualBills, setAccrualBills] = useState({ bills: [], billPayments: [] })
   const fetchAccrualBills = async () => {
@@ -1368,6 +1394,17 @@ export default function Books() {
     const linkedBu = uinv.invoice_id ? invoiceBuMap.get(uinv.invoice_id) : null
     return linkedBu === selectedBu
   }
+  // Split by what it was. An incentive can never appear here — the kind is
+  // derived and the column constraint refuses the word — so this is only
+  // money the company chose to absorb, which is the question Tracy asked.
+  const giveawayRows = (giveaways || []).filter(i => isAbsorbed(i))
+  const giveawayTotal = absorbedTotal(giveaways)
+  const giveawayByKind = giveawayRows.reduce((acc, i) => {
+    const k = deductionKind(i)
+    acc[k] = (acc[k] || 0) + deductionAmount(i)
+    return acc
+  }, {})
+
   const pendingIncentives = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid' && utilityMatchesBu(i))
   const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && utilityMatchesBu(i))
   const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
@@ -2527,6 +2564,74 @@ export default function Books() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* What we gave away.
+              The figure Tracy's write-off reasons exist to produce: money the
+              company chose to absorb, kept apart from a price concession and
+              from a utility incentive the customer never owed (lib/writeOff). */}
+          {giveawayRows.length > 0 && (
+            <div style={{
+              ...statCardStyle,
+              marginBottom: '24px',
+              border: '1px solid rgba(234,179,8,0.28)',
+              backgroundColor: 'rgba(234,179,8,0.04)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Gift size={16} style={{ color: '#a16207' }} /> Given away
+                </h3>
+                <span style={{ fontSize: '18px', fontWeight: '700', color: '#a16207' }}>
+                  {formatCurrency(giveawayTotal)}
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
+                Work done and not charged for — gifts, write-offs and warranty rework. Not discounts, and not utility incentives the customer never owed.
+              </p>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                {Object.entries(giveawayByKind).sort((a, b) => b[1] - a[1]).map(([kind, amount]) => (
+                  <span key={kind} style={{
+                    padding: '4px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, color: theme.textSecondary,
+                  }}>
+                    {DEDUCTION_KINDS[kind]?.label || kind} · {formatCurrency(amount)}
+                  </span>
+                ))}
+              </div>
+
+              {giveawayRows.slice(0, 6).map(i => (
+                <div
+                  key={i.id}
+                  onClick={() => navigate(`/invoices/${i.id}`)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                    padding: '8px 10px', borderRadius: '8px', cursor: 'pointer',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, marginBottom: '4px',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {i.customer?.name || i.invoice_id || `Invoice ${i.id}`}
+                    </div>
+                    {/* The reason is the whole point — it prints here, not just
+                        on the invoice, so the figure can be read without
+                        opening six records. */}
+                    <div style={{ fontSize: '11.5px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {DEDUCTION_KINDS[deductionKind(i)]?.label}{i.deduction_reason ? ` — ${i.deduction_reason}` : ''}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#a16207', flexShrink: 0 }}>
+                    {formatCurrency(deductionAmount(i))}
+                  </span>
+                </div>
+              ))}
+              {giveawayRows.length > 6 && (
+                <div style={{ fontSize: '11.5px', color: theme.textMuted, marginTop: '6px' }}>
+                  + {giveawayRows.length - 6} more
                 </div>
               )}
             </div>
