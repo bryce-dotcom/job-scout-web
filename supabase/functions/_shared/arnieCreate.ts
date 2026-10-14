@@ -248,10 +248,11 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
   // sales rep." The list comes from closingCheck.ts; the email goes to the
   // rep only, never the customer. See arnieClosing.ts.
   closing_gaps: {
-    label: 'the rep',
+    // Header "New rep email", button "Send rep email".
+    label: 'rep email',
     table: 'quotes',
     minLevel: 0,
-    verb: 'Email',
+    verb: 'Send',
     done: 'Sent to the rep. Ask me to approve it once they have filled the gaps.',
     fields: {
       quote: { column: null, label: 'Estimate', required: true, max: 160 },
