@@ -192,21 +192,66 @@ let currentUtterance = null
 let audioUnlocked = false
 let currentSpeakId = 0 // used to cancel chunked playback
 
+// ONE audio element, blessed once by a tap, reused for everything after.
+//
+// This is the whole reason there was no sound on a phone. iOS grants
+// permission to an ELEMENT, not to the page: an Audio object created later,
+// in a network callback, has never been touched by a finger and is refused —
+// silently, because a rejected play() is a promise nobody was reading. On a
+// desktop none of this applies, which is why it worked everywhere we tested.
+let sharedAudio = null
+let audioCtx = null
+
+/** The element that is allowed to make noise. Created inside a gesture. */
+function theAudio() {
+  if (!sharedAudio) {
+    sharedAudio = new Audio()
+    sharedAudio.preload = 'auto'
+    // Keeps iOS from handing playback to AirPlay/the lock screen as if this
+    // were a music app.
+    sharedAudio.setAttribute('playsinline', '')
+  }
+  return sharedAudio
+}
+
 export function unlockAudio() {
+  // Re-run until it has really worked. The old version set the flag whether
+  // or not the silent play resolved, so one early call — before any tap —
+  // marked audio unlocked for the rest of the session and nothing ever tried
+  // again.
   if (audioUnlocked) return
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)()
-    const buf = ctx.createBuffer(1, 1, 22050)
-    const src = ctx.createBufferSource()
-    src.buffer = buf
-    src.connect(ctx.destination)
-    src.start(0)
-    const silent = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=')
-    silent.volume = 0
-    silent.play().catch(() => {})
-    audioUnlocked = true
-  } catch (e) {}
+    // The iPhone ring/silent switch mutes HTML audio, and most people keep a
+    // work phone on silent. Saying this is 'playback' tells iOS the sound is
+    // the point, not a notification, and it plays through the switch. Safari
+    // 16.4+; absent elsewhere, hence the guard.
+    if (typeof navigator !== 'undefined' && navigator.audioSession) {
+      try { navigator.audioSession.type = 'playback' } catch { /* older Safari */ }
+    }
+
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (Ctx) {
+      if (!audioCtx) audioCtx = new Ctx()
+      // A context created before a gesture starts suspended and stays that
+      // way; it has to be resumed from inside one.
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
+      const src = audioCtx.createBufferSource()
+      src.buffer = audioCtx.createBuffer(1, 1, 22050)
+      src.connect(audioCtx.destination)
+      src.start(0)
+    }
+
+    const a = theAudio()
+    a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='
+    a.volume = 0
+    a.play()
+      .then(() => { audioUnlocked = true; a.volume = 1 })
+      .catch(() => { /* not a real gesture — leave it locked and try again next tap */ })
+  } catch { /* no audio on this device */ }
 }
+
+/** Has a tap actually granted sound yet? The mute button asks before promising. */
+export function audioIsUnlocked() { return audioUnlocked }
 
 export function stopSpeaking() {
   currentSpeakId = -1 // cancel any chunked playback in progress
@@ -421,9 +466,13 @@ export async function speak(text, voiceId, onStart, onEnd) {
         prefetchPromise = fetchChunk(chunks[i + 1]).catch(() => null)
       }
 
-      // Play this chunk
+      // Play this chunk through the ONE element a tap has already blessed.
+      // A fresh Audio() here is what silenced phones: created in a network
+      // callback, never touched by a finger, refused by iOS.
       const audioUrl = URL.createObjectURL(blob)
-      const audio = new Audio(audioUrl)
+      const audio = theAudio()
+      audio.src = audioUrl
+      audio.volume = 1
       audio._blobUrl = audioUrl
 
       const playOk = await new Promise(resolve => {
@@ -432,12 +481,20 @@ export async function speak(text, voiceId, onStart, onEnd) {
           if (!ended) { ended = true; URL.revokeObjectURL(audioUrl); currentAudio = null; resolve(true) }
         }
         audio.onended = finish
-        audio.onerror = () => { console.error('[Arnie Voice] Edge chunk error'); finish() }
+        audio.onerror = () => { console.error('[Arnie Voice] chunk error'); finish() }
 
         audio.play().then(() => {
           currentAudio = audio
           if (!started) { started = true; onStart?.() }
-        }).catch(() => { ended = true; resolve(false) })
+        }).catch((err) => {
+          // Said out loud rather than swallowed. A phone that refuses to play
+          // is a different problem from a voice that failed to download, and
+          // for weeks both looked identical: nothing happens.
+          console.warn('[Arnie Voice] the browser refused to play:', err?.name || err)
+          if (err?.name === 'NotAllowedError') audioUnlocked = false
+          ended = true
+          resolve(false)
+        })
       })
 
       if (!playOk || currentSpeakId !== callId) { failed = !playOk; break }

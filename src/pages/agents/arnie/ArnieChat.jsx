@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm'
 import { Send, Copy, Check, Loader2, Sparkles, Calendar, Users, Package, FileText, Briefcase, BarChart3, Truck, Mic, Volume2, VolumeX, ChevronDown, Download, Paperclip, X, Wrench, Sun, Bot, ClipboardList } from 'lucide-react'
 import { readAttachment, attachmentNote, describeAttachments, ACCEPT_ATTR, MAX_ATTACHMENTS } from '../../../lib/chatAttachments'
 import { DougieButton, composerTone } from '../../../components/ai/AiComposerTools'
-import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio } from './arnieVoice'
+import { speak, stopSpeaking, isAvailable as elevenLabsAvailable, getVoices, loadArnieVoices, rememberVoice, unlockAudio, audioIsUnlocked } from './arnieVoice'
 import { arnieTextNumber, ARNIE_EMAIL } from '../../../lib/arnieReach'
 import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvatar'
 import { useIsMobile } from '../../../hooks/useIsMobile'
@@ -162,6 +162,11 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
   // Voice state
   const [voiceOn, setVoiceOn] = useState(true) // always available now (browser TTS is free)
+  // Whether a tap has actually granted sound yet. On a phone it often has
+  // not, and the old behaviour was plain silence: nothing to see, nothing to
+  // do about it.
+  const [soundReady, setSoundReady] = useState(() => audioIsUnlocked())
+  const noteSound = useCallback(() => { setTimeout(() => setSoundReady(audioIsUnlocked()), 400) }, [])
   const [listening, setListening] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [voices, setVoices] = useState(() => getVoices())
@@ -848,6 +853,14 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       }}>
         <button
           onClick={() => {
+            // A real finger. On a phone this may be the only tap before the
+            // first answer arrives, and iOS grants sound to an ELEMENT a
+            // finger has touched — so this is the chance to take it.
+            unlockAudio()
+            noteSound()
+            // Tapping this while sound is blocked is a request FOR sound, not
+            // a request to turn the voice off.
+            if (voiceOn && !audioIsUnlocked()) return
             if (voiceOn) handleStopSpeaking()
             setVoiceOn(!voiceOn)
           }}
@@ -861,7 +874,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           }}
         >
           {voiceOn ? <Volume2 size={14} /> : <VolumeX size={14} />}
-          Voice {voiceOn ? 'ON' : 'OFF'}
+          {voiceOn && !soundReady ? 'Tap for sound' : voiceOn ? 'Voice ON' : 'Voice OFF'}
         </button>
 
         {voiceOn && (

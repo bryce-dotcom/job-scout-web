@@ -8,7 +8,7 @@ import ArnieComputer from '../pages/agents/arnie/ArnieComputer'
 import ArnieSkills from '../pages/agents/arnie/ArnieSkills'
 import ArnieRoutines from '../pages/agents/arnie/ArnieRoutines'
 import ArniePersona from '../pages/agents/arnie/ArniePersona'
-import { stopSpeaking } from '../pages/agents/arnie/arnieVoice'
+import { stopSpeaking, unlockAudio } from '../pages/agents/arnie/arnieVoice'
 import { loadSessions, getLastSessionId } from '../pages/agents/arnie/arnieEngine'
 import { shouldIntroduce, markIntroDone, INTRO_KICKOFF } from '../lib/arnieIntro'
 import { handOffLabel, assistantShortName } from '../lib/arniePersonaClient'
@@ -130,6 +130,10 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
   // watching `open` — same result, and it keeps the async work on the event
   // that caused it instead of a render that reacted to it.
   const openPanel = useCallback((e) => {
+    // Opening this is almost always a tap, and on a phone it may be the only
+    // one before the first answer is spoken. iOS grants sound to an element a
+    // finger has touched, so take the chance while there is one.
+    unlockAudio()
     const d = e?.detail || null
     if (d?.kickoff) {
       // A fresh thread for a task that starts with a script, so the kickoff
