@@ -1917,6 +1917,25 @@ Deno.serve(async (req) => {
  * told Bryce "I've drafted the won card" with nothing on screen. A card tool
  * now counts only when a card came out of it.
  */
+/** Is this message asking for work on their computer? Broad on purpose: a
+ *  false yes costs a second of streaming, a false no shows an invented step. */
+const COMPUTER_ASK = /\b(my (computer|pc|mac|laptop|desktop|screen|machine)|on (the|my|this) (computer|pc|mac|laptop|machine)|chrome|safari|firefox|microsoft edge|excel|outlook|teams|notepad|file explorer|finder|traksmart|screenshot|my (texts|messages|email|inbox|gmail)|gmail|ctrl\+|address bar)\b/i
+
+/** The newest thing the person said, as text — a message may be blocks. */
+function lastUserText(messages: any[] = []): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m?.role !== 'user') continue
+    if (typeof m.content === 'string') return m.content
+    if (Array.isArray(m.content)) {
+      // A tool result is not something they said; keep looking back.
+      const words = m.content.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join(' ')
+      if (words.trim()) return words
+    }
+  }
+  return ''
+}
+
 function madeItsCard(name: string, result: unknown): boolean {
   if (!/^propose_/.test(name)) return true
   const r = result as Record<string, unknown> | null
@@ -2521,7 +2540,27 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         const used = new Set<string>()
         let corrected = false
+        // ON THEIR COMPUTER, WORDS WAIT FOR THE WORK. A streamed claim cannot
+        // be unsaid: on 2026-10-15 Jenny wrote out a whole Gmail visit — "Clicking
+        // the Bryce profile… 9 unread, top one from Bryce" — in a round with no
+        // tool at all. The truth check caught it, but only after Bryce had read
+        // it. So when the work is on their machine, each round's words are held
+        // until the round ends: a round that calls a tool is shown as it acts; a
+        // final answer is shown only once the check has passed it. Ordinary
+        // chat still streams word by word. (Bryce: "yes hold back the text on
+        // computer tasks".)
+        const computerAsk = setup.tools.some((t: any) => t?.name === 'use_my_computer')
+          && COMPUTER_ASK.test(lastUserText(messages))
+        let shownAny = false
         for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
+          const hold = computerAsk || used.has('use_my_computer')
+          let pending = ''
+          const flush = () => {
+            if (!pending) return
+            send('text', { delta: (shownAny ? '\n\n' : '') + pending.replace(/^\s+/, '') })
+            shownAny = true
+            pending = ''
+          }
           const res = await fetch(ANTHROPIC_URL, {
             method: 'POST',
             headers: {
@@ -2578,7 +2617,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                   if (!b) continue
                   if (evt.delta.type === 'text_delta') {
                     b.text = (b.text || '') + evt.delta.text
-                    send('text', { delta: evt.delta.text })
+                    if (hold) pending += evt.delta.text
+                    else { send('text', { delta: evt.delta.text }); shownAny = true }
                   } else if (evt.delta.type === 'input_json_delta') {
                     b.input_buf = (b.input_buf || '') + evt.delta.partial_json
                   } else if (evt.delta.type === 'thinking_delta') {
@@ -2621,6 +2661,16 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             if (!corrected) {
               const claim = fabricationIn(text, used, null)
                 || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
+              if (claim && hold) {
+                // Held, so never shown: it is replaced by what he writes next,
+                // and there is nothing for him to take back.
+                corrected = true
+                logFabrication(claim, caller)
+                pending = ''
+                convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
+                convo.push({ role: 'user', content: correctionFor(claim, false) })
+                continue
+              }
               if (claim) {
                 corrected = true
                 logFabrication(claim, caller)
@@ -2639,10 +2689,14 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 continue
               }
             }
+            flush()
             send('done', {})
             controller.close()
             return
           }
+
+          // A round that acts: its words go out now, as the action runs.
+          flush()
 
           // Push assistant turn + tool results, loop. Indices from the stream
           // are contiguous, but a hole would serialise as null and be rejected.

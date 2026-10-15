@@ -59,6 +59,29 @@ describe('a step on their computer reports back, and he keeps going', () => {
   })
 })
 
+describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', () => {
+  const s = chat.slice(chat.indexOf('async function streamWithTools'))
+  it('held only for computer work; ordinary chat still streams word by word', () => {
+    expect(s).toMatch(/const hold = computerAsk \|\| used\.has\('use_my_computer'\)/)
+    expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\n\s+else \{ send\('text', \{ delta: evt\.delta\.text \}\); shownAny = true \}/)
+  })
+  it('a held claim is never shown — he is corrected out of sight, as unseen', () => {
+    expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false\)[\s\S]{0,40}continue/)
+  })
+  it('a round that acts is shown as it acts, and a passed answer is shown at the end', () => {
+    expect(s).toMatch(/\/\/ A round that acts: its words go out now, as the action runs\.\n\s+flush\(\)/)
+    expect(s).toMatch(/flush\(\)\n\s+send\('done', \{\}\)/)
+  })
+  it('recognises a computer ask from what they said', () => {
+    const lit = chat.match(/const COMPUTER_ASK = \/(.+)\/i\n/)[1]
+    const ASK = new RegExp(lit, 'i')
+    for (const yes of ['open my Gmail inbox in Chrome', 'read my texts', 'put the project in TrakSmart on my computer', 'take a screenshot'])
+      expect(ASK.test(yes), yes).toBe(true)
+    for (const no of ['what is on JOB-MT964ZIZ', 'email me that fixture list', 'mark it won', 'Click the Bryce profile'])
+      expect(ASK.test(no), no).toBe(false)   // a follow-up mid-task is held anyway: the tool was used
+  })
+})
+
 describe('email it to me — and only to me', () => {
   const start = chat.indexOf("if (name === 'email_me') {")
   const branch = chat.slice(start, start + 900)

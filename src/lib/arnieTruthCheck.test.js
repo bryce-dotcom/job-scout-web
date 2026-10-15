@@ -160,7 +160,9 @@ describe('what happens when it fires', () => {
 
   it('it fires at most once a turn, so it cannot loop', () => {
     expect(chat).toMatch(/let corrected = false/)
-    expect((chat.match(/corrected = true/g) || []).length).toBe(2)   // both loops
+    // both loops, and the stream's held (computer) branch — every one of them
+    // inside an `if (!corrected)`, so each turn still gets exactly one go.
+    expect((chat.match(/corrected = true/g) || []).length).toBe(3)
   })
 
   it('both turn loops are covered, streaming included', () => {
