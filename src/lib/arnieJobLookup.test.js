@@ -38,6 +38,19 @@ describe('one job, opened from its real lines', () => {
   })
 })
 
+describe('a step on their computer reports back, and he keeps going', () => {
+  const ui = chat.slice(chat.indexOf("if (name === 'use_my_computer') {"), chat.indexOf("if (name === 'query_crew') {"))
+  it('every action waits for its outcome — not "queued" and silence', () => {
+    expect(ui).toMatch(/const done = await waitForDone\(bearer, out\.action_id\)/)
+    expect(ui).toMatch(/done\.decision === 'allowed'[\s\S]{0,200}Keep going until what they asked for is done/)
+    expect(ui).toMatch(/done\.decision === 'failed'[\s\S]{0,200}why: done\.reason/)
+    expect(ui).toMatch(/still_working: true[\s\S]{0,120}Do not say it worked/)
+  })
+  it('a computer task gets 12 tool rounds, everything else 5', () => {
+    expect(chat.match(/< \(used\.has\('use_my_computer'\) \? 12 : 5\)/g).length).toBe(2)
+  })
+})
+
 describe('email it to me — and only to me', () => {
   const start = chat.indexOf("if (name === 'email_me') {")
   const branch = chat.slice(start, start + 900)

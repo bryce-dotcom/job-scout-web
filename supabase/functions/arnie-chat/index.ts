@@ -999,7 +999,31 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
             say: 'Say you could not get a look at the screen, and why. Do not describe what you expect to be there.',
           }
         }
-        return { queued: true, action_id: out.action_id, device: session.device_label }
+        // EVERY ACTION REPORTS BACK. This used to return "queued" and nothing
+        // else, so he never knew whether a click or a key worked — and with
+        // nothing telling him what next, he stopped after one step ("Chrome is
+        // launching now", 2026-10-15, with Gmail never opened). His Enter that
+        // failed on the agent ("not a key this agent will press") went unseen.
+        const done = await waitForDone(bearer, out.action_id)
+        if (done.decision === 'allowed') {
+          return {
+            done: true, action_id: out.action_id, device: session.device_label,
+            say: 'That went through on their machine. Keep going until what they asked for is done: look with kind=screenshot to see what changed, then take the next step — one action per call. Stop only when it is done, when something is theirs to do, or when you need them.',
+          }
+        }
+        if (done.decision === 'failed') {
+          return {
+            failed: true, action_id: out.action_id, why: done.reason || 'the agent did not say',
+            say: 'Say in one line what failed, using this reason and nothing else. Then, if there is another way, look with a screenshot and try it.',
+          }
+        }
+        if (done.decision && done.decision !== 'queued') {
+          return { not_done: true, action_id: out.action_id, decision: done.decision, why: done.reason || null, say: 'Say plainly that it did not happen, and why if a reason is given.' }
+        }
+        return {
+          queued: true, still_working: true, action_id: out.action_id, device: session.device_label,
+          say: 'The agent has not reported back yet. Do not say it worked. Look with a screenshot before the next step.',
+        }
       }
       return { error: out?.error || `the rail answered ${res.status}` }
     }
@@ -1223,7 +1247,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       const custName = new Map(('error' in custs ? [] : custs.rows).map((c: any) => [c.id, c.name]))
       return {
         found: jobs.length,
-        say: 'These are the job\'s actual lines. Answer only from them: the product is what is being INSTALLED; what it replaces (the existing fixture), heights and wattages are in each line\'s description and notes. If something is not written on a line, say it is not on the job — never fill it in from the playbook.' + (isAdmin ? '' : ' Prices are not shown at this person\'s access level; do not estimate them.'),
+        say: 'These are the job\'s actual lines. Answer only from them: the product is what is being INSTALLED. A line\'s description and notes may describe the new fixture OR the existing one — call something "existing" only when the words say so (existing, replacing, old, current, "counted as"); a bare "200w" or "20ft 110w" usually describes what is going in. If something is not written on a line, say it is not on the job — never fill it in from the playbook.' + (isAdmin ? '' : ' Prices are not shown at this person\'s access level; do not estimate them.'),
         jobs: jobs.map((j: any) => ({
           job_number: j.job_id, title: j.job_title,
           customer: custName.get(j.customer_id) || j.business_name || j.customer_name,
@@ -2257,6 +2281,23 @@ function toolContent(result: Record<string, unknown>): unknown {
   ]
 }
 
+/** How an action finished on the agent — the same status call as a look, without the picture. */
+async function waitForDone(bearer: string, actionId: number): Promise<{ decision?: string; reason?: string }> {
+  const until = Date.now() + 15000
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 1000))
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'shot', action_id: actionId }),
+    })
+    const j = await res.json().catch(() => ({}))
+    if (j?.status === 'nothing' || j?.status === 'ready') return { decision: j.decision, reason: j.reason }
+    if (j?.error) return { reason: j.error }
+  }
+  return {}
+}
+
 async function waitForShot(bearer: string, actionId: number): Promise<{ url?: string; why?: string }> {
   const until = Date.now() + 25000
   let last = 'the agent did not report back in time'
@@ -2396,7 +2437,9 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
   // twice would otherwise loop.
   const used = new Set<string>()
   let corrected = false
-  for (let i = 0; i < 5; i++) { // up to 5 tool rounds
+  // 5 tool rounds, or 12 once he is working on their computer: opening Gmail
+  // alone is look, ctrl+l, type, enter, look — the old cap ran out mid-task.
+  for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5); i++) {
     const ai = await callAnthropic(
       { feature: setup.feature, companyId: companyId ?? null },
       {
@@ -2460,7 +2503,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         const used = new Set<string>()
         let corrected = false
-        for (let round = 0; round < 5; round++) {
+        for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
           const res = await fetch(ANTHROPIC_URL, {
             method: 'POST',
             headers: {
