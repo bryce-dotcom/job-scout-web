@@ -36,7 +36,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
 import { isServiceRole } from '../_shared/arnieSend.ts'
-import { brandKey, brandProfileUsername, loadBrands } from '../_shared/marketing.ts'
+import { brandKey, brandProfileUsername, loadBrands, captureFileAllowed } from '../_shared/marketing.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -127,7 +127,10 @@ serve(async (req) => {
     // Platform maintenance: a call made with the service role key (never a browser)
     // may name the company it is asking about, e.g. to see which pages the
     // publisher offers a profile when a marketer cannot find hers (2026-10-13).
-    const maintenance = isServiceRole(req)
+    // The real service key, not a token that merely says "service_role": this
+    // function is deployed behind the gateway's JWT check, but the maintenance
+    // path reaches any company, so it answers to the secret itself.
+    const maintenance = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim() === SERVICE_KEY && isServiceRole(req)
     const bodyPeek = maintenance ? await req.clone().json().catch(() => ({})) : {}
     const caller = maintenance && bodyPeek?.company_id
       ? { companyId: Number(bodyPeek.company_id), employeeId: null, level: 5, email: 'service', role: 'developer' as const }
@@ -167,6 +170,14 @@ serve(async (req) => {
       }
     }
 
+    // The publisher profile is always this company's: jobscout-<co> or
+    // jobscout-<co>-<brand>. A manager can edit the settings row that holds
+    // the name; a name pointing at another tenant's profile is not honoured.
+    const ownProfile = (u: unknown) => typeof u === 'string' && (u === `jobscout-${companyId}` || u.startsWith(`jobscout-${companyId}-`))
+    if (cfg.profile_username && !ownProfile(cfg.profile_username)) {
+      console.warn('[marketing-publish] profile_username is not this company\'s; ignoring', companyId, brandId, cfg.profile_username)
+      cfg = { ...cfg, profile_username: undefined, accounts: [] }
+    }
     const username = cfg.profile_username || brandProfileUsername(companyId, brandId)
 
     const refreshAccounts = async (): Promise<{ ok: boolean; accounts?: any[]; error?: string }> => {
@@ -379,6 +390,7 @@ serve(async (req) => {
           if (isVideo && c.media_type !== 'video') continue
           if (!isVideo && c.media_type === 'video') continue
           if (c.bucket === 'marketing-media' && c.url) { urls.push(c.url); continue }
+          if (!(await captureFileAllowed(sb, companyId, c))) { console.warn('[marketing-publish] capture points outside the company; skipped', c.id); continue }
           try {
             const { data: file, error } = await sb.storage.from(c.bucket).download(c.path)
             if (error || !file) continue

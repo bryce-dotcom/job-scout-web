@@ -89,10 +89,27 @@ export function accessLevel(emp: Record<string, unknown>): number {
   return 0
 }
 
+/**
+ * Is this JWT genuinely one of ours? Auth says so (or not) — the signature,
+ * the expiry and a live session all checked in one call. Needed only by
+ * functions deployed with verify_jwt=false (webhooks that also answer a
+ * signed-in person), where the gateway let the token through unread; a
+ * forged payload with any email in it would otherwise become that employee.
+ */
+export async function verifyUserToken(token: string, supabaseUrl: string, serviceKey: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { Authorization: `Bearer ${token}`, apikey: serviceKey } })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 export async function resolveCaller(
   req: Request,
   supabaseUrl?: string | null,
   serviceKey?: string | null,
+  opts: { verify?: boolean } = {},
 ): Promise<Caller | null> {
   try {
     if (!supabaseUrl || !serviceKey) return null
@@ -100,6 +117,8 @@ export async function resolveCaller(
     if (!token || token === serviceKey) return null // anon/service call — no user
     const email = decodeJwtEmail(token)
     if (!email) return null
+    // verify_jwt=false functions ask for this: the gateway did not check the signature.
+    if (opts.verify && !(await verifyUserToken(token, supabaseUrl, serviceKey))) return null
     const res = await fetch(
       `${supabaseUrl}/rest/v1/employees` +
         `?select=id,company_id,role,user_role,is_admin,is_developer` +

@@ -128,7 +128,9 @@ serve(async (req) => {
     }
 
     // ── JobScout actions ──────────────────────────────────────────────
-    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+    // Deployed with verify_jwt=false for Twilio's sake, so the gateway did not
+    // read the token: ask Auth whether it is real before trusting its email.
+    const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY, { verify: true })
     if (!caller?.companyId) return json({ ok: false, error: 'Sign in first.' }, 401)
     const companyId = caller.companyId
     const body = await req.json().catch(() => ({}))

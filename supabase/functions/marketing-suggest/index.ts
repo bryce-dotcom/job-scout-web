@@ -19,8 +19,10 @@
 // Every draft is status 'draft', suggested_at set, and the managers get one
 // notification per company per day. Nothing here posts. A person approves.
 //
-// Auth: the cron sends the anon key ({"cron": true}); a signed-in Manager+
-// runs it for their own company only.
+// Auth: the cron sends {"cron": true} with the service key as bearer or the
+// MARKETING_INTERNAL_KEY in x-internal-key (pg_cron reads it from Vault); a
+// signed-in Manager+ runs it for their own company only. Deployed with
+// verify_jwt=false, so the person's token is checked here, not at the gate.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -237,19 +239,21 @@ serve(async (req) => {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
     const body = await req.json().catch(() => ({}))
 
-    // Cron (anon/service bearer) → every company that set marketing up.
-    // A person → their own company, Manager+.
-    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer /, '')
-    let role = ''
-    try { const p = bearer.split('.')[1]; if (p) role = JSON.parse(atob(p.replace(/-/g, '+').replace(/_/g, '/'))).role || '' } catch { /* not a JWT */ }
-    const internal = body.cron === true && (role === 'anon' || role === 'service_role')
+    // Cron (our own scheduler, proven by a secret) → every company that set
+    // marketing up. A person → their own company, Manager+. The old check
+    // read the role claim out of an unverified token, which anyone can write.
+    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
+    const INTERNAL = Deno.env.get('MARKETING_INTERNAL_KEY') || ''
+    const presented = (req.headers.get('x-internal-key') || '').trim()
+    const internal = body.cron === true && ((!!bearer && bearer === SERVICE_KEY) || (!!INTERNAL && presented === INTERNAL))
+    if (body.cron === true && !internal) return json({ ok: false, error: 'Not for callers.' }, 403)
 
     let companyIds: number[] = []
     if (internal) {
       const { data } = await sb.from('settings').select('company_id').or('key.like.marketing_publisher%,key.like.marketing_brand_kit%')
       companyIds = [...new Set((data || []).map((r: any) => r.company_id))]
     } else {
-      const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY)
+      const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY, { verify: true })
       if (!caller?.companyId) return json({ ok: false, error: 'Sign in first.' }, 401)
       if (caller.level < 2) return json({ ok: false, error: 'Only a Manager or above can run this.' }, 403)
       companyIds = [caller.companyId]

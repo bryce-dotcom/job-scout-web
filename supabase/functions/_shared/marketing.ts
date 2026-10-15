@@ -79,9 +79,31 @@ export function cityOf(addr: unknown): string {
   return parts.length >= 2 ? parts[parts.length - 2].replace(/\s+\d{5}(-\d{4})?$/, '') : ''
 }
 
-export async function imageBlockFor(sb: any, capture: { bucket?: string; path?: string; url?: string; media_type?: string }) {
+/**
+ * May this company read that file? A capture row names a bucket and a path,
+ * and any employee can write capture rows — so the server, which reads with
+ * the service key, decides here rather than trusting the row. Two homes are
+ * allowed: the company's own folder in the public media bucket, and a job
+ * photo this company attached (file_attachments is the record of that; the
+ * nightly suggester makes captures from exactly those rows).
+ */
+export async function captureFileAllowed(sb: any, companyId: number, capture: { bucket?: string | null; path?: string | null }): Promise<boolean> {
+  const bucket = capture.bucket || MEDIA_BUCKET
+  const path = String(capture.path || '')
+  if (!path || path.includes('..')) return false
+  if (bucket === MEDIA_BUCKET) return path.startsWith(`${companyId}/`)
+  try {
+    const { data } = await sb.from('file_attachments').select('id, storage_bucket').eq('company_id', companyId).eq('file_path', path).limit(3)
+    return (data || []).some((a: any) => (a.storage_bucket || 'project-documents') === bucket)
+  } catch {
+    return false
+  }
+}
+
+export async function imageBlockFor(sb: any, companyId: number, capture: { bucket?: string; path?: string; url?: string; media_type?: string }) {
   if (capture.media_type === 'video') return null
   if (capture.bucket && capture.bucket !== MEDIA_BUCKET && capture.path) {
+    if (!(await captureFileAllowed(sb, companyId, capture))) return null
     try {
       const { data, error } = await sb.storage.from(capture.bucket).download(capture.path)
       if (error || !data) return null
@@ -226,7 +248,7 @@ ${edits.length ? `\nEDITS THEY MADE TO EARLIER DRAFTS (learn from the correction
       if (c.note) content.push({ type: 'text', text: `Note on that video: ${c.note}` })
       continue
     }
-    const block = await imageBlockFor(sb, c)
+    const block = await imageBlockFor(sb, companyId, c)
     if (block) content.push(block)
     if (c.note) content.push({ type: 'text', text: `Note on that photo: ${c.note}` })
   }
