@@ -34,7 +34,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { resolveCaller } from '../_shared/auth.ts'
+import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { isServiceRole } from '../_shared/arnieSend.ts'
 import { brandKey, brandProfileUsername, loadBrands, captureFileAllowed } from '../_shared/marketing.ts'
 
@@ -127,10 +127,10 @@ serve(async (req) => {
     // Platform maintenance: a call made with the service role key (never a browser)
     // may name the company it is asking about, e.g. to see which pages the
     // publisher offers a profile when a marketer cannot find hers (2026-10-13).
-    // The real service key, not a token that merely says "service_role": this
-    // function is deployed behind the gateway's JWT check, but the maintenance
-    // path reaches any company, so it answers to the secret itself.
-    const maintenance = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim() === SERVICE_KEY && isServiceRole(req)
+    // A verified service caller, not a token that merely says "service_role":
+    // the maintenance path reaches any company, so the proof is the runtime's
+    // own key or a service JWT PostgREST vouches for (see isServiceCaller).
+    const maintenance = isServiceRole(req) && await isServiceCaller(req, SUPABASE_URL, SERVICE_KEY)
     const bodyPeek = maintenance ? await req.clone().json().catch(() => ({})) : {}
     const caller = maintenance && bodyPeek?.company_id
       ? { companyId: Number(bodyPeek.company_id), employeeId: null, level: 5, email: 'service', role: 'developer' as const }

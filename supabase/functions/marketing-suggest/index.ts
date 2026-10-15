@@ -26,7 +26,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { resolveCaller } from '../_shared/auth.ts'
+import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { draftFromCaptures, notifyManagers, loadBrands, brandForUnit, brandKey } from '../_shared/marketing.ts'
 import { geminiKey, paintPicture, picturePrompt } from '../_shared/gemini.ts'
 import { checkCap, recordMediaUsage, MEDIA_PRICES } from '../_shared/mediaMeter.ts'
@@ -242,10 +242,9 @@ serve(async (req) => {
     // Cron (our own scheduler, proven by a secret) → every company that set
     // marketing up. A person → their own company, Manager+. The old check
     // read the role claim out of an unverified token, which anyone can write.
-    const bearer = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
     const INTERNAL = Deno.env.get('MARKETING_INTERNAL_KEY') || ''
     const presented = (req.headers.get('x-internal-key') || '').trim()
-    const internal = body.cron === true && ((!!bearer && bearer === SERVICE_KEY) || (!!INTERNAL && presented === INTERNAL))
+    const internal = body.cron === true && ((!!INTERNAL && presented === INTERNAL) || await isServiceCaller(req, SUPABASE_URL, SERVICE_KEY))
     if (body.cron === true && !internal) return json({ ok: false, error: 'Not for callers.' }, 403)
 
     let companyIds: number[] = []

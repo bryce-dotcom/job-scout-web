@@ -105,6 +105,34 @@ export async function verifyUserToken(token: string, supabaseUrl: string, servic
   }
 }
 
+/**
+ * Is the bearer genuinely the service role? Two ways to be: the exact key
+ * this runtime holds, or a service_role JWT that PostgREST accepts — it
+ * checks the signature against the project's secret, which no edge function
+ * can do on its own. The second way matters because the runtime's
+ * SUPABASE_SERVICE_ROLE_KEY is not the legacy service JWT in the repo's
+ * .env (the project has new-style secret keys), so "token === SERVICE_KEY"
+ * alone never matches a maintenance script. Decoding the role claim without
+ * either check is not verification: anyone can write that claim.
+ */
+export async function isServiceCaller(req: Request, supabaseUrl: string, serviceKey: string): Promise<boolean> {
+  const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
+  if (!token) return false
+  if (token === serviceKey) return true
+  let role = ''
+  try {
+    const b64 = (token.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')
+    role = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)))?.role || ''
+  } catch { return false }
+  if (role !== 'service_role') return false
+  try {
+    const r = await fetch(`${supabaseUrl}/rest/v1/companies?select=id&limit=1`, { method: 'HEAD', headers: { apikey: token, Authorization: `Bearer ${token}` } })
+    return r.ok
+  } catch {
+    return false
+  }
+}
+
 export async function resolveCaller(
   req: Request,
   supabaseUrl?: string | null,
