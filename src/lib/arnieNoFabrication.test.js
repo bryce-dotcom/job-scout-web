@@ -93,7 +93,10 @@ describe('the computer is the easiest rail to break', () => {
   })
 
   it('invented causes are named so they cannot come back', () => {
-    expect(block).toMatch(/not the website blocking automation, not lag, not clicks landing in the wrong place/)
+    // "Clicks landing in the wrong place" came off this list on 2026-10-14: it
+    // was REAL (pictures were one window, clicks were whole-screen) and is
+    // fixed in the agent. Inventing causes is still forbidden.
+    expect(block).toMatch(/not the website blocking automation, not lag\./)
   })
 
   it('every turn carries what was really done on that machine', () => {

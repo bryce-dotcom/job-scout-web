@@ -412,6 +412,40 @@ export async function launchApp(name) {
 }
 
 /**
+ * Which of the Mac's switches are on, checked at startup and reported.
+ *
+ * On London's MacBook (2026-10-14) every failure was learned by watching him
+ * try: the look refused, then "no window", with nobody able to say which
+ * switch in System Settings was the problem. The agent now asks macOS itself
+ * and says — on the Computer page and to the assistant — before anyone tries.
+ *
+ * true / false when macOS answers; null when it cannot be told from here
+ * (an older macOS, a bridge that is missing). Never blocks the agent.
+ */
+export async function checkPermissions() {
+  if (!MAC) return {}
+  const jxa = (src) => run('osascript', ['-l', 'JavaScript', '-e', src])
+  const yesNo = (r) => (r.ok ? (/true/i.test(r.out) ? true : /false/i.test(r.out) ? false : null) : null)
+  // Accessibility: AXIsProcessTrusted, else whether System Events will answer.
+  let accessibility = yesNo(await jxa("ObjC.import('ApplicationServices'); typeof $.AXIsProcessTrusted === 'function' ? String($.AXIsProcessTrusted()) : 'unknown'"))
+  if (accessibility === null) {
+    const r = await osa('tell application "System Events" to get name of first application process whose frontmost is true')
+    accessibility = r.ok ? true : /assistive|not allowed|1002|-1719|-25211/i.test(r.err || '') ? false : null
+  }
+  // Screen Recording ("Screen & System Audio Recording" on newer macOS).
+  const screen = yesNo(await jxa("ObjC.import('CoreGraphics'); typeof $.CGPreflightScreenCaptureAccess === 'function' ? String($.CGPreflightScreenCaptureAccess()) : 'unknown'"))
+  return { screen, accessibility }
+}
+
+/** What to tell a person about the switches that are off — [] when all is well. */
+export function permissionNotes(p = {}) {
+  const out = []
+  if (p.screen === false) out.push('Screen Recording is OFF for Terminal, so nothing can be seen. System Settings → Privacy & Security → Screen & System Audio Recording → turn on Terminal, then quit Terminal and run the agent again.')
+  if (p.accessibility === false) out.push('Accessibility is OFF for Terminal, so nothing can be clicked or typed — and the program in front cannot even be named. System Settings → Privacy & Security → Accessibility → turn on Terminal.')
+  return out
+}
+
+/**
  * What this platform can and cannot do, said plainly at startup.
  *
  * Recording is Windows-only today. It needs a resident input hook, and the

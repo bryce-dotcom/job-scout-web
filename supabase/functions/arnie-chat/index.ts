@@ -2002,7 +2002,7 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
     }
     const since = new Date(Date.now() - 12 * 3600_000).toISOString()
     const [sessions, grants, skills, recent] = await Promise.all([
-      get(`arnie_computer_sessions?select=device_label,platform,status,last_seen_at&employee_id=eq.${employeeId}&order=id.desc&limit=1`),
+      get(`arnie_computer_sessions?select=device_label,platform,status,last_seen_at,capabilities&employee_id=eq.${employeeId}&order=id.desc&limit=1`),
       get(`arnie_computer_grants?select=app,host,tier,duration&employee_id=eq.${employeeId}&revoked_at=is.null&order=app`),
       get(`arnie_skills?select=name,outcome&company_id=eq.${companyId}&status=eq.published&order=name&limit=25`),
       // What has ACTUALLY been done on that machine. Every action ever sent to
@@ -2027,7 +2027,15 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
       // three invented reasons why: Google blocking it, lag, clicks landing
       // in the wrong place. Not one action had been sent.
       lines.push('NOTHING happens on that computer unless use_my_computer returns a result to you. You cannot see their screen, move a mouse or type a key any other way. So: never say you are clicking, typing, opening something or taking a screenshot unless the tool just did it and told you so — and never ask them whether they can see you working. Call the tool, or say you have not.')
-      lines.push('If the tool DOES come back with a problem, report what it actually said. Do not invent a cause — not the website blocking automation, not lag, not clicks landing in the wrong place. Those are real-sounding reasons that send people hunting a fault that is not there.')
+      lines.push('If the tool DOES come back with a problem, report what it actually said. Do not invent a cause — not the website blocking automation, not lag. Real-sounding reasons send people hunting a fault that is not there.')
+      // The Mac's switches, as the agent read them from macOS at startup.
+      // Said here so the assistant names the switch BEFORE trying, instead of
+      // two failed looks in a row (London's MacBook, 2026-10-14).
+      const perms = session.capabilities?.permissions || {}
+      const off: string[] = []
+      if (perms.screen === false) off.push('Screen Recording (System Settings → Privacy & Security → Screen & System Audio Recording → Terminal on, then quit Terminal and start the agent again)')
+      if (perms.accessibility === false) off.push('Accessibility (System Settings → Privacy & Security → Accessibility → Terminal on)')
+      if (off.length) lines.push(`On that Mac, macOS has NOT yet allowed: ${off.join('; ')}. Until it does you cannot see or work its screen — say so plainly, with the step, rather than trying and failing.`)
       if (!Array.isArray(grants) || !grants.length) {
         lines.push('Nothing is allowed on it yet, so the first thing you try in any program will come back asking for permission. That is the normal way in: ask for what the job needs, and they get one tap to allow it.')
       } else {

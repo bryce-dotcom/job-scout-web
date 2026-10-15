@@ -82,6 +82,9 @@ goto have_node
 rem --- the agent itself ----------------------------------------------
 rem Fetched every run. A failed download must not leave a half-written
 rem agent behind, so each file lands as .new and is moved into place.
+rem The agent comes back here by itself (exit code 75) when a newer build
+rem is published, so a fix reaches a running computer with no restart.
+:fetch
 echo    Getting the latest version...
 curl -fsSL -o "%DIR%\agent.mjs.new" "%BASE%/agent.mjs"
 if errorlevel 1 goto offline
@@ -110,7 +113,15 @@ echo.
 set "JOBSCOUT_URL=__SUPABASE_URL__"
 set "JOBSCOUT_ANON_KEY=__ANON_KEY__"
 set "JOBSCOUT_APP_URL=%APP%"
+set "JOBSCOUT_RELEASE_BASE=%BASE%"
+set "JOBSCOUT_LAUNCHER_LOOP=1"
 "%NODE%" "%DIR%\agent.mjs"
+if errorlevel 75 if not errorlevel 76 (
+  echo.
+  echo    A newer version is out - updating and carrying on.
+  echo.
+  goto fetch
+)
 
 rem The agent only returns when it is stopped. Hold the window so that
 rem whatever it said last is still readable.

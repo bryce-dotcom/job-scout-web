@@ -154,9 +154,16 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
             This computer cannot watch the screen yet, so teaching would record nothing.
           </p>
         )}
-        {connected && (session?.capabilities?.notes || []).map((n) => (
-          <p key={n} style={{ margin: '6px 0 0', color: c.faint, fontSize: 12, lineHeight: 1.45 }}>{n}</p>
-        ))}
+        {/* A Mac switch that is OFF (the agent asks macOS at startup) is the
+            thing stopping everything, so it is said in amber, not as a faint
+            footnote. London's MacBook failed twice before anyone knew which. */}
+        {connected && (() => {
+          const p = session?.capabilities?.permissions || {}
+          const off = p.screen === false || p.accessibility === false
+          return (session?.capabilities?.notes || []).map((n) => (
+            <p key={n} style={{ margin: '6px 0 0', color: off ? c.amber : c.faint, fontSize: off ? 12.5 : 12, fontWeight: off ? 600 : 400, lineHeight: 1.45 }}>{n}</p>
+          ))
+        })()}
 
         {/* The stop is alone and full width. It used to be one of three grey
             buttons in a row, which is not what the most serious control on

@@ -155,6 +155,14 @@ Deno.serve(async (req) => {
                 ? ((body.capabilities as Record<string, unknown>).notes as unknown[])
                   .filter((n) => typeof n === 'string').slice(0, 6).map((n) => String(n).slice(0, 300))
                 : [],
+              // Which of the Mac's switches are on, as macOS told the agent:
+              // true, false, or null for "could not tell". Nothing else kept.
+              permissions: (() => {
+                const p = (body.capabilities as Record<string, unknown>).permissions as Record<string, unknown> | undefined
+                if (!p || typeof p !== 'object') return {}
+                const tri = (v: unknown) => (v === true ? true : v === false ? false : null)
+                return { screen: tri(p.screen), accessibility: tri(p.accessibility) }
+              })(),
             }
             : null,
         }),

@@ -74,7 +74,12 @@ fi
 
 # --- the agent itself ----------------------------------------------
 # A failed download must not leave a half-written agent behind, so each
-# file lands beside the real one and is moved into place.
+# file lands beside the real one and is moved into place. The agent asks
+# to come back round this loop (exit code 75) when a newer build is
+# published, so a fix reaches a running Mac with no restart.
+export JOBSCOUT_RELEASE_BASE="$BASE"
+export JOBSCOUT_LAUNCHER_LOOP=1
+while true; do
 printf '   Getting the latest version...\n'
 if curl -fsSL -o "$DIR/agent.mjs.new" "$BASE/agent.mjs" \
    && curl -fsSL -o "$DIR/recorder.jxa.js.new" "$BASE/recorder.jxa.js"; then
@@ -94,6 +99,13 @@ fi
 
 printf '\n'
 "$NODE" "$DIR/agent.mjs"
+CODE=$?
+if [ "$CODE" -eq 75 ]; then
+  printf '\n   A newer version is out - updating and carrying on.\n\n'
+  continue
+fi
+break
+done
 
 # The agent only returns when it is stopped. Hold the window so that
 # whatever it said last is still readable.

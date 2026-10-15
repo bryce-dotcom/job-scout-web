@@ -94,3 +94,38 @@ describe('a click lands on what was seen', () => {
     expect(agent).toMatch(/case 'click': return await clickAt\(\.\.\.toScreen\(t\.x, t\.y\), 'left'\)/)
   })
 })
+
+describe('the Mac says which switch is off, before anyone tries', () => {
+  const hands = read('../../scripts/agent/hands.mjs')
+  const server = read('../../supabase/functions/arnie-computer/index.ts')
+  const chat = read('../../supabase/functions/arnie-chat/index.ts')
+  it('asks macOS itself, never blocking', async () => {
+    expect(hands).toMatch(/\$\.AXIsProcessTrusted\(\)/)
+    expect(hands).toMatch(/\$\.CGPreflightScreenCaptureAccess\(\)/)
+    const { permissionNotes } = await import('../../scripts/agent/hands.mjs')
+    expect(permissionNotes({ screen: false, accessibility: true })[0]).toMatch(/Screen & System Audio Recording → turn on Terminal/)
+    expect(permissionNotes({ screen: true, accessibility: true })).toEqual([])
+    expect(permissionNotes({ screen: null, accessibility: null })).toEqual([])   // unknown is not "off"
+  })
+  it('the server keeps it shape-checked, and the assistant is told', () => {
+    expect(server).toMatch(/return \{ screen: tri\(p\.screen\), accessibility: tri\(p\.accessibility\) \}/)
+    expect(chat).toMatch(/macOS has NOT yet allowed/)
+  })
+})
+
+describe('a running agent picks up a fix by itself', () => {
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const cmd = read('../../scripts/agent/launch/jobscout-agent.cmd')
+  const mac = read('../../scripts/agent/launch/jobscout-agent.command')
+  it('only where the launcher can loop, only when idle and not recording', () => {
+    expect(agent).toMatch(/process\.env\.JOBSCOUT_LAUNCHER_LOOP !== '1'/)
+    expect(agent).toMatch(/if \(!rec && await newerBuildOut\(\)\) await stop\('a newer version is out — updating', 75\)/)
+  })
+  it('both launchers loop back on 75', () => {
+    expect(cmd).toMatch(/set "JOBSCOUT_LAUNCHER_LOOP=1"/)
+    expect(cmd).toMatch(/if errorlevel 75 if not errorlevel 76 \(/)
+    expect(cmd).toMatch(/:fetch/)
+    expect(mac).toMatch(/export JOBSCOUT_LAUNCHER_LOOP=1/)
+    expect(mac).toMatch(/if \[ "\$CODE" -eq 75 \]; then/)
+  })
+})

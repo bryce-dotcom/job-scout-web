@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, unlink } from 'node:fs/promises'
 
 import {
-  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp, pngSize,
+  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp, pngSize, checkPermissions, permissionNotes,
   capabilities, platformName,
 } from './agent/hands.mjs'
 
@@ -459,7 +459,29 @@ const flushObservations = async () => {
   if (r?.status === 409) stopRecorder()
 }
 
-const stop = async (why) => {
+// ── a newer build, picked up while running ──────────────────────────────
+// Every fix to the agent used to need the person to close the window and
+// start it again — London's Mac needed three restarts in one evening, and he
+// left before the last one. A launcher that can loop sets
+// JOBSCOUT_LAUNCHER_LOOP; then, when idle, the agent checks release.json and,
+// if a newer build is out, stops its session cleanly and exits 75 so the
+// launcher fetches it and starts again. An older launcher never sets the flag
+// and nothing changes for it — exiting would have just stopped the agent.
+const UPDATE_EVERY_MS = 5 * 60_000
+let lastUpdateCheck = Date.now()
+const newerBuildOut = async () => {
+  if (process.env.JOBSCOUT_LAUNCHER_LOOP !== '1' || BUILD === 'source') return false
+  const base = process.env.JOBSCOUT_RELEASE_BASE || `${URL_BASE}/storage/v1/object/public/agent-releases`
+  if (Date.now() - lastUpdateCheck < UPDATE_EVERY_MS) return false
+  lastUpdateCheck = Date.now()
+  try {
+    const r = await fetch(`${base}/release.json`, { cache: 'no-store' })
+    const j = r.ok ? await r.json() : null
+    return !!(j?.agent_build && j.agent_build !== BUILD)
+  } catch { return false }
+}
+
+const stop = async (why, exitCode = 0) => {
   if (stopping) return
   stopping = true
   console.log(`\n  stopping — ${why}`)
@@ -475,7 +497,7 @@ const stop = async (why) => {
           : '  could not reach the server to stop cleanly',
     )
   }
-  process.exit(0)
+  process.exit(exitCode)
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stop('you pressed Ctrl+C').catch(() => process.exit(0)) })
 
@@ -494,6 +516,20 @@ const handshake = {
   agent_version: VERSION,
   agent_build: BUILD,
   capabilities: { perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes },
+}
+// The Mac's switches, asked of macOS itself (see checkPermissions). The
+// specific "turn on X" lines lead the notes, so the page and the assistant
+// both say which one is off instead of a generic "allow things".
+{
+  const perms = await checkPermissions().catch(() => ({}))
+  const off = permissionNotes(perms)
+  handshake.capabilities.permissions = perms
+  if (off.length) {
+    handshake.capabilities.notes = off
+    for (const n of off) console.log(`  !! ${n}`)
+  } else if (perms.screen === true && perms.accessibility === true) {
+    handshake.capabilities.notes = ['macOS has allowed Screen Recording and Accessibility for Terminal.']
+  }
 }
 let hello = await call('hello', handshake)
 // Paired to the wrong account — the public demo (London's Mac, 2026-10-14).
@@ -578,7 +614,12 @@ while (!stopping) {
   await flushObservations()
 
   const a = got.action
-  if (!a) { await new Promise((r) => setTimeout(r, POLL_MS)); continue }
+  if (!a) {
+    // Idle, and not in the middle of a recording: a good moment to update.
+    if (!rec && await newerBuildOut()) await stop('a newer version is out — updating', 75)
+    await new Promise((r) => setTimeout(r, POLL_MS))
+    continue
+  }
 
   // 1. The leash, locally, with the same module the server used.
   let verdict = decideAction({ id: a.id, kind: a.kind, app: a.app, host: a.host, target: a.target }, grants)
