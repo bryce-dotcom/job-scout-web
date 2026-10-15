@@ -31,7 +31,17 @@ const run = (cmd, args, opts = {}) => new Promise((done) => {
     }))
 })
 
-const ps = (script) => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script])
+// Every script runs DPI-AWARE. Without it, on a screen scaled above 100% —
+// Bryce's laptop is 150%: 2560x1600 real, 1707x1067 as PowerShell saw it —
+// the window's rectangle came back in scaled units while the capture took real
+// pixels, so a screenshot was the top-left two-thirds of the window and every
+// click landed down and to the right of where Jenny aimed (2026-10-15: "Inbox"
+// and the search box's X, aimed dead-on in the picture, missed). Aware, the
+// rectangle, the capture and the cursor all speak real pixels.
+const DPI_AWARE = `Add-Type -Namespace JsDpi -Name P -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -ErrorAction SilentlyContinue; [void][JsDpi.P]::SetProcessDPIAware()
+`
+export const withDpiAware = (script) => DPI_AWARE + script
+const ps = (script) => run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', withDpiAware(script)])
 const osa = (script) => run('osascript', ['-e', script])
 
 // ── what is really in front ─────────────────────────────────────────────

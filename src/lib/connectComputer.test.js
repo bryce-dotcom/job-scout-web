@@ -74,6 +74,14 @@ describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', 
   })
 })
 
+describe('on a scaled screen the picture and the click agree (Bryce, 150%, 2026-10-15)', () => {
+  const hands = read('../../scripts/agent/hands.mjs')
+  it('every Windows script runs DPI-aware, so rectangle, capture and cursor are all real pixels', () => {
+    expect(hands).toMatch(/SetProcessDPIAware\(\);' -ErrorAction SilentlyContinue; \[void\]\[JsDpi\.P\]::SetProcessDPIAware\(\)/)
+    expect(hands).toMatch(/const ps = \(script\) => run\('powershell\.exe', \[[^\]]*withDpiAware\(script\)\]\)/)
+  })
+})
+
 describe('the agent keeps its connection through a blip (Bryce, 2026-10-15)', () => {
   const agent = read('../../scripts/jobscout-agent.mjs')
   const fa = agent.slice(agent.indexOf('const freshAccess = async'), agent.indexOf('const call = async'))

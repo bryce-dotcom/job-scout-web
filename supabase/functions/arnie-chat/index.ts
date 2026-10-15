@@ -1917,6 +1917,8 @@ Deno.serve(async (req) => {
  * told Bryce "I've drafted the won card" with nothing on screen. A card tool
  * now counts only when a card came out of it.
  */
+const LAST_STEP_NOTE = '\n\n## You are out of steps for this reply\nYou have used every action you get in one reply, so you cannot act again now. In two or three plain sentences: say exactly where you got to — only what you actually SAW in a screenshot — and what is still left to do, and that they can say "keep going" for you to carry on. Never say the job is done unless a screenshot showed it done.'
+
 /** Is this message asking for work on their computer? Broad on purpose: a
  *  false yes costs a second of streaming, a false no shows an invented step. */
 const COMPUTER_ASK = /\b(my (computer|pc|mac|laptop|desktop|screen|machine)|on (the|my|this) (computer|pc|mac|laptop|machine)|chrome|safari|firefox|microsoft edge|excel|outlook|teams|notepad|file explorer|finder|traksmart|screenshot|my (texts|messages|email|inbox|gmail)|gmail|ctrl\+|address bar)\b/i
@@ -2552,6 +2554,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const computerAsk = setup.tools.some((t: any) => t?.name === 'use_my_computer')
           && COMPUTER_ASK.test(lastUserText(messages))
         let shownAny = false
+        const outOfSteps = (round: number) => used.has('use_my_computer') && round === 11
         for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
           const hold = computerAsk || used.has('use_my_computer')
           let pending = ''
@@ -2571,8 +2574,12 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             body: JSON.stringify({
               model: setup.model,
               max_tokens: setup.maxTokens,
-              system: systemPrompt || '',
-              ...(includeTools ? { tools: setup.tools } : {}),
+              // OUT OF STEPS, SAY SO. A computer task that used every round
+              // used to end mid-sentence — "Let me try clicking in the search
+              // box…" — and nothing more, with the job half done (Bryce's
+              // Gmail, 2026-10-15). The last round may not act; it reports.
+              system: (systemPrompt || '') + (outOfSteps(round) ? LAST_STEP_NOTE : ''),
+              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : {}) } : {}),
               messages: convo,
               stream: true,
             }),

@@ -54,6 +54,13 @@ describe('a step on their computer reports back, and he keeps going', () => {
     expect(chat).toMatch(/arnie_computer_actions\?select=decision,reason,shot_after,completed_at&id=eq\.\$\{actionId\}&employee_id=eq\.\$\{employeeId\}/)
     expect(ui).toMatch(/if \(res\.status === 429\) \{ await new Promise\(\(r\) => setTimeout\(r, 3000\)\); res = await queueOnce\(\) \}/)
   })
+  it('the last round of a computer task reports where it got to instead of stopping mid-sentence', () => {
+    const s = chat.slice(chat.indexOf('async function streamWithTools'))
+    expect(s).toMatch(/const outOfSteps = \(round: number\) => used\.has\('use_my_computer'\) && round === 11/)
+    expect(s).toMatch(/system: \(systemPrompt \|\| ''\) \+ \(outOfSteps\(round\) \? LAST_STEP_NOTE : ''\)/)
+    expect(s).toMatch(/tools: setup\.tools, \.\.\.\(outOfSteps\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : \{\}\)/)
+    expect(chat).toMatch(/Never say the job is done unless a screenshot showed it done\./)
+  })
   it('a computer task gets 12 tool rounds, everything else 5', () => {
     expect(chat.match(/< \(used\.has\('use_my_computer'\) \? 12 : 5\)/g).length).toBe(2)
   })
