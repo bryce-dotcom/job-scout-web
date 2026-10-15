@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { localDateStr } from '../lib/localDate'
 import { useStore } from '../lib/store'
 import { isOfficeRole } from '../lib/clockInJob'
 import { credentialStatus, OPERATOR_ROLES, LICENSE_CLASSES } from '../lib/driverCredentials'
@@ -99,6 +100,10 @@ const emptyEmployee = {
   // incentive paperwork (e.g. Alayda at HHH). Paid on incentive_amount
   // of every utility invoice they process.
   commission_processor_rate: 0,
+  // Override — a manager's percentage of the team's sales
+  override_rate_pct: 0,
+  override_team: [],
+  override_since: '',
   commission_processor_type: 'percent',
   // Skill level
   skill_level: '',
@@ -480,6 +485,9 @@ export default function Employees() {
       commission_setter_rate: employee.commission_setter_rate || 25,
       commission_setter_type: employee.commission_setter_type || 'flat',
       commission_processor_rate: employee.commission_processor_rate || 0,
+      override_rate_pct: employee.override_rate_pct || 0,
+      override_team: Array.isArray(employee.override_team) ? employee.override_team : [],
+      override_since: employee.override_since || '',
       commission_processor_type: employee.commission_processor_type || 'percent',
       skill_level: employee.skill_level || '',
       pto_days_per_year: employee.pto_days_per_year || 10,
@@ -636,6 +644,10 @@ export default function Employees() {
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
       commission_processor_rate: parseFloat(formData.commission_processor_rate) || 0,
+      override_rate_pct: parseFloat(formData.override_rate_pct) || 0,
+      override_team: Array.isArray(formData.override_team) && formData.override_team.length ? formData.override_team.map(Number) : null,
+      // The date the override began: set the first time a rate is entered, so it never reaches back over the year.
+      override_since: (parseFloat(formData.override_rate_pct) || 0) > 0 ? (formData.override_since || localDateStr(new Date())) : null,
       commission_processor_type: formData.commission_processor_type || 'percent',
       skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
@@ -952,6 +964,10 @@ export default function Employees() {
       commission_setter_rate: parseFloat(formData.commission_setter_rate) || 0,
       commission_setter_type: formData.commission_setter_type,
       commission_processor_rate: parseFloat(formData.commission_processor_rate) || 0,
+      override_rate_pct: parseFloat(formData.override_rate_pct) || 0,
+      override_team: Array.isArray(formData.override_team) && formData.override_team.length ? formData.override_team.map(Number) : null,
+      // The date the override began: set the first time a rate is entered, so it never reaches back over the year.
+      override_since: (parseFloat(formData.override_rate_pct) || 0) > 0 ? (formData.override_since || localDateStr(new Date())) : null,
       commission_processor_type: formData.commission_processor_type || 'percent',
       skill_level: formData.skill_level || null,
       pto_days_per_year: parseFloat(formData.pto_days_per_year) || 0,
@@ -2547,6 +2563,29 @@ export default function Employees() {
                             typeName="commission_setter_type"
                             disabled={!isEditing}
                           />
+                        </div>
+                        {/* Override: a manager's cut of the team's sales, riding each rep's own commission (lib/repCommissions). */}
+                        <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '4px' }}>OVERRIDE</p>
+                        <p style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>A percentage of the team's sales, earned the moment the rep's commission is: a rep sells a $10,000 job at 8.5%, a 0.75% override earns $75 on the same payment.</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+                          <div>
+                            <label style={labelStyle}>Override rate (% of the team's sales)</label>
+                            <input type="number" step="0.05" min="0" name="override_rate_pct" value={formData.override_rate_pct} onChange={handleChange} disabled={!isEditing} placeholder="0" style={isEditing ? inputStyle : inputStyleDisabled} />
+                            {formData.override_since && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>Counts sales earned on or after {formData.override_since}.</div>}
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Over whom</label>
+                            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>Nobody ticked = everyone who earns a sales commission.</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+                              {employees.filter(e => e.active && e.is_commission && e.id !== viewingEmployee?.id).map(e => (
+                                <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: theme.text, cursor: isEditing ? 'pointer' : 'default' }}>
+                                  <input type="checkbox" disabled={!isEditing} checked={(formData.override_team || []).map(Number).includes(e.id)}
+                                    onChange={ev => setFormData(prev => ({ ...prev, override_team: ev.target.checked ? [...(prev.override_team || []).map(Number), e.id] : (prev.override_team || []).map(Number).filter(id => id !== e.id) }))} />
+                                  {e.name}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
                         </div>
 
                         <p style={{ fontSize: '12px', fontWeight: '600', color: theme.textMuted, marginTop: '16px', marginBottom: '12px' }}>

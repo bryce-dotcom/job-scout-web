@@ -29,7 +29,10 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
   const paysByInv = new Map()
   for (const p of payments) { if (!p.invoice_id) continue; if (!paysByInv.has(p.invoice_id)) paysByInv.set(p.invoice_id, []); paysByInv.get(p.invoice_id).push(p) }
 
-  const reps = (employees || []).filter(e => e.is_commission && (onlyEmployeeId == null || e.id === onlyEmployeeId))
+  // Every rep's rows are computed even when the caller wants one person's:
+  // an override is a percentage of OTHER people's sales, so a manager's own
+  // rows come from the team's. The scoping happens at the end.
+  const reps = (employees || []).filter(e => e.is_commission)
   const rows = []
   for (const e of reps) {
     const svc = parseFloat(e.commission_services_rate) || 0
@@ -68,6 +71,40 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
         })
       }
     }
+  }
+
+  // Override: a manager's percentage of the team's sales. Bryce, 2026-10-15:
+  // "a rep sells a $10k job, the rep gets 8.5%, the override person gets
+  // 0.75% of the $10k." So it rides the rep's own row — same invoice, same
+  // payment, same basis, same moment — at the manager's rate. Over everyone
+  // who earns a sales commission unless the card names a team; never over
+  // oneself; only sales earned on or after the date the override began, so
+  // a rate entered in October does not reach back over the whole year.
+  const managers = (employees || []).filter(e => e.active !== false && (parseFloat(e.override_rate_pct) || 0) > 0)
+  if (managers.length) {
+    const saleRows = rows.filter(r => r.kind === 'services' || r.kind === 'goods')
+    for (const m of managers) {
+      const rate = parseFloat(m.override_rate_pct) || 0
+      const team = Array.isArray(m.override_team) && m.override_team.length ? new Set(m.override_team.map(Number)) : null
+      const since = m.override_since ? String(m.override_since).slice(0, 10) : null
+      for (const r of saleRows) {
+        if (r.employee_id === m.id) continue
+        if (team && !team.has(Number(r.employee_id))) continue
+        if (since && r.earned_at && String(r.earned_at).slice(0, 10) < since) continue
+        const amt = Math.round((parseFloat(r.basis_amount) || 0) * (rate / 100) * 100) / 100
+        if (amt <= 0) continue
+        rows.push({
+          company_id: m.company_id, employee_id: m.id, invoice_id: r.invoice_id, job_id: r.job_id, payment_id: r.payment_id,
+          kind: 'override', amount: amt, rate, rate_type: 'percent', basis_amount: r.basis_amount,
+          earned_at: r.earned_at, payment_status: 'earned',
+          source: r.source === 'live' ? 'live_override' : 'live_override_synthetic',
+          override_for_employee_id: r.employee_id,
+        })
+      }
+    }
+  }
+  if (onlyEmployeeId != null) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i].employee_id !== onlyEmployeeId) rows.splice(i, 1)
   }
 
   // ── Utility + processor commissions — frozen when the utility invoice is
@@ -153,15 +190,17 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     // that used to be synthetic; a payment/invoice deleted). PAID rows are
     // frozen and never touched. This is what keeps Payroll and My Pay correct
     // without freezing a stale attribution. (Insert-only would double-count.)
-    let q = supabase.from('rep_commissions').select('id, payment_id, invoice_id, utility_invoice_id, employee_id, kind, payment_status').eq('company_id', companyId)
+    let q = supabase.from('rep_commissions').select('id, payment_id, invoice_id, utility_invoice_id, employee_id, kind, payment_status, override_for_employee_id').eq('company_id', companyId)
     if (onlyEmployeeId != null) q = q.eq('employee_id', onlyEmployeeId)
     const { data: existing, error } = await q
     if (error) { console.warn('[syncRepCommissions] read failed:', error.message); return { inserted: 0, deleted: 0 } }
     // Key: payment-backed by payment_id; utility/processor by utility invoice;
-    // synthetic (null payment) by standard invoice.
-    const keyOf = (r) => r.payment_id != null ? `p:${r.payment_id}:${r.employee_id}:${r.kind}`
+    // synthetic (null payment) by standard invoice. An override row also
+    // names the rep it is over, so one manager over two reps on one invoice
+    // is two rows.
+    const keyOf = (r) => (r.payment_id != null ? `p:${r.payment_id}:${r.employee_id}:${r.kind}`
       : r.utility_invoice_id != null ? `u:${r.utility_invoice_id}:${r.employee_id}:${r.kind}`
-      : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`
+      : `i:${r.invoice_id}:${r.employee_id}:${r.kind}`) + (r.kind === 'override' ? `:over:${r.override_for_employee_id}` : '')
     const expectedKeys = new Set(expected.map(keyOf))
     const existingKeys = new Set((existing || []).map(keyOf))
 
@@ -238,8 +277,9 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
 export async function fetchRepCommissions(supabase, companyId, employeeId = null) {
   // rate, covered_by_salary and paid_payroll_run_id: the pay history shows
   // which jobs a cheque paid for and at what rate, and whether a salary
-  // covered it instead (lib/payHistory).
-  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, rate, earned_at, payment_status, paid_at, paid_payroll_run_id, covered_by_salary, queued_for_payroll').eq('company_id', companyId)
+  // covered it instead (lib/payHistory). basis_amount and
+  // override_for_employee_id: an override line names the rep and the sale.
+  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, rate, basis_amount, earned_at, payment_status, paid_at, paid_payroll_run_id, covered_by_salary, queued_for_payroll, override_for_employee_id').eq('company_id', companyId)
   if (employeeId != null) q = q.eq('employee_id', employeeId)
   const { data, error } = await q
   if (error) { console.warn('[fetchRepCommissions] failed:', error.message); return [] }

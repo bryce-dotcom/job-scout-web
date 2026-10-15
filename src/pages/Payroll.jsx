@@ -3144,7 +3144,10 @@ export default function Payroll() {
                         const j = jobs.find(x => x.id === r.job_id)
                         const who = j?.customer_name || j?.job_title || ''
                         const num = j?.job_id ? `${j.job_id} · ` : ''
-                        return `${num}${who || `Job ${r.job_id ?? '—'}`}${r.kind ? ` (${r.kind})` : ''}`
+                        const kindLabel = r.kind === 'override'
+                          ? ` (override on ${employees.find(e => e.id === r.override_for_employee_id)?.name || 'a rep'}${r.rate ? `, ${r.rate}%` : ''})`
+                          : (r.kind ? ` (${r.kind})` : '')
+                        return `${num}${who || `Job ${r.job_id ?? '—'}`}${kindLabel}`
                       }}
                       onMarkPaid={(rows) => markRepCommissionsPaid(rows, true)}
                       onReopen={(rows) => markRepCommissionsPaid(rows, false)}

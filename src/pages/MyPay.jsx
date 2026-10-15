@@ -715,7 +715,16 @@ export default function MyPay() {
   // Earned / Pending sales lists — show invoice + utility commissions.
   // Processor commissions are rendered in their own card below so users
   // can see them as a distinct pay line.
-  const earned = [...earnedInvoice, ...earnedUtility]
+  // Override rows live only in the frozen ledger (they ride other people's
+  // sales), so they are itemized from there, in the same shape as a live row.
+  const earnedOverride = repCommissions
+    .filter(r => r.kind === 'override' && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= periodStartStr && (r.earned_at || '').slice(0, 10) <= periodEndStr)
+    .map(r => {
+      const job = (jobs || []).find(j => String(j.id) === String(r.job_id))
+      const rep = (useStore.getState().employees || []).find(e => e.id === r.override_for_employee_id)
+      return { type: 'override', status: 'available', amount: parseFloat(r.amount) || 0, jobId: r.job_id, jobTitle: job?.customer_name || job?.job_title || 'Job', invoiceAmount: parseFloat(r.basis_amount) || 0, paidAmount: parseFloat(r.basis_amount) || 0, paidDate: r.earned_at, rate: r.rate, rateType: 'percent', overrideForName: rep?.name || null }
+    })
+  const earned = [...earnedInvoice, ...earnedUtility, ...earnedOverride]
   const pendingList = [...pendingInvoice, ...pendingUtility]
 
   const cardStyle = {

@@ -41,6 +41,11 @@ export function payRowHeading(detail, jobs = []) {
  */
 export function payRowSource(detail) {
   if (!detail) return null
+  if (detail.type === 'override') {
+    // A manager's cut of a rep's sale: say whose sale and at what rate.
+    const who = detail.overrideForName ? `Override on ${detail.overrideForName}'s sale` : 'Override'
+    return detail.rate ? `${who} · ${detail.rate}%` : who
+  }
   if (detail.type === 'utility_commission') {
     const id = detail.utilityInvoiceId
     return id ? `Utility invoice ${id}` : 'Utility invoice'

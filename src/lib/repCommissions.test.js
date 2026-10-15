@@ -437,3 +437,49 @@ describe('an invoice must not earn twice', () => {
     expect(ops.deleted).toEqual([10501])
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// Override: a manager's percentage of the team's sales. Bryce, 2026-10-15:
+// "a rep sells a $10k job, the rep gets 8.5%, the override person gets
+// 0.75% of the $10k." Same invoice, same payment, same moment.
+// ─────────────────────────────────────────────────────────────────────────
+describe('override commission', () => {
+  const MGR = { id: 9, name: 'Manager', is_commission: true, commission_services_rate: 0, override_rate_pct: 0.75, override_team: null, override_since: '2026-01-01' }
+  const tenK = (over = {}) => base({
+    employees: [{ ...REP, commission_services_rate: 8.5 }, MGR],
+    invoices: [{ id: 100, job_id: 1, amount: 10000 }],
+    payments: [{ id: 900, invoice_id: 100, amount: 10000, date: '2026-07-10' }],
+    ...over,
+  })
+  it('the rep gets 8.5% and the override person gets 0.75% of the same $10k', () => {
+    const rows = computeRepRows(tenK())
+    const rep = rows.find(r => r.employee_id === 5)
+    const over = rows.find(r => r.employee_id === 9)
+    expect(rep.amount).toBe(850)
+    expect(over.kind).toBe('override')
+    expect(over.amount).toBe(75)
+    expect(over.basis_amount).toBe(10000)
+    expect(over.payment_id).toBe(900)
+    expect(over.override_for_employee_id).toBe(5)
+    expect(over.earned_at).toBe(rep.earned_at)
+  })
+  it('is never over oneself', () => {
+    const rows = computeRepRows(tenK({ employees: [{ ...REP, override_rate_pct: 1 }] }))
+    expect(rows.filter(r => r.kind === 'override')).toHaveLength(0)
+  })
+  it('a named team limits who it is over', () => {
+    const rows = computeRepRows(tenK({ employees: [{ ...REP, commission_services_rate: 8.5 }, { ...MGR, override_team: [42] }] }))
+    expect(rows.filter(r => r.kind === 'override')).toHaveLength(0)
+    const rows2 = computeRepRows(tenK({ employees: [{ ...REP, commission_services_rate: 8.5 }, { ...MGR, override_team: [5] }] }))
+    expect(rows2.filter(r => r.kind === 'override')).toHaveLength(1)
+  })
+  it('does not reach back before the date the override began', () => {
+    const rows = computeRepRows(tenK({ employees: [{ ...REP, commission_services_rate: 8.5 }, { ...MGR, override_since: '2026-08-01' }] }))
+    expect(rows.filter(r => r.kind === 'override')).toHaveLength(0)
+  })
+  it("scoping to the manager still yields the manager's override rows", () => {
+    const rows = computeRepRows(tenK(), 9)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe('override')
+  })
+})
