@@ -176,13 +176,37 @@ const BUILD = typeof __AGENT_BUILD__ === 'string' ? __AGENT_BUILD__ : 'source'
 let access = ''
 let accessUntil = 0
 let repaired = false
+// THE TOKEN ROTATES, AND A BLIP IS NOT A REVOCATION. Two ways this agent
+// threw away a perfectly good connection (Bryce's PC, 2026-10-15 — the window
+// stayed open, the agent was gone, and the saved token had been deleted):
+//  1. Every refresh hands back a NEW refresh token and retires the old one.
+//     This kept using the original forever, so a later refresh was refused.
+//     The new one is now kept, in memory and on disk.
+//  2. ANY failure — no network after the laptop woke, a 500, a 429 — read as
+//     "this computer needs connecting again": the token was deleted and the
+//     window sat waiting for somebody to press Connect. Only the server
+//     saying the token is no good means that now; anything else is retried.
 const freshAccess = async () => {
   if (access && Date.now() < accessUntil - 60_000) return access
-  const res = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
-    method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: TOKEN }),
-  })
+  let res
+  try {
+    res = await fetch(`${URL_BASE}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: TOKEN }),
+    })
+  } catch (e) {
+    throw new Error(`could not reach JobScout to sign in (${String(e?.message || e).slice(0, 80)}) — trying again`)
+  }
   const j = await res.json().catch(() => ({}))
+  if (j.access_token && j.refresh_token && j.refresh_token !== TOKEN) {
+    TOKEN = j.refresh_token
+    saveToken(TOKEN)
+  }
+  const refused = (res.status === 400 || res.status === 401)
+    && /invalid|not found|revoked|expired|already used/i.test(`${j.error || ''} ${j.error_code || ''} ${j.error_description || ''} ${j.msg || ''}`)
+  if (!j.access_token && !refused) {
+    throw new Error(`sign-in did not answer properly (${res.status}) — trying again`)
+  }
   if (!j.access_token) {
     // A saved token does not last forever — it gets rotated, revoked, or the
     // person signs out everywhere. Sending them back to a settings page to
@@ -214,6 +238,25 @@ const call = async (action, body = {}) => {
   return { status: res.status, ...json }
 }
 
+/**
+ * How an action ended, told to the server — and it MUST arrive. An action
+ * whose report is lost stays queued, and the next poll hands it out again:
+ * the same click, or the same text typed twice. So this retries through a
+ * blip and never throws into the loop.
+ */
+const report = async (body) => {
+  for (let i = 0; i < 6; i++) {
+    try {
+      const r = await call('report', body)
+      // 409: already reported (a retry after a reply that was lost) — done.
+      if (r.ok || r.status === 409) return r
+    } catch { /* a blip — try again */ }
+    await new Promise((res) => setTimeout(res, 2000 * (i + 1)))
+  }
+  console.log(`  !! could not report action ${body.action_id} — it will expire on the server rather than run twice`)
+  return null
+}
+
 /** A screenshot into the private recordings bucket. Returns its path. */
 /**
  * A picture taken for a live action, so he can look at it.
@@ -230,9 +273,9 @@ const call = async (action, body = {}) => {
  * either way — a photograph of somebody's screen does not linger in temp.
  */
 const uploadActionShot = async (localPath, actionId) => {
-  const bearer = await freshAccess()
   const key = `a/${actionId}.png`
   try {
+    const bearer = await freshAccess()
     const bytes = await readFile(localPath)
     const res = await fetch(`${URL_BASE}/storage/v1/object/arnie-recordings/${key}`, {
       method: 'POST',
@@ -246,9 +289,9 @@ const uploadActionShot = async (localPath, actionId) => {
 }
 
 const uploadShot = async (localPath, skillId, seq) => {
-  const bearer = await freshAccess()
   const key = `${skillId}/${String(seq).padStart(5, '0')}.png`
   try {
+    const bearer = await freshAccess()
     const bytes = await readFile(localPath)
     const res = await fetch(`${URL_BASE}/storage/v1/object/arnie-recordings/${key}`, {
       method: 'POST',
@@ -506,6 +549,21 @@ const stop = async (why, exitCode = 0) => {
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stop('you pressed Ctrl+C').catch(() => process.exit(0)) })
 
+// THE LAST RESORT. Anything unforeseen that escapes used to end the process
+// while the launcher window stayed open, so it looked alive and was not. Say
+// what happened, then hand back to the launcher to start afresh (75 = go round
+// again) — after a pause, so a fault that repeats cannot spin.
+let crashing = false
+const crashed = (e) => {
+  if (crashing || stopping) return
+  crashing = true
+  console.log(`\n  !! something went wrong: ${String(e?.stack || e?.message || e).split('\n').slice(0, 3).join(' | ').slice(0, 300)}`)
+  console.log(process.env.JOBSCOUT_LAUNCHER_LOOP === '1' ? '  restarting in 15 seconds…' : '  open the JobScout Agent again to carry on.')
+  setTimeout(() => process.exit(process.env.JOBSCOUT_LAUNCHER_LOOP === '1' ? 75 : 1), 15_000)
+}
+process.on('uncaughtException', crashed)
+process.on('unhandledRejection', crashed)
+
 // A token from the environment wins (that is how a test or a managed install
 // supplies one), then one saved from a previous connect, and only if there is
 // neither does anybody get asked anything.
@@ -541,7 +599,17 @@ const handshake = {
     handshake.capabilities.notes = ['macOS has allowed Screen Recording and Accessibility for Terminal.']
   }
 }
-let hello = await call('hello', handshake)
+// Saying hello waits out a blip — no network yet after the laptop wakes, a
+// moment of 500s — instead of dying with the window left open looking alive.
+async function helloOnce() {
+  for (let i = 0; ; i++) {
+    try { return await call('hello', handshake) } catch (e) {
+      console.log(`  !! ${String(e?.message || e).slice(0, 160)} — trying again shortly`)
+      await new Promise((r) => setTimeout(r, Math.min(60_000, 5000 * (i + 1))))
+    }
+  }
+}
+let hello = await helloOnce()
 // Paired to the wrong account — the public demo (London's Mac, 2026-10-14).
 // The server refuses it and says `repair`: forget that sign-in and ask again,
 // so the person presses Connect while signed in as themselves.
@@ -550,7 +618,7 @@ if (!hello.ok && hello.repair) {
   try { rmSync(TOKEN_FILE, { force: true }) } catch { /* nothing saved */ }
   access = ''; accessUntil = 0
   TOKEN = await pair()
-  hello = await call('hello', handshake)
+  hello = await helloOnce()
 }
 if (!hello.ok) die(`could not connect: ${hello.error || hello.status}`)
 sessionId = hello.session_id
@@ -604,7 +672,7 @@ while (!stopping) {
     if (resumed) await stop('this computer is no longer connected to a session')
     resumed = true
     show('..', 'that session is gone — starting a new one')
-    const again = await call('hello', handshake)
+    const again = await helloOnce()
     if (!again.ok) await stop(`could not start a new session (${again.error || again.status})`)
     sessionId = again.session_id
     grants = again.grants || []
@@ -662,7 +730,7 @@ while (!stopping) {
     const why = verdict.refuse || verdict.needsHuman || verdict.needsApproval
       || (verdict.needsGrant && verdict.needsGrant.why)
     show('no', `${describe(a)} — refused here: ${why}`)
-    await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
+    await report({ session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
     continue
   }
 
@@ -689,7 +757,7 @@ while (!stopping) {
     if (front && !isFront(front)) {
       const why = `${a.app} is not in front — ${front} is`
       show('no', `${describe(a)} — refused here: ${why}`)
-      await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
+      await report({ session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
       continue
     }
   }
@@ -698,13 +766,13 @@ while (!stopping) {
   const out = await run(a)
   if (out.error) {
     show('!!', `${describe(a)} — ${out.error}`)
-    await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: out.error })
+    await report({ session_id: sessionId, action_id: a.id, ok: false, error: out.error })
   } else {
     show('ok', describe(a))
     // A picture goes UP, not just its path. The path was only ever useful on
     // this machine, which is the one place nobody needed it.
     const shot = out.path ? await uploadActionShot(out.path, a.id) : null
-    await call('report', {
+    await report({
       session_id: sessionId,
       action_id: a.id,
       ok: true,

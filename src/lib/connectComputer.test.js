@@ -74,6 +74,40 @@ describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', 
   })
 })
 
+describe('the agent keeps its connection through a blip (Bryce, 2026-10-15)', () => {
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const fa = agent.slice(agent.indexOf('const freshAccess = async'), agent.indexOf('const call = async'))
+  it('keeps the ROTATED refresh token, in memory and on disk', () => {
+    expect(fa).toMatch(/if \(j\.access_token && j\.refresh_token && j\.refresh_token !== TOKEN\) \{\n\s+TOKEN = j\.refresh_token\n\s+saveToken\(TOKEN\)/)
+  })
+  it('a network failure or a bad answer is retried — never "connect again", never deletes the token', () => {
+    expect(fa).toMatch(/\} catch \(e\) \{\n\s+throw new Error\(`could not reach JobScout to sign in/)
+    expect(fa).toMatch(/if \(!j\.access_token && !refused\) \{\n\s+throw new Error/)
+    // the token is deleted ONLY after the refusal test
+    expect(fa.indexOf('rmSync(TOKEN_FILE')).toBeGreaterThan(fa.indexOf('const refused ='))
+    expect(fa).toMatch(/const refused = \(res\.status === 400 \|\| res\.status === 401\)/)
+  })
+  it('saying hello waits out a blip; reports retry so an action can never run twice', () => {
+    expect(agent.match(/await helloOnce\(\)/g).length).toBe(3)
+    expect(agent.match(/await call\('hello', handshake\)/g).length).toBe(1)   // only inside helloOnce
+    expect(agent).toMatch(/async function helloOnce\(\) \{\n\s+for \(let i = 0; ; i\+\+\) \{\n\s+try \{ return await call\('hello', handshake\) \}/)
+    expect(agent).not.toMatch(/await call\('report', \{/)
+    expect(agent.match(/await report\(\{/g).length).toBe(4)
+    expect(agent).toMatch(/if \(r\.ok \|\| r\.status === 409\) return r/)
+  })
+  it('an upload that cannot sign in fails soft', () => {
+    for (const fn of ['uploadActionShot', 'uploadShot']) {
+      const body = agent.slice(agent.indexOf(`const ${fn} = async`), agent.indexOf(`const ${fn} = async`) + 300)
+      expect(body.indexOf('try {')).toBeLessThan(body.indexOf('await freshAccess()'))
+    }
+  })
+  it('anything unforeseen restarts through the launcher, after a pause, instead of a window that looks alive', () => {
+    expect(agent).toMatch(/process\.on\('uncaughtException', crashed\)/)
+    expect(agent).toMatch(/process\.on\('unhandledRejection', crashed\)/)
+    expect(agent).toMatch(/setTimeout\(\(\) => process\.exit\(process\.env\.JOBSCOUT_LAUNCHER_LOOP === '1' \? 75 : 1\), 15_000\)/)
+  })
+})
+
 describe('typed text reaches the agent — once — and never the audit log (Bryce, 2026-10-15)', () => {
   const server = read('../../supabase/functions/arnie-computer/index.ts')
   const hands = read('../../scripts/agent/hands.mjs')
