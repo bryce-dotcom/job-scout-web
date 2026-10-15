@@ -61,3 +61,15 @@ describe('a real computer never pairs to the public demo', () => {
     expect(agent).toMatch(/hostname\(\)\.replace\(\/\\\.local\$\/i, ''\)/)
   })
 })
+
+describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', () => {
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const hands = read('../../scripts/agent/hands.mjs')
+  it('screenshot only — clicks and typing still refuse when it is not in front', () => {
+    expect(agent).toMatch(/if \(front && !isFront\(front\) && a\.kind === 'screenshot'\) \{\n\s+const opened = await launchApp\(a\.app\)/)
+    expect(agent).toMatch(/if \(front && !isFront\(front\)\) \{/)
+  })
+  it('the Mac\'s own apps can be opened', () => {
+    for (const app of ['messages', 'calendar', 'mail', 'notes']) expect(hands).toMatch(new RegExp(`${app}: \\[null, '`))
+  })
+})

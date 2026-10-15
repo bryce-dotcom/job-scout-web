@@ -601,8 +601,19 @@ while (!stopping) {
   // person had already opened for him, which is most of the way back to not
   // having hands at all.
   if (a.app && a.kind !== 'launch') {
-    const front = await frontmostApp()
-    if (front && !front.includes(String(a.app).toLowerCase()) && !String(a.app).toLowerCase().includes(front)) {
+    const isFront = (f) => f && (f.includes(String(a.app).toLowerCase()) || String(a.app).toLowerCase().includes(f))
+    let front = await frontmostApp()
+    // A LOOK at an allowed program brings it forward first. London allowed
+    // Messages and asked Jenny to read his texts; the JobScout app was in
+    // front, so every screenshot was refused and she could only "try". A
+    // picture is of the program in front, which is now exactly the allowed
+    // one — still inside the grant. Clicks and typing are NOT moved: they aim
+    // at a spot from an earlier picture, and must land on what was seen.
+    if (front && !isFront(front) && a.kind === 'screenshot') {
+      const opened = await launchApp(a.app)
+      if (opened.ok) { show('..', `brought ${a.app} to the front to look at it`); front = await frontmostApp() }
+    }
+    if (front && !isFront(front)) {
       const why = `${a.app} is not in front — ${front} is`
       show('no', `${describe(a)} — refused here: ${why}`)
       await call('report', { session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })

@@ -300,6 +300,23 @@ const LAUNCHABLE = {
   explorer: ['explorer', 'Finder'],
   finder: [null, 'Finder'],
   calculator: ['calc', 'Calculator'],
+  // The Mac's own programs. London allowed Messages and Calendar and asked
+  // for his texts; none of these was on this list, so they could not be
+  // brought forward and every look was refused (2026-10-14).
+  messages: [null, 'Messages'],
+  calendar: [null, 'Calendar'],
+  mail: [null, 'Mail'],
+  notes: [null, 'Notes'],
+  reminders: [null, 'Reminders'],
+  contacts: [null, 'Contacts'],
+  facetime: [null, 'FaceTime'],
+  photos: [null, 'Photos'],
+  maps: [null, 'Maps'],
+  preview: [null, 'Preview'],
+  pages: [null, 'Pages'],
+  numbers: [null, 'Numbers'],
+  keynote: [null, 'Keynote'],
+  google: ['chrome', 'Google Chrome'],
 }
 
 export async function launchApp(name) {
