@@ -934,9 +934,9 @@ export default function Pricing() {
         <section>
           <div className="wrap">
             <div className="prospect rv">
-              <span className="eb on-dark"><Icon id="i-search" style={{ fontSize: 13 }} /> AI lead generation, built in</span>
+              <span className="eb on-dark"><Icon id="i-search" style={{ fontSize: 13 }} /> Prospect Scout · AI lead generation</span>
               <h3>Describe your next customer. The AI goes and finds them.</h3>
-              <p className="say">Your setters type a plain-English target. JobScout researches the live web, returns real companies with cited sources, reveals contacts, and bulk-imports them straight to the pipeline — no data broker, no spreadsheet.</p>
+              <p className="say">Your setters type a plain-English target, and <b>Prospect Scout</b> researches the live web, returns real companies with cited sources, reveals contacts, and bulk-imports them straight to the pipeline — no data broker, no spreadsheet.</p>
               <div className="term">
                 <div className="top"><i /><i /><i /><span style={{ color: '#6b7160', marginLeft: 6 }}>prospect-scout</span></div>
                 <div className="q">&gt; find HOA-managed communities over 150 units in Maricopa County<span className="cur" /></div>

@@ -11,7 +11,7 @@ import {
   Plus, X, Phone, Mail, Calendar, Clock, User, Building2, MapPin,
   ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, XCircle,
   MessageSquare, PhoneCall, PhoneOff, CalendarPlus, DollarSign,
-  RefreshCw, Filter, Search, Settings, Trophy, Trash2
+  RefreshCw, Filter, Search, Settings, Trophy, Trash2, Bot
 } from 'lucide-react'
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
@@ -904,7 +904,7 @@ export default function LeadSetter() {
               Mobile-first drawer; works on phone or desktop. */}
           <button
             onClick={() => setShowResearch(true)}
-            title="Find new prospects via AI web research"
+            title="Prospect Scout — AI web research that finds you new leads"
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '10px 14px',
@@ -916,8 +916,8 @@ export default function LeadSetter() {
               fontSize: '13px', fontWeight: 600,
             }}
           >
-            <Search size={14} />
-            {!isMobile && 'Find Prospects'}
+            <Bot size={14} />
+            {!isMobile && 'Prospect Scout'}
           </button>
           <button
             onClick={fetchData}
