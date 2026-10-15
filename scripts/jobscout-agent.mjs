@@ -475,7 +475,10 @@ const newerBuildOut = async () => {
   if (Date.now() - lastUpdateCheck < UPDATE_EVERY_MS) return false
   lastUpdateCheck = Date.now()
   try {
-    const r = await fetch(`${base}/release.json`, { cache: 'no-store' })
+    // Cache-busted: the storage CDN served a release.json half an hour stale
+    // on 2026-10-14, and a stale one would send an agent "updating" to an
+    // OLDER build.
+    const r = await fetch(`${base}/release.json?t=${Date.now()}`, { cache: 'no-store' })
     const j = r.ok ? await r.json() : null
     return !!(j?.agent_build && j.agent_build !== BUILD)
   } catch { return false }

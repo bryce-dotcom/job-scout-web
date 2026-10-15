@@ -86,9 +86,9 @@ rem The agent comes back here by itself (exit code 75) when a newer build
 rem is published, so a fix reaches a running computer with no restart.
 :fetch
 echo    Getting the latest version...
-curl -fsSL -o "%DIR%\agent.mjs.new" "%BASE%/agent.mjs"
+curl -fsSL -o "%DIR%\agent.mjs.new" "%BASE%/agent.mjs?t=%RANDOM%%RANDOM%"
 if errorlevel 1 goto offline
-curl -fsSL -o "%DIR%\recorder.ps1.new" "%BASE%/recorder.ps1"
+curl -fsSL -o "%DIR%\recorder.ps1.new" "%BASE%/recorder.ps1?t=%RANDOM%%RANDOM%"
 if errorlevel 1 goto offline
 move /y "%DIR%\agent.mjs.new" "%DIR%\agent.mjs" >nul
 move /y "%DIR%\recorder.ps1.new" "%DIR%\recorder.ps1" >nul

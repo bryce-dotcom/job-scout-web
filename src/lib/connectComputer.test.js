@@ -128,6 +128,15 @@ describe('a running agent picks up a fix by itself', () => {
     expect(mac).toMatch(/export JOBSCOUT_LAUNCHER_LOOP=1/)
     expect(mac).toMatch(/if \[ "\$CODE" -eq 75 \]; then/)
   })
+  // The CDN served a half-hour-old release.json beside a new agent.mjs: an
+  // agent could "update" itself backwards. Every fetch of these files is busted.
+  it('never trusts a cached release.json or agent.mjs', () => {
+    expect(agent).toMatch(/\$\{base\}\/release\.json\?t=\$\{Date\.now\(\)\}/)
+    expect(cmd).toMatch(/"%BASE%\/agent\.mjs\?t=%RANDOM%%RANDOM%"/)
+    expect(cmd).toMatch(/"%BASE%\/recorder\.ps1\?t=%RANDOM%%RANDOM%"/)
+    expect(mac).toMatch(/"\$BASE\/agent\.mjs\?t=\$\(date \+%s\)"/)
+    expect(mac).toMatch(/"\$BASE\/recorder\.jxa\.js\?t=\$\(date \+%s\)"/)
+  })
 })
 
 describe('no coworker SSN, bank or home address kept on a device', () => {

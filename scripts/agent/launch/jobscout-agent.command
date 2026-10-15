@@ -81,8 +81,8 @@ export JOBSCOUT_RELEASE_BASE="$BASE"
 export JOBSCOUT_LAUNCHER_LOOP=1
 while true; do
 printf '   Getting the latest version...\n'
-if curl -fsSL -o "$DIR/agent.mjs.new" "$BASE/agent.mjs" \
-   && curl -fsSL -o "$DIR/recorder.jxa.js.new" "$BASE/recorder.jxa.js"; then
+if curl -fsSL -o "$DIR/agent.mjs.new" "$BASE/agent.mjs?t=$(date +%s)" \
+   && curl -fsSL -o "$DIR/recorder.jxa.js.new" "$BASE/recorder.jxa.js?t=$(date +%s)"; then
   mv -f "$DIR/agent.mjs.new" "$DIR/agent.mjs"
   mv -f "$DIR/recorder.jxa.js.new" "$DIR/recorder.jxa.js"
 elif [ -f "$DIR/agent.mjs" ]; then
