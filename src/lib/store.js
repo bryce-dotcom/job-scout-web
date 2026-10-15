@@ -281,8 +281,29 @@ export const useStore = create(
         const { companyId } = get();
         if (!companyId) return;
 
-        // Hydrate from cache
-        const cached = await offlineDb.getAll('employees');
+        // NOBODY ELSE'S SSN, BANK OR HOME ON THIS DEVICE (2026-10-14).
+        //
+        // This list loads for every user at startup and is cached in the
+        // browser's offline store — so every employee's phone was holding
+        // every coworker's SSN last four, bank last four, date of birth and
+        // home address. Nothing read them from here: Payroll, Payroll Inbox,
+        // Payroll setup, My Pay, paystubs and the Employees page each fetch
+        // what they need themselves. So they are dropped from every row but
+        // the person's own before the list is kept or cached. (The database
+        // itself still lets a signed-in user ask for them — that is the next
+        // step, a separate table only HR and the person can read.)
+        const me = get().user?.id;
+        const IDENTITY = ['ssn_last4', 'ssn_encrypted', 'date_of_birth', 'home_address', 'home_city', 'home_state', 'home_zip',
+          'dd_account_encrypted', 'dd_routing_encrypted', 'dd_account_last4', 'dd_account_type', 'w9_ein_encrypted', 'w9_ein_last4'];
+        const scrub = (rows) => (rows || []).map((e) => {
+          if (!e || e.id === me) return e;
+          const out = { ...e };
+          for (const k of IDENTITY) delete out[k];
+          return out;
+        });
+
+        // Hydrate from cache — scrubbed too, since older builds cached it all.
+        const cached = scrub(await offlineDb.getAll('employees'));
         if (cached.length > 0 && get().employees.length === 0) set({ employees: cached });
 
         // Network refresh
@@ -295,8 +316,11 @@ export const useStore = create(
             .order('name');
 
           if (!error) {
-            set({ employees: data || [] });
-            await offlineDb.putAll('employees', data || []);
+            const clean = scrub(data);
+            set({ employees: clean });
+            // Overwrites the device's cached copy, so what older builds stored
+            // is replaced by the scrubbed rows on the next load.
+            await offlineDb.putAll('employees', clean);
           }
         } catch (e) {
           console.log('[fetchEmployees] Offline, using cache');
