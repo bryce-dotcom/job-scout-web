@@ -44,6 +44,13 @@ export function claimsComputerWork(text: string): boolean {
   if (/\bsending (a |the )?clicks?\b/i.test(t)) return true
   if (/\b(i'?m|i am) (now )?(in|on) (your |the )?(chrome|browser|screen|excel|outlook)\b/i.test(t)) return true
   if (/\blooking at (your |the )?(chrome|screen|browser|excel|outlook)\b/i.test(t)) return true
+  // With no subject at all: "Taking a screenshot now…I can see the job now."
+  // Jenny to Alayda, 2026-10-15, with not one action ever sent to her machine
+  // — the pattern below wants "I'm taking", so it sailed past. A gerund that
+  // starts a sentence is a claim; "I can take one" / "I'll be taking" is not.
+  if (/(^|[.!?…:\n]\s*)(now\s+)?(taking|grabbing|snapping) (a |another )?(screenshot|look at your screen|picture of your screen)\b/i.test(t)) return true
+  if (/\b(i can|i now|now i can) see (your|the) (screen|desktop|window|page you'?re on|job on your screen)\b/i.test(t)) return true
+  if (/\bi can see (it|the \w+) now\b/i.test(t) && /\bscreenshot\b/i.test(t)) return true
 
   // "I'm clicking the Edit button", "I've taken a screenshot", "I just typed…"
   const acting = /\b(i'?m|i am|i'?ve|i have|i just)\s+(now\s+|just\s+)?(taking|taken|took|clicking|clicked|typing|typed|sending|sent|opening|opened|navigating|navigated|scrolling|scrolled|pressing|pressed)\b/i

@@ -12,6 +12,7 @@ import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { playbookFor } from '../_shared/lightingPlaybook.ts'
+import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -144,10 +145,11 @@ const TOOLS = [
   },
   {
     name: 'query_jobs',
-    description: 'Query jobs with filtering and aggregation. Use for questions about job counts, schedules, completion rates, or jobs by employee/customer/status.',
+    description: 'Query jobs. With job (a job number like JOB-MT964ZIZ, or words from its title, address or customer/business name) it OPENS that job and returns its line items — the products, quantities and each line\'s notes, which is where the existing fixtures, heights and wattages are written. Use that for ANY question about what is on a particular job; never answer one from memory or from the playbook. Without job, it filters and counts: job counts, schedules, completion rates, jobs by employee/customer/status.',
     input_schema: {
       type: 'object',
       properties: {
+        job: { type: 'string', description: 'One job to open: its number (JOB-…) or words from its title, address, or customer/business name.' },
         status: { type: 'string', description: 'Filter by job status (e.g. Complete, In Progress, Scheduled)' },
         assigned_to: { type: 'integer', description: 'Filter by employee ID' },
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
@@ -700,6 +702,26 @@ const CARD_TOOLS: Record<string, string> = {
   use_my_computer: 'computer',
 }
 
+// Email something to the person ASKING — nobody else. Alayda asked Jenny to
+// send her a fixture report and was told "I can't send emails. No tool for
+// that" (2026-10-15). To their own inbox it needs no card: it leaves nothing
+// they did not ask for, with nobody but them, and they can delete it.
+const EMAIL_ME_TOOL = {
+  name: 'email_me',
+  description:
+    'Email something to THIS PERSON\'s own address — a report, a list, a summary of a job — when they ask you to send it to them or email it to them. ' +
+    'It only ever goes to them; for anyone else, draft it with a propose_ tool instead. Put the real content in body (from a tool result, never invented). ' +
+    'Say it is sent only after this returns sent: true.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      subject: { type: 'string', description: 'Short subject line.' },
+      body: { type: 'string', description: 'The text of the email — plain text, lists fine.' },
+    },
+    required: ['subject', 'body'],
+  },
+}
+
 function toolsFor(role: string, cards: string[], opts: { ownSession?: boolean } = {}) {
   const isAdmin = ['developer', 'super_admin', 'admin'].includes(role)
   // Creating a lead is everyone's job — the setter on the phone most of all.
@@ -713,6 +735,7 @@ function toolsFor(role: string, cards: string[], opts: { ownSession?: boolean } 
   // identity but a real session — so this is the honest tool list, not the
   // security boundary.)
   if (opts.ownSession) offered.push(USE_COMPUTER_TOOL)
+  offered.push(EMAIL_ME_TOOL)
   return offered.filter((t: any) => {
     const needs = CARD_TOOLS[t.name]
     return !needs || cards.includes(needs)
@@ -775,6 +798,18 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
   const isManager = isAdmin || role === 'manager'
 
   try {
+    // ── to their own inbox, and only theirs ─────────────────────────────
+    if (name === 'email_me') {
+      // The address comes from who is signed in, never from the model.
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { sent: false, error: 'There is no email address on this sign-in.' }
+      const subject = String(input?.subject || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 140)
+      const body = String(input?.body || '').trim().slice(0, 20000)
+      if (!subject || !body) return { sent: false, error: 'A subject and the text to send are both needed.' }
+      const who = await assistantName({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, employeeId)
+      const r = await sendArnieEmail(email, subject, subject, body, who)
+      return r.sent ? { sent: true, to: email } : { sent: false, error: r.error || 'the email did not send' }
+    }
+
     // ── where they are standing ────────────────────────────────────────
     if (name === 'where_i_am') {
       if (!coords || !validCoords(coords.lat, coords.lng)) {
@@ -1133,6 +1168,77 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       }
       if (notes.length) agg.scope = notes.join(' ')
       return agg
+    }
+
+    if (name === 'query_jobs' && typeof input?.job === 'string' && input.job.trim()) {
+      // ONE JOB, OPENED. Alayda asked for the existing fixtures on JOB-MT964ZIZ
+      // and had no tool that could read a job's lines (2026-10-15): Jenny made
+      // up 140 fixtures the job does not have, twice, and then claimed a
+      // screenshot she never took. The lines and their notes are the truth.
+      const q = input.job.trim().slice(0, 80)
+      const clean = q.replace(/[^\w\s#&'.\-\/]/g, ' ').replace(/\s+/g, ' ').trim()
+      if (!clean) return { error: 'Say which job — its number or a word from its name.' }
+      const cols = 'id,job_id,job_title,customer_name,business_name,job_address,status,start_date,customer_id,salesperson_id,utility_name' + (isAdmin ? ',job_total' : '')
+      let jobs: any[] = []
+      if (/^job-[a-z0-9]+$/i.test(clean)) {
+        const g = await fetchRows(sb('jobs'), new URLSearchParams({ select: cols, company_id: `eq.${companyId}`, job_id: `ilike.${clean}` }), hdr, 5)
+        if (!('error' in g)) jobs = g.rows
+      }
+      if (!jobs.length) {
+        // The business name often lives only on the CUSTOMER ("RM Chris Sheet
+        // Metal" — the job itself says "Garrett - Job"), so look there too.
+        const pat = `*${clean.replace(/[,()*]/g, ' ')}*`
+        const cs = await fetchRows(sb('customers'), new URLSearchParams({ select: 'id', company_id: `eq.${companyId}`, name: `ilike.${pat}` }), hdr, 20)
+        const custIds = 'error' in cs ? [] : cs.rows.map((c: any) => c.id).filter(Boolean)
+        const qp = `"${pat}"`   // quoted: a business name has spaces in it
+        const or = [`job_id.ilike.${qp}`, `job_title.ilike.${qp}`, `customer_name.ilike.${qp}`, `business_name.ilike.${qp}`, `job_address.ilike.${qp}`]
+        if (custIds.length) or.push(`customer_id.in.(${custIds.join(',')})`)
+        const g = await fetchRows(sb('jobs'), new URLSearchParams({ select: cols, company_id: `eq.${companyId}`, or: `(${or.join(',')})`, order: 'id.desc' }), hdr, 10)
+        if ('error' in g) return { error: `jobs query failed: ${g.error}` }
+        jobs = g.rows
+      }
+      if (!jobs.length) return { found: 0, say: `No job matches "${q}". Ask for the job number (JOB-…) or the customer's name as it is in JobScout.` }
+      if (jobs.length > 3) {
+        return {
+          found: jobs.length,
+          say: 'More than one job matches — ask which, naming them by number and title. Do not pick one.',
+          jobs: jobs.slice(0, 10).map((j: any) => ({ job_number: j.job_id, title: j.job_title, customer: j.customer_name, address: j.job_address, status: j.status })),
+        }
+      }
+      const ids = jobs.map((j: any) => j.id)
+      const custIds = [...new Set(jobs.map((j: any) => j.customer_id).filter(Boolean))]
+      const [lines, custs] = await Promise.all([
+        fetchRows(sb('job_lines'), new URLSearchParams({
+          select: 'job_id,quantity,item_id,item_name,description,notes,kind,in_utility_scope' + (isAdmin ? ',price,total' : ''),
+          job_id: `in.(${ids.join(',')})`, company_id: `eq.${companyId}`, order: 'id',
+        }), hdr, 500),
+        custIds.length ? fetchRows(sb('customers'), new URLSearchParams({ select: 'id,name', id: `in.(${custIds.join(',')})` }), hdr, 10) : Promise.resolve({ rows: [] as any[], total: 0, truncated: false }),
+      ])
+      if ('error' in lines) return { error: `job lines query failed: ${lines.error}` }
+      const itemIds = [...new Set(lines.rows.map((l: any) => l.item_id).filter(Boolean))]
+      const prods = itemIds.length
+        ? await fetchRows(sb('products_services'), new URLSearchParams({ select: 'id,name,manufacturer', id: `in.(${itemIds.join(',')})` }), hdr, 500)
+        : { rows: [] as any[], total: 0, truncated: false }
+      const prodName = new Map(('error' in prods ? [] : prods.rows).map((p: any) => [p.id, [p.manufacturer, p.name].filter(Boolean).join(' ')]))
+      const custName = new Map(('error' in custs ? [] : custs.rows).map((c: any) => [c.id, c.name]))
+      return {
+        found: jobs.length,
+        say: 'These are the job\'s actual lines. Answer only from them: the product is what is being INSTALLED; what it replaces (the existing fixture), heights and wattages are in each line\'s description and notes. If something is not written on a line, say it is not on the job — never fill it in from the playbook.' + (isAdmin ? '' : ' Prices are not shown at this person\'s access level; do not estimate them.'),
+        jobs: jobs.map((j: any) => ({
+          job_number: j.job_id, title: j.job_title,
+          customer: custName.get(j.customer_id) || j.business_name || j.customer_name,
+          contact: j.customer_name, address: j.job_address, status: j.status, start_date: j.start_date, utility: j.utility_name,
+          ...(isAdmin ? { job_total: j.job_total } : {}),
+          lines: lines.rows.filter((l: any) => l.job_id === j.id).map((l: any) => ({
+            quantity: l.quantity,
+            product: prodName.get(l.item_id) || l.item_name || null,
+            description: l.description || null,
+            notes: l.notes || null,
+            ...(l.kind ? { kind: l.kind } : {}),
+            ...(isAdmin ? { price: l.price, total: l.total } : {}),
+          })),
+        })),
+      }
     }
 
     if (name === 'query_jobs') {

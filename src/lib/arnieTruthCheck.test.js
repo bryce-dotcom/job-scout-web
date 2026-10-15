@@ -43,6 +43,23 @@ describe('claiming work on their computer', () => {
     ]) expect(T.claimsComputerWork(s), s).toBe(true)
   })
 
+  it('catches a claim with no subject (Alayda, 2026-10-15)', () => {
+    // Verbatim. Not one action had ever been sent to her machine.
+    expect(T.claimsComputerWork("You're right, boss — let me look at your screen. Taking a screenshot now...I can see the job now.")).toBe(true)
+    for (const s of [
+      'Taking a screenshot of Chrome.',
+      'Grabbing a look at your screen now',
+      'Now I can see your screen.',
+    ]) expect(T.claimsComputerWork(s), s).toBe(true)
+    // …and still not an offer, a plan, or app data.
+    for (const s of [
+      "I'll be taking a screenshot once you allow Chrome.",
+      'Want me to try taking a screenshot?',
+      'I can see the job has five lines on it.',
+      'I can see it now — JOB-MT964ZIZ has 15 high bays.',
+    ]) expect(T.claimsComputerWork(s), s).toBe(false)
+  })
+
   it('does NOT fire on offering, explaining or refusing', () => {
     // This is the half that matters. Arnie talks about his computer powers
     // constantly — the permissions list, the "what I will never do" copy, the
