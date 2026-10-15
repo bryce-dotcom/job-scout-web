@@ -1969,10 +1969,28 @@ async function cardsTruthBlock(companyId: number, email: string | null | undefin
     const waiting = Array.isArray(rows) && rows.length
       ? `Right now this person has ${rows.length} card${rows.length === 1 ? '' : 's'} waiting for them: ${rows.map((x: any) => `"${String(x.summary || '').replace(/"/g, "'")}"`).join('; ')}. They are in the "Waiting for you" list at the top of the chat.`
       : 'Right now this person has NO cards waiting.'
+    // And what became of the ones they DECIDED. A card leaves the waiting list
+    // whichever button was pressed, so without this he guesses — Bryce
+    // discarded the "missing items" email to Noah, said "it worked" (meaning
+    // the card showed up), and was told "Noah's got the list" (2026-10-15).
+    const since = new Date(Date.now() - 3 * 3600_000).toISOString()
+    const d = await fetch(
+      `${SUPABASE_URL}/rest/v1/arnie_proposals?select=summary,status,error,decided_at&company_id=eq.${companyId}&created_by=eq.${encodeURIComponent(email)}&status=neq.pending&decided_at=gte.${since}&order=decided_at.desc&limit=6`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } },
+    )
+    const decided = d.ok ? await d.json() : []
+    const outcome = (x: any) => x.status === 'applied' ? 'APPROVED — it was done'
+      : x.status === 'rejected' ? 'DISCARDED — nothing happened, nothing was sent'
+      : x.status === 'failed' ? `FAILED — it did not happen${x.error ? ` (${String(x.error).slice(0, 120)})` : ''}`
+      : x.status === 'rolled_back' ? 'UNDONE — it was put back'
+      : String(x.status || 'unknown').toUpperCase()
+    const recent = Array.isArray(decided) && decided.length
+      ? `\nCards they decided in the last few hours, newest first:\n${decided.map((x: any) => `- "${String(x.summary || '').replace(/"/g, "'")}": ${outcome(x)}`).join('\n')}\nThis list is the only truth about what a card did. Never say an email went, a record changed or a job was made unless its card is APPROVED here; if they say "it worked" or "done", read this list before you say what happened.`
+      : ''
     return `
 
 ## Approval cards — the actual state, from the database
-${waiting}
+${waiting}${recent}
 
 Approval cards WORK. When you call a propose_ tool, a card is created and shown to them. If anything earlier in this conversation says the cards are broken, a bug, a UI problem or a dev-team fix, that was WRONG — it was you failing to call the tool, not the app failing. Do not repeat it. If they ask for something you can draft, call the tool now.
 
