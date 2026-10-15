@@ -190,6 +190,22 @@ Deno.serve(async (req) => {
       await expireStale(session.id)
       const queued = await rest(`arnie_computer_actions?select=id,kind,app,host,target&session_id=eq.${session.id}&decision=eq.queued&order=id&limit=1`)
 
+      // A 'type' carries its text from the side table — handed over ONCE, and
+      // deleted as it goes. Anything never collected is swept after an hour.
+      // Never allowed to break the poll: a failure here costs one empty
+      // 'type', a failure of the poll costs the whole agent.
+      const next = queued?.[0]
+      if (next?.kind === 'type') {
+        try {
+          const [held] = await rest(`arnie_computer_pending_text?select=value&action_id=eq.${next.id}&employee_id=eq.${me}&limit=1`) || []
+          if (held) {
+            next.target = { ...(next.target || {}), value: held.value }
+            await rest(`arnie_computer_pending_text?action_id=eq.${next.id}`, { method: 'DELETE' })
+          }
+        } catch (e) { console.warn('[arnie-computer] pending text unavailable:', String(e).slice(0, 200)) }
+      }
+      await rest(`arnie_computer_pending_text?employee_id=eq.${me}&created_at=lt.${new Date(Date.now() - 3600_000).toISOString()}`, { method: 'DELETE' }).catch(() => {})
+
       // Is this person teaching right now? The agent is the only thing that
       // can watch a screen, so it has to be told — and told to STOP, because
       // a recording with no ceiling is a recording somebody forgot about.
@@ -256,7 +272,7 @@ Deno.serve(async (req) => {
     const placeAction = async (
       sessionId: number,
       want: { kind: string; app: string | null; host: string | null; target: Record<string, unknown> | null },
-      opts: { background: boolean; routineId: number | null; valueLength?: number },
+      opts: { background: boolean; routineId: number | null; valueLength?: number; value?: string },
     ) => {
       const [gs, rs] = await Promise.all([myGrants(), myRules()])
       const verdict = decideWithRules(want, gs, rs)
@@ -303,6 +319,18 @@ Deno.serve(async (req) => {
         completed_at: !verdict.ok && 'refuse' in verdict ? new Date().toISOString() : null,
       }
       const made = await rest('arnie_computer_actions', { method: 'POST', body: JSON.stringify(row) })
+
+      // The text itself, kept apart from the log until the agent collects it.
+      // Without this, every 'type' reached the agent empty and "succeeded".
+      // Not for a refusal (it will never run) nor a handoff (theirs to type).
+      const madeId = made?.[0]?.id
+      if (want.kind === 'type' && typeof opts.value === 'string' && opts.value && madeId
+        && ['queued', 'needs_grant', 'needs_approval'].includes(row.decision)) {
+        await rest('arnie_computer_pending_text', {
+          method: 'POST',
+          body: JSON.stringify({ action_id: madeId, company_id: company, employee_id: me, value: opts.value.slice(0, 5000) }),
+        }).catch((e) => console.warn('[arnie-computer] could not hold the text:', String(e).slice(0, 200)))
+      }
 
       // A one-shot grant is spent the moment it is used for real — and it
       // records WHICH action spent it. Without that the agent, checking the
@@ -351,6 +379,7 @@ Deno.serve(async (req) => {
         background: Number(body.routine_id) > 0 || body.background === true,
         routineId: Number(body.routine_id) || null,
         valueLength: typeof body.value === 'string' ? body.value.length : undefined,
+        value: typeof body.value === 'string' ? body.value : undefined,
       })
       return json(placed.ok
         ? { ok: true, action_id: placed.action_id, decision: 'queued' }
@@ -460,9 +489,14 @@ Deno.serve(async (req) => {
         }),
       })
 
+      // The text asked for with the offer travels to the action it becomes.
+      const [held] = offer.kind === 'type'
+        ? await rest(`arnie_computer_pending_text?select=value&action_id=eq.${id}&employee_id=eq.${me}&limit=1`).catch(() => []) || []
+        : []
       const placed = await placeAction(got.session!.id, {
         kind: offer.kind, app: offer.app, host: offer.host, target: offer.target,
-      }, { background: false, routineId: null })
+      }, { background: false, routineId: null, value: held?.value, valueLength: held?.value?.length })
+      if (held) await rest(`arnie_computer_pending_text?action_id=eq.${id}`, { method: 'DELETE' }).catch(() => {})
 
       await rest(`arnie_computer_actions?id=eq.${id}`, {
         method: 'PATCH',

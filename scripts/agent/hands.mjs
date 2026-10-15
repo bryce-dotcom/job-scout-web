@@ -268,7 +268,9 @@ export async function scroll(direction, amount = 3) {
 // ── keyboard ────────────────────────────────────────────────────────────
 export async function typeText(text) {
   const s = String(text ?? '')
-  if (!s) return {}
+  // An empty type used to "succeed" — which hid, for weeks, that the text
+  // never reached the agent at all (2026-10-15). Nothing to type is a failure.
+  if (!s) return { error: 'there was no text to type' }
   const path = join(tmpdir(), `jobscout-type-${Date.now()}.txt`)
   try {
     if (WIN) {

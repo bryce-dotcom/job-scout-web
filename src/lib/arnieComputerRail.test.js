@@ -111,13 +111,18 @@ describe('a refusal is a record, not a dropped request', () => {
     expect(rail).toMatch(/arnie_computer_actions\?id=eq\.\$\{id\}&session_id=eq\.\$\{session\.id\}&decision=eq\.queued/)
   })
 
-  it('what was typed is never stored — only how long it was', () => {
+  it('what was typed is never in the LOG — only how long it was', () => {
     expect(rail).toMatch(/value: undefined/)
     expect(rail).toMatch(/text_length: opts\.valueLength/)
-    // The length is measured at the edge, from the request, and the text goes
-    // no further than that one expression.
     expect(rail).toMatch(/valueLength: typeof body\.value === 'string' \? body\.value\.length : undefined/)
-    expect(rail.match(/body\.value/g)?.length).toBe(2)
+    // This used to assert the text went NOWHERE beyond its length — and it
+    // didn't: no 'type' ever reached the agent with anything in it (found
+    // 2026-10-15). It goes to exactly one other place now: the service-only
+    // side table, collected once by the agent and deleted.
+    expect(rail).toMatch(/value: typeof body\.value === 'string' \? body\.value : undefined,/)
+    expect(rail.match(/body\.value/g)?.length).toBe(4)
+    expect(rail.match(/opts\.value\b/g)?.length).toBeLessThanOrEqual(3)
+    expect(rail).toMatch(/rest\('arnie_computer_pending_text', \{\n\s+method: 'POST'/)
   })
 })
 

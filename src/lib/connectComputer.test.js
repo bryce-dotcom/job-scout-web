@@ -74,6 +74,34 @@ describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', 
   })
 })
 
+describe('typed text reaches the agent — once — and never the audit log (Bryce, 2026-10-15)', () => {
+  const server = read('../../supabase/functions/arnie-computer/index.ts')
+  const hands = read('../../scripts/agent/hands.mjs')
+  const sql = read('../../supabase/migrations/20261015200000_arnie_computer_pending_text.sql')
+  it('the log still keeps only the length', () => {
+    expect(server).toMatch(/\{ \.\.\.want\.target, value: undefined, text_length: opts\.valueLength \}/)
+  })
+  it('the text is held apart when asked for, and survives an offer being accepted', () => {
+    expect(server).toMatch(/value: typeof body\.value === 'string' \? body\.value : undefined,/)
+    expect(server).toMatch(/want\.kind === 'type' && typeof opts\.value === 'string'[\s\S]{0,200}\['queued', 'needs_grant', 'needs_approval'\]\.includes\(row\.decision\)/)
+    expect(server).toMatch(/value: held\?\.value, valueLength: held\?\.value\?\.length/)
+  })
+  it('handed to the agent with the action and deleted in the same breath; a failure never breaks the poll', () => {
+    const next = server.slice(server.indexOf("if (action === 'next') {"), server.indexOf("if (action === 'report') {"))
+    expect(next).toMatch(/next\.target = \{ \.\.\.\(next\.target \|\| \{\}\), value: held\.value \}\n\s+await rest\(`arnie_computer_pending_text\?action_id=eq\.\$\{next\.id\}`, \{ method: 'DELETE' \}\)/)
+    expect(next).toMatch(/try \{[\s\S]{0,400}\} catch \(e\)/)
+    expect(next).toMatch(/created_at=lt\./)   // swept
+  })
+  it('nobody but the service role can read it', () => {
+    expect(sql).toMatch(/enable row level security/)
+    expect(sql).toMatch(/revoke all on public\.arnie_computer_pending_text from anon, authenticated/)
+    expect(sql).not.toMatch(/create policy/i)
+  })
+  it('an empty type is a failure, not a silent success', () => {
+    expect(hands).toMatch(/if \(!s\) return \{ error: 'there was no text to type' \}/)
+  })
+})
+
 describe('a key press reaches the keyboard (Bryce, 2026-10-15)', () => {
   const agent = read('../../scripts/jobscout-agent.mjs')
   const hands = read('../../scripts/agent/hands.mjs')

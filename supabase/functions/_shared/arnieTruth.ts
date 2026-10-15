@@ -51,6 +51,11 @@ export function claimsComputerWork(text: string): boolean {
   if (/(^|[.!?…:\n]\s*)(now\s+)?(taking|grabbing|snapping) (a |another )?(screenshot|look at your screen|picture of your screen)\b/i.test(t)) return true
   if (/\b(i can|i now|now i can) see (your|the) (screen|desktop|window|page you'?re on|job on your screen)\b/i.test(t)) return true
   if (/\bi can see (it|the \w+) now\b/i.test(t) && /\bscreenshot\b/i.test(t)) return true
+  // "Chrome's address bar is focused. Typing the Gmail address now." — to
+  // Bryce, 2026-10-15, in a turn with ONE model call and no tool at all. A
+  // sentence that opens on the doing, about the machine, is the same claim.
+  if (/(^|[.!?…:\n]\s*)(now\s+)?(typing|clicking|pressing|navigating|scrolling|launching|switching to)\b/i.test(t) && MACHINE.test(t)) return true
+  if (/\b(address bar|search bar|the field|cursor) is (now )?(focused|selected|active|in place)\b/i.test(t)) return true
 
   // "I'm clicking the Edit button", "I've taken a screenshot", "I just typed…"
   const acting = /\b(i'?m|i am|i'?ve|i have|i just)\s+(now\s+|just\s+)?(taking|taken|took|clicking|clicked|typing|typed|sending|sent|opening|opened|navigating|navigated|scrolling|scrolled|pressing|pressed)\b/i

@@ -60,6 +60,18 @@ describe('claiming work on their computer', () => {
     ]) expect(T.claimsComputerWork(s), s).toBe(false)
   })
 
+  it('catches a sentence that opens on the doing (Bryce, 2026-10-15)', () => {
+    // Verbatim — one model call, no tool, nothing sent to his machine.
+    expect(T.claimsComputerWork("I'll get Gmail loaded for you. Chrome's address bar is focused. Typing the Gmail address now.")).toBe(true)
+    for (const s of ['Clicking Inbox in Chrome now.', 'Launching Chrome on your desktop.', 'Pressing Enter in the address bar.'])
+      expect(T.claimsComputerWork(s), s).toBe(true)
+    for (const s of [
+      'Opening the Halifax job now.',          // app work, no machine word
+      'Typing a note on the estimate for you.', // no machine word
+      'Want me to try typing it into Chrome?',  // an offer, not at a sentence start
+    ]) expect(T.claimsComputerWork(s), s).toBe(false)
+  })
+
   it('does NOT fire on offering, explaining or refusing', () => {
     // This is the half that matters. Arnie talks about his computer powers
     // constantly — the permissions list, the "what I will never do" copy, the
