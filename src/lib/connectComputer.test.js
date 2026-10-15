@@ -73,3 +73,24 @@ describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', 
     for (const app of ['messages', 'calendar', 'mail', 'notes']) expect(hands).toMatch(new RegExp(`${app}: \\[null, '`))
   })
 })
+
+describe('a click lands on what was seen', () => {
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const hands = read('../../scripts/agent/hands.mjs')
+  it('pictures are fitted to a size the model reads as-is', async () => {
+    const { fitShot } = await import('../../scripts/agent/hands.mjs')
+    expect(fitShot(2880, 1750)).toEqual([1280, 778])     // a Retina window
+    expect(fitShot(1000, 600)).toEqual([1000, 600])      // never enlarged
+    const [w, h] = fitShot(1171, 1029)
+    expect(w * h).toBeLessThanOrEqual(1_100_000)
+  })
+  it('the Mac captures the front window by its rectangle, not a window id it cannot find', () => {
+    expect(hands).toMatch(/get \{position, size\} of front window/)
+    expect(hands).toMatch(/\['-x', '-R', rect\.join\(','\), '-t', 'png', path\]/)
+    expect(hands).toMatch(/run\('sips', \['-z'/)
+  })
+  it('every click is mapped from the picture back onto the screen', () => {
+    expect(agent).toMatch(/lastShot\.ox \+ Number\(x\) \* lastShot\.sx, lastShot\.oy \+ Number\(y\) \* lastShot\.sy/)
+    expect(agent).toMatch(/case 'click': return await clickAt\(\.\.\.toScreen\(t\.x, t\.y\), 'left'\)/)
+  })
+})

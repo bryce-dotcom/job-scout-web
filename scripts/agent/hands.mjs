@@ -97,6 +97,22 @@ public static class JsFront {
  * fail rather than falling back to the whole screen — a failure is
  * recoverable, a silent over-capture is not.
  */
+/**
+ * The size a picture is handed over at: no wider than 1280 and no more than
+ * about 1.1 megapixels, so the model reads it as it is and a position it names
+ * is a position in THIS picture. Never enlarged.
+ */
+export function fitShot(w, h) {
+  const k = Math.min(1, 1280 / w, Math.sqrt(1_100_000 / (w * h)))
+  return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))]
+}
+
+/** Width and height of a PNG, from its header. */
+export function pngSize(buf) {
+  if (!buf || buf.length < 24 || buf.readUInt32BE(12) !== 0x49484452) return null
+  return [buf.readUInt32BE(16), buf.readUInt32BE(20)]
+}
+
 export async function screenshot() {
   const path = join(tmpdir(), `jobscout-shot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.png`)
   if (WIN) {
@@ -120,26 +136,70 @@ public static class JsWin {
       $bmp = New-Object System.Drawing.Bitmap $w, $hgt
       $g = [System.Drawing.Graphics]::FromImage($bmp)
       $g.CopyFromScreen((New-Object System.Drawing.Point $r.Left, $r.Top), [System.Drawing.Point]::Empty, (New-Object System.Drawing.Size $w, $hgt))
-      $bmp.Save('${escaped}', [System.Drawing.Imaging.ImageFormat]::Png)
-      $g.Dispose(); $bmp.Dispose()`)
-    return r.ok ? { path } : { error: r.err || 'screenshot failed' }
+      $k = [Math]::Min(1.0, [Math]::Min(1280.0 / $w, [Math]::Sqrt(1100000.0 / ($w * $hgt))))
+      $ow = [Math]::Max(1, [int][Math]::Round($w * $k)); $oh = [Math]::Max(1, [int][Math]::Round($hgt * $k))
+      $out = New-Object System.Drawing.Bitmap $ow, $oh
+      $g2 = [System.Drawing.Graphics]::FromImage($out)
+      $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+      $g2.DrawImage($bmp, 0, 0, $ow, $oh)
+      $out.Save('${escaped}', [System.Drawing.Imaging.ImageFormat]::Png)
+      $g2.Dispose(); $out.Dispose(); $g.Dispose(); $bmp.Dispose()
+      Write-Output ("{0},{1},{2},{3}" -f $r.Left, $r.Top, $w, $hgt)`)
+    if (!r.ok) return { error: r.err || 'screenshot failed' }
+    // Where the window sits and how big it is, so a click named in the
+    // picture's pixels can be put back on the screen (toScreen in the agent).
+    const n = String(r.out || '').trim().split(/\r?\n/).pop().split(',').map(Number)
+    return n.length === 4 && n.every(Number.isFinite) ? { path, origin: [n[0], n[1]], size: [n[2], n[3]] } : { path }
   }
   if (MAC) {
     // -o drops the window shadow, -l targets ONE window by id rather than the
     // desktop. -x is silent (no shutter sound). All of it needs the Screen
     // Recording grant, which the person gives once in System Settings and we
     // cannot script.
-    const id = await ps_frontWindowIdMac()
-    const args = id
-      ? ['-x', '-o', '-l', String(id), '-t', 'png', path]
-      : ['-x', '-t', 'png', path]
-    if (!id) return { error: 'could not find the window in front, so nothing was captured' }
+    // THE FRONT WINDOW'S RECTANGLE, the same thing the Windows side captures.
+    //
+    // This used to need the window's numeric id for `screencapture -l`, found
+    // by asking AXIdentifier (not a window id in most apps) and then Python's
+    // Quartz module (not on a stock Mac — python3 there is a stub asking to
+    // install developer tools). On London's MacBook every look failed with
+    // "could not find the window in front" (2026-10-14). The window's position
+    // and size come from System Events, which needs only the Accessibility
+    // grant the agent already asks for, and `screencapture -R` takes exactly
+    // that rectangle: still one program's window, never the whole screen.
+    const rect = await frontWindowRectMac()
+    const id = rect ? null : await ps_frontWindowIdMac()
+    if (!rect && !id) return { error: 'could not find the window in front, so nothing was captured — is Accessibility allowed for Terminal?' }
+    const args = rect
+      ? ['-x', '-R', rect.join(','), '-t', 'png', path]
+      : ['-x', '-o', '-l', String(id), '-t', 'png', path]
     const r = await run('screencapture', args)
     if (!r.ok) return { error: r.err || 'screenshot failed — is Screen Recording allowed for this app?' }
-    try { if (statSync(path).size > 0) return { path } } catch { /* nothing written */ }
-    return { error: 'screenshot produced nothing — Screen Recording is probably not allowed yet' }
+    try { if (!(statSync(path).size > 0)) throw new Error('empty') } catch {
+      return { error: 'screenshot produced nothing — Screen Recording is probably not allowed yet' }
+    }
+    if (!rect) return { path }
+    // A Retina screen captures at twice the points, and the model then sees a
+    // picture that is shrunk again before it reads it — so a position it
+    // names would not be a position on the screen. Fit the picture to a known
+    // size with sips (on every Mac), and say where the window sits, so a click
+    // can be put back on the screen exactly (see toScreen in the agent).
+    const [w, h] = fitShot(rect[2], rect[3])
+    await run('sips', ['-z', String(h), String(w), path])
+    return { path, origin: [rect[0], rect[1]], size: [rect[2], rect[3]] }
   }
   return { error: `no screenshot on ${process.platform}` }
+}
+
+/** [x, y, w, h] of the front window of the front app, in screen points — or null. */
+async function frontWindowRectMac() {
+  const r = await osa(
+    'tell application "System Events" to tell (first application process whose frontmost is true) ' +
+    'to get {position, size} of front window',
+  )
+  if (!r.ok) return null
+  const n = String(r.out).split(',').map((s) => Math.round(Number(s.trim())))
+  if (n.length !== 4 || n.some((v) => !Number.isFinite(v)) || n[2] <= 0 || n[3] <= 0) return null
+  return n
 }
 
 /** The window id of whatever is in front, for screencapture -l. */

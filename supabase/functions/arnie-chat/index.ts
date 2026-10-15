@@ -676,7 +676,7 @@ const USE_COMPUTER_TOOL = {
       host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
       target: {
         type: 'object',
-        description: 'What on screen: { label } or { text } for something you can see, { x, y } only when you have just looked and know where it is.',
+        description: 'What on screen: { label } or { text } for something you can see, { x, y } only when you have just looked and know where it is. x and y are pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen.',
       },
       value: { type: 'string', description: 'For kind=type, the text to type. Never a password or a code.' },
       why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
@@ -929,7 +929,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
                 __image: { media_type: 'image/png', data: btoa(binary) },
                 saw: true,
                 device: session.device_label,
-                say: 'Describe only what is actually on this screen. If what you need is not visible, say so and look again rather than assuming.',
+                say: 'Describe only what is actually on this screen. If what you need is not visible, say so and look again rather than assuming. To click something here, give its x and y in THIS picture\'s pixels from the top-left.',
               }
             }
           }

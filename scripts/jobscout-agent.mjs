@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url'
 import { readFile, unlink } from 'node:fs/promises'
 
 import {
-  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp,
+  frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp, pngSize,
   capabilities, platformName,
 } from './agent/hands.mjs'
 
@@ -272,13 +272,35 @@ const describe = (a) => {
     .filter(Boolean).join(' ')
 }
 
+// WHERE THE LAST PICTURE WAS, so a click lands on what was seen.
+//
+// The picture is of one window, fitted to a known size; a click names a
+// position IN that picture. The screen is something else — the window sits
+// somewhere on it, and on a Retina Mac the picture had twice the pixels.
+// Nothing translated between them, so clicks landed off by the window's
+// offset and scale: Alayda's "the clicks are landing in the wrong spot",
+// and on London's Mac every one would have. Each click is now mapped back.
+let lastShot = null
+const takeShot = async () => {
+  const s = await screenshot()
+  if (s.path && s.origin && s.size) {
+    let dims = null
+    try { dims = pngSize(readFileSync(s.path)) } catch { /* unreadable — no mapping */ }
+    lastShot = dims ? { ox: s.origin[0], oy: s.origin[1], sx: s.size[0] / dims[0], sy: s.size[1] / dims[1] } : null
+  }
+  return s
+}
+const toScreen = (x, y) => (lastShot && Number.isFinite(Number(x)) && Number.isFinite(Number(y))
+  ? [lastShot.ox + Number(x) * lastShot.sx, lastShot.oy + Number(y) * lastShot.sy]
+  : [x, y])
+
 const run = async (a) => {
   const t = a.target || {}
   switch (a.kind) {
-    case 'screenshot': return await screenshot()
-    case 'click': return await clickAt(t.x, t.y, 'left')
-    case 'double_click': return await clickAt(t.x, t.y, 'left', true)
-    case 'right_click': return await clickAt(t.x, t.y, 'right')
+    case 'screenshot': return await takeShot()
+    case 'click': return await clickAt(...toScreen(t.x, t.y), 'left')
+    case 'double_click': return await clickAt(...toScreen(t.x, t.y), 'left', true)
+    case 'right_click': return await clickAt(...toScreen(t.x, t.y), 'right')
     case 'type': return await typeText(t.value ?? '')
     case 'key': return await pressKey(t.key)
     case 'scroll': return await scroll(t.direction, t.amount)
