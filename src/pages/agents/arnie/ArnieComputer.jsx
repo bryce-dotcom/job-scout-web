@@ -234,7 +234,11 @@ export default function ArnieComputer() {
 
       {(showConnect || !data.session) && (
         <section style={{ background: t.card, border: `1px solid ${t.line}`, borderRadius: 12, padding: '4px 16px 16px', marginBottom: 14 }}>
-          <GetTheAgent who={who} connected={!!data.session && data.session.status === 'live'} onWaiting={setWaiting} />
+          {/* The checked-in test, not the row's word for it: a row stays
+              'live' for hours after its agent stops, so London coming back to
+              set up again would have been told his Mac "arrived" before he
+              pasted anything. */}
+          <GetTheAgent who={who} connected={connected} onWaiting={setWaiting} />
         </section>
       )}
 
