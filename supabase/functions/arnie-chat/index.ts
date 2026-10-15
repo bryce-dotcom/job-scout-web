@@ -676,7 +676,7 @@ const USE_COMPUTER_TOOL = {
       host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
       target: {
         type: 'object',
-        description: 'What on screen: { label } or { text } for something you can see, { x, y } only when you have just looked and know where it is. x and y are pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen.',
+        description: 'Where on screen. A click, double_click or right_click NEEDS { x, y }: pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen. So look first, then click where you saw it. Add { label } to name what it is ("Inbox", "Send") for the log; a label alone is never something the agent can find.',
       },
       value: { type: 'string', description: 'For kind=type, the text to type. Never a password or a code.' },
       why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
@@ -853,6 +853,22 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
     if (name === 'use_my_computer') {
       if (!bearer || !employeeId) {
         return { refused: 'That needs you here in the app, signed in — I cannot reach a computer from a routine or a text.' }
+      }
+      // A click is a POSITION. The hands press a point on the screen; they
+      // cannot find "Inbox" or "Bryce Camp" by name. Every click Arnie sent
+      // before 2026-10-14 was a label or text with no x/y (the description
+      // invited it), so every one would have failed on the machine even once
+      // allowed ("that click had no coordinates", Christopher's PC). Turn it
+      // back here, before it costs the person an approval and a round trip.
+      const kind = String(input?.kind || '')
+      if (['click', 'double_click', 'right_click'].includes(kind)) {
+        const t = input?.target || {}
+        if (!Number.isFinite(Number(t.x)) || !Number.isFinite(Number(t.y)) || t.x === null || t.y === null || t.x === '' || t.y === '') {
+          return {
+            needs_position: true,
+            say: 'A click needs the x and y of where to click, in pixels of the last picture you were given. Take a screenshot of this program if you have not just looked, find what you want on it, and click there — keep the label to name it.',
+          }
+        }
       }
       // Which machine: theirs, the newest, and only if the agent is checking
       // in. Arnie is never asked to supply a session id — a model holding one

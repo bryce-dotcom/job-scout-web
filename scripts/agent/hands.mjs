@@ -166,18 +166,16 @@ public static class JsWin {
     // and size come from System Events, which needs only the Accessibility
     // grant the agent already asks for, and `screencapture -R` takes exactly
     // that rectangle: still one program's window, never the whole screen.
-    const rect = await frontWindowRectMac()
-    const id = rect ? null : await ps_frontWindowIdMac()
-    if (!rect && !id) return { error: 'could not find the window in front, so nothing was captured — is Accessibility allowed for Terminal?' }
-    const args = rect
-      ? ['-x', '-R', rect.join(','), '-t', 'png', path]
-      : ['-x', '-o', '-l', String(id), '-t', 'png', path]
-    const r = await run('screencapture', args)
+    //
+    // And when Accessibility is not on yet, CoreGraphics still knows where the
+    // front program's windows are: no grant is needed for a window's bounds.
+    const rect = (await frontWindowRectMac()) || (await frontWindowRectCG())
+    if (!rect) return { error: 'could not find the window in front, so nothing was captured — is Accessibility allowed for Terminal?' }
+    const r = await run('screencapture', ['-x', '-R', rect.join(','), '-t', 'png', path])
     if (!r.ok) return { error: r.err || 'screenshot failed — is Screen Recording allowed for this app?' }
     try { if (!(statSync(path).size > 0)) throw new Error('empty') } catch {
       return { error: 'screenshot produced nothing — Screen Recording is probably not allowed yet' }
     }
-    if (!rect) return { path }
     // A Retina screen captures at twice the points, and the model then sees a
     // picture that is shrunk again before it reads it — so a position it
     // names would not be a position on the screen. Fit the picture to a known
@@ -202,22 +200,25 @@ async function frontWindowRectMac() {
   return n
 }
 
-/** The window id of whatever is in front, for screencapture -l. */
-async function ps_frontWindowIdMac() {
-  const r = await osa(
-    'tell application "System Events" to tell (first application process whose frontmost is true) ' +
-    'to get value of attribute "AXIdentifier" of front window',
-  )
-  if (r.ok && /^\d+$/.test(r.out.trim())) return r.out.trim()
-  // AXIdentifier is not a window id on every app. Ask Quartz instead.
-  const q = await run('python3', ['-c',
-    'import Quartz,sys\n'
-    + 'w=Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly|Quartz.kCGWindowListExcludeDesktopElements, Quartz.kCGNullWindowID)\n'
-    + 'f=[x for x in w if x.get("kCGWindowLayer")==0]\n'
-    + 'print(f[0]["kCGWindowNumber"] if f else "")',
-  ])
-  const id = (q.out || '').trim()
-  return /^\d+$/.test(id) ? id : null
+/**
+ * The same rectangle from CoreGraphics, through JXA (osascript -l JavaScript,
+ * on every Mac). This used to be python3's Quartz module, which a stock Mac
+ * does not have. The window list is front-to-back, so the first ordinary
+ * (layer 0) window owned by the front app's process is the one in front.
+ */
+export const CG_FRONT_RECT_JXA =
+  "ObjC.import('AppKit'); ObjC.import('CoreGraphics');" +
+  ' var pid = $.NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;' +
+  // 1 = kCGWindowListOptionOnScreenOnly, 16 = ExcludeDesktopElements, 0 = kCGNullWindowID
+  ' var list = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(17, 0))) || [];' +
+  ' var w = list.filter(function (x) { return x.kCGWindowOwnerPID === pid && x.kCGWindowLayer === 0 && x.kCGWindowBounds && x.kCGWindowBounds.Width > 50 })[0];' +
+  " w ? [w.kCGWindowBounds.X, w.kCGWindowBounds.Y, w.kCGWindowBounds.Width, w.kCGWindowBounds.Height].join(',') : ''"
+async function frontWindowRectCG() {
+  const r = await run('osascript', ['-l', 'JavaScript', '-e', CG_FRONT_RECT_JXA])
+  if (!r.ok) return null
+  const n = String(r.out || '').trim().split(',').map((s) => Math.round(Number(s)))
+  if (n.length !== 4 || n.some((v) => !Number.isFinite(v)) || n[2] <= 0 || n[3] <= 0) return null
+  return n
 }
 
 // ── pointer ─────────────────────────────────────────────────────────────

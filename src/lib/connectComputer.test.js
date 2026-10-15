@@ -89,6 +89,31 @@ describe('a click lands on what was seen', () => {
     expect(hands).toMatch(/\['-x', '-R', rect\.join\(','\), '-t', 'png', path\]/)
     expect(hands).toMatch(/run\('sips', \['-z'/)
   })
+  it('without Accessibility, CoreGraphics finds the front window (no python3 on a stock Mac)', async () => {
+    expect(hands).toMatch(/\(await frontWindowRectMac\(\)\) \|\| \(await frontWindowRectCG\(\)\)/)
+    expect(hands).not.toMatch(/run\('python3'/)
+    const { CG_FRONT_RECT_JXA } = await import('../../scripts/agent/hands.mjs')
+    // Run the JXA against a window list shaped like CoreGraphics returns it.
+    const list = [
+      { kCGWindowOwnerPID: 9, kCGWindowLayer: 25, kCGWindowBounds: { X: 0, Y: 0, Width: 1440, Height: 24 } },     // menu bar
+      { kCGWindowOwnerPID: 42, kCGWindowLayer: 0, kCGWindowBounds: { X: 3, Y: 3, Width: 20, Height: 20 } },       // a sliver
+      { kCGWindowOwnerPID: 42, kCGWindowLayer: 0, kCGWindowBounds: { X: 120, Y: 60, Width: 900, Height: 700 } },  // Messages
+      { kCGWindowOwnerPID: 7, kCGWindowLayer: 0, kCGWindowBounds: { X: 0, Y: 0, Width: 1440, Height: 900 } },     // Safari behind
+    ]
+    const $ = { NSWorkspace: { sharedWorkspace: { frontmostApplication: { processIdentifier: 42 } } }, CGWindowListCopyWindowInfo: (o, w) => (o === 17 && w === 0 ? list : null) }
+    const ObjC = { import() {}, deepUnwrap: (x) => x, castRefToObject: (x) => x }
+    expect(new Function('$', 'ObjC', `return eval(${JSON.stringify(CG_FRONT_RECT_JXA)})`)($, ObjC)).toBe('120,60,900,700')
+  })
+  it('a click by name alone is turned back before it reaches the computer (Christopher, 2026-10-13)', () => {
+    const chat = read('../../supabase/functions/arnie-chat/index.ts')
+    expect(chat).toMatch(/A click, double_click or right_click NEEDS \{ x, y \}/)
+    expect(chat).not.toMatch(/\{ label \} or \{ text \} for something you can see/)
+    const guard = chat.indexOf("if (['click', 'double_click', 'right_click'].includes(kind)) {")
+    expect(guard).toBeGreaterThan(-1)
+    // before the machine is even looked up, let alone queued
+    expect(guard).toBeLessThan(chat.indexOf("arnie_computer_sessions?select=id,device_label"))
+    expect(chat.slice(guard, guard + 600)).toMatch(/needs_position: true/)
+  })
   it('every click is mapped from the picture back onto the screen', () => {
     expect(agent).toMatch(/lastShot\.ox \+ Number\(x\) \* lastShot\.sx, lastShot\.oy \+ Number\(y\) \* lastShot\.sy/)
     expect(agent).toMatch(/case 'click': return await clickAt\(\.\.\.toScreen\(t\.x, t\.y\), 'left'\)/)
