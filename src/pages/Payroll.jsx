@@ -30,6 +30,7 @@ import { pickAchAccount, achSettingsFromPlaidAccount, describeAchAccount } from 
 import { payrollSetupProblems, setupGateSummary } from '../lib/payrollSetupGate'
 import { payrollRunGuards } from '../lib/payrollRunGuards'
 import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
+import { fetchIdentity, mergeIdentityOne } from '../lib/employeeIdentity'
 import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
 import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 import PlaidLink from '../components/PlaidLink'
@@ -2681,11 +2682,14 @@ export default function Payroll() {
 
   // Download an employee's latest finalized paystub as a Gusto-style PDF.
   const downloadEmpPaystub = async (emp) => {
-    const [mod, stubsRes, empRes] = await Promise.all([
+    const [mod, stubsRes, empRes, idRes] = await Promise.all([
       import('../lib/paystubPdf'),
       supabase.from('paystubs').select('*').eq('company_id', companyId).eq('employee_id', emp.id).order('pay_date', { ascending: true }),
-      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip, tax_classification, w9_business_name, w9_legal_name').eq('id', emp.id).maybeSingle(),
+      supabase.from('employees').select('id, name, role, pay_type, hourly_rate, tax_classification, w9_business_name, w9_legal_name').eq('id', emp.id).maybeSingle(),
+      // SSN last four + address live in employee_identity (HR-only).
+      fetchIdentity(supabase, emp.id),
     ])
+    if (idRes.error) { alert('Could not load the SSN and address for this stub: ' + (idRes.error.message || idRes.error)); return }
     const stubs = (stubsRes.data || []).filter(s => (Number(s.gross_pay) || 0) > 0)
     if (!stubs.length) { alert('No finalized paystub for this employee yet.'); return }
     // "Latest" is the most recent PERIOD, not just the latest pay date. HHH
@@ -2696,7 +2700,7 @@ export default function Payroll() {
       || String(a.period_end || '').localeCompare(String(b.period_end || ''))
       || (Number(a.id) || 0) - (Number(b.id) || 0)).pop()
     const ytd = mod.computePaystubYtd(stubs, target)
-    const blob = await mod.generatePaystubPdf({ paystub: target, employee: empRes.data || emp, company, ytd })
+    const blob = await mod.generatePaystubPdf({ paystub: target, employee: mergeIdentityOne(empRes.data || emp, idRes.data), company, ytd })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -6037,12 +6041,15 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
         net_pay: t.netPay != null ? t.netPay : (data.netPay || 0),
       }
 
-      const [mod, stubsRes] = await Promise.all([
+      const [mod, stubsRes, idRes] = await Promise.all([
         import('../lib/paystubPdf'),
         supabase.from('paystubs').select('*')
           .eq('company_id', company?.id).eq('employee_id', emp.id)
           .order('pay_date', { ascending: true }),
+        // The roster row carries no SSN/address (employee_identity, HR-only).
+        fetchIdentity(supabase, emp.id),
       ])
+      if (idRes.error) throw new Error('Could not load the SSN and address for this stub: ' + (idRes.error.message || idRes.error))
 
       // YTD = every earlier finalized paycheck this year PLUS this one. Drop a
       // saved row covering the same period so re-previewing an already-run
@@ -6050,7 +6057,7 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
       const prior = (stubsRes.data || []).filter(s => String(s.period_start || '').slice(0, 10) !== periodStartKey)
       const ytd = mod.computePaystubYtd([...prior, paystub], paystub)
 
-      const blob = await mod.generatePaystubPdf({ paystub, employee: emp, company, ytd })
+      const blob = await mod.generatePaystubPdf({ paystub, employee: mergeIdentityOne(emp, idRes.data), company, ytd })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

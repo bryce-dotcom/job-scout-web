@@ -15,6 +15,7 @@
 // =====================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { splitIdentity, saveIdentity } from "../_shared/employeeIdentity.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -238,11 +239,19 @@ serve(async (req) => {
         }
       }
 
+      // SSN, DOB, address, bank and EIN go to employee_identity (readable
+      // only by the person and payroll admins), the rest to employees.
+      const { employee: empFields, identity: idFields } = splitIdentity(empUpdate);
       const { error: empUpdErr } = await supabase
         .from('employees')
-        .update({ ...empUpdate, updated_at: new Date().toISOString() })
+        .update({ ...empFields, updated_at: new Date().toISOString() })
         .eq('id', packet.employee_id);
       if (empUpdErr) return jsonRes({ error: 'Apply to employee failed: ' + empUpdErr.message }, 500);
+      try {
+        await saveIdentity(supabase, packet.employee_id, packet.company_id, idFields);
+      } catch (e) {
+        return jsonRes({ error: 'Apply to employee failed: ' + (e as Error).message }, 500);
+      }
 
       // Compute I-9 Section 2 deadline (3 business days from hire date).
       // Skipped for 1099 contractors — I-9 doesn't apply.
@@ -269,6 +278,9 @@ serve(async (req) => {
           completed_at: new Date().toISOString(),
           step_signed_completed_at: new Date().toISOString(),
           i9_section2_due_date: i9Due,
+          // The full SSN / EIN / bank numbers have just been encrypted onto
+          // the employee; the packet no longer needs them in plain text.
+          draft_data: redactDraftSecrets(draft),
         })
         .eq('id', packet.id);
       if (pktErr) return jsonRes({ error: pktErr.message }, 500);
@@ -302,6 +314,23 @@ serve(async (req) => {
     return jsonRes({ error: String((err as Error)?.message || err) }, 500);
   }
 });
+
+// After finalize the packet keeps what was entered, minus the secrets: the
+// SSN / EIN / account number become their last four and the routing number
+// is dropped. draft_data used to keep them in plain text for good, readable by
+// the whole company until 2026-10-15 (RLS employee_private_only).
+// deno-lint-ignore no-explicit-any
+function redactDraftSecrets(draft: any) {
+  const out = { ...(draft || {}) };
+  const last4 = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-4) || null;
+  if (out.ssn && typeof out.ssn === 'object') out.ssn = { last4: last4(out.ssn.value), redacted: true };
+  if (out.ein && typeof out.ein === 'object') out.ein = { last4: last4(out.ein.value), redacted: true };
+  if (out.direct_deposit && typeof out.direct_deposit === 'object') {
+    const { routing_number: _r, account_number, confirm_account: _c, ...rest } = out.direct_deposit;
+    out.direct_deposit = { ...rest, account_last4: last4(account_number), redacted: true };
+  }
+  return out;
+}
 
 function stepToCompletionColumn(step: string): string | null {
   const map: Record<string, string> = {

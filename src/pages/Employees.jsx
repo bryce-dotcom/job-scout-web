@@ -18,6 +18,7 @@ import CrewBroadcastModal from '../components/CrewBroadcastModal'
 import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
 import { w9Status, contractorsMissingW9 } from '../lib/w9Status'
+import { fetchIdentityMap, mergeIdentity, splitIdentity, identityHasValues, identitySavePlan, saveIdentity } from '../lib/employeeIdentity'
 import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
 
 // Role colors (OG DiX style)
@@ -164,6 +165,11 @@ export default function Employees() {
   }
 
   const [employees, setEmployees] = useState([])
+  // Employees whose identity row (SSN, DOB, address, bank) this user was
+  // allowed to load. A save writes identity ONLY for these: the form for
+  // anyone else shows those fields blank, and sending the blanks would wipe
+  // the real values. See lib/employeeIdentity.js.
+  const [identityIds, setIdentityIds] = useState(() => new Set())
   const [showModal, setShowModal] = useState(false)
   const [viewingEmployee, setViewingEmployee] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -394,12 +400,19 @@ export default function Employees() {
 
   const loadEmployees = async () => {
     if (!companyId) return
-    const { data } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('name')
-    setEmployees(data || [])
+    const [{ data }, { map: identity, error: idErr }] = await Promise.all([
+      supabase
+        .from('employees')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('name'),
+      // Only the rows this user may see come back (theirs, or everyone's for
+      // a payroll admin); everyone else's identity fields stay off the page.
+      fetchIdentityMap(supabase, { companyId }),
+    ])
+    if (idErr) console.warn('[Employees] identity load failed:', idErr.message || idErr)
+    setIdentityIds(new Set(identity.keys()))
+    setEmployees(mergeIdentity(data, identity))
   }
 
   const displayedEmployees = showInactive
@@ -696,22 +709,52 @@ export default function Employees() {
       payload.w9_ein_last4 = einDigits.slice(-4)
     }
 
+    // SSN, DOB, address, bank and EIN go to employee_identity, not employees.
+    const { employee: employeePayload, identity } = splitIdentity(payload)
+    const idPlan = identitySavePlan({ isNew: !viewingEmployee, employeeId: viewingEmployee?.id, loadedIds: identityIds, identity })
+    if (idPlan.refuse) {
+      setError('Only the employee or a payroll admin can change SSN, date of birth, home address or bank details.')
+      setLoading(false)
+      return
+    }
+
     let result
     if (viewingEmployee) {
       result = await supabase
         .from('employees')
-        .update(payload)
+        .update(employeePayload)
         .eq('id', viewingEmployee.id)
     } else {
       result = await supabase
         .from('employees')
-        .insert([payload])
+        .insert([employeePayload])
+        .select('id')
+        .single()
     }
 
     if (result.error) {
       setError(result.error.message)
       setLoading(false)
       return
+    }
+
+    // Identity only for someone whose identity this user loaded (or a new
+    // hire): the form for anyone else holds blanks, not their real values.
+    if (idPlan.write) {
+      const empId = viewingEmployee ? viewingEmployee.id : result.data?.id
+      const { error: idErr } = await saveIdentity(supabase, empId, companyId, identity)
+      if (idErr) {
+        const msg = 'Saved, except SSN / date of birth / address / bank: ' + (idErr.message || idErr)
+        if (viewingEmployee) {
+          // Re-saving the same person is safe, so keep the form open.
+          setError(msg)
+          setLoading(false)
+          return
+        }
+        // A new hire now exists; re-submitting would add them twice. Close
+        // and say so; the fields can be entered on their record.
+        alert(msg)
+      }
     }
 
     await fetchEmployees()
@@ -979,10 +1022,12 @@ export default function Employees() {
       payload.w9_ein_last4 = einDigits2.slice(-4)
     }
 
-    // Insert the employee
+    // Insert the employee; SSN, DOB, address, bank and EIN go to
+    // employee_identity, not employees.
+    const { employee: employeePayload, identity } = splitIdentity(payload)
     const result = await supabase
       .from('employees')
-      .insert([payload])
+      .insert([employeePayload])
       .select()
       .single()
 
@@ -990,6 +1035,12 @@ export default function Employees() {
       setError(result.error.message)
       setLoading(false)
       return
+    }
+
+    if (identityHasValues(identity)) {
+      const { error: idErr } = await saveIdentity(supabase, result.data?.id, companyId, identity)
+      // The employee exists now, so don't leave the form open to add them twice.
+      if (idErr) alert('Saved, except SSN / date of birth / address / bank: ' + (idErr.message || idErr))
     }
 
     // Now send the invite via edge function

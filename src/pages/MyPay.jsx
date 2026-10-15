@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { fetchIdentity, mergeIdentityOne } from '../lib/employeeIdentity'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -481,13 +482,16 @@ export default function MyPay() {
   // Build + download a Gusto-style paystub PDF for one paycheck. Pulls the
   // employee + company identity on demand and computes YTD from pay history.
   const downloadPaystub = async (p) => {
-    const [mod, empRes, coRes] = await Promise.all([
+    const [mod, empRes, coRes, idRes] = await Promise.all([
       import('../lib/paystubPdf'),
-      supabase.from('employees').select('name, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip, tax_classification, w9_business_name, w9_legal_name').eq('id', effectiveUserId).maybeSingle(),
+      supabase.from('employees').select('id, name, role, pay_type, hourly_rate, tax_classification, w9_business_name, w9_legal_name').eq('id', effectiveUserId).maybeSingle(),
       supabase.from('companies').select('company_name, legal_name, address, city, state, zip, ein, phone').eq('id', companyId).maybeSingle(),
+      // Your SSN last four + address: employee_identity (you and HR only).
+      fetchIdentity(supabase, effectiveUserId),
     ])
+    if (idRes.error) { alert('Could not load your SSN and address for the stub: ' + (idRes.error.message || idRes.error)); return }
     const ytd = mod.computePaystubYtd(paystubs, p)
-    const blob = await mod.generatePaystubPdf({ paystub: p, employee: empRes.data || {}, company: coRes.data || {}, ytd })
+    const blob = await mod.generatePaystubPdf({ paystub: p, employee: mergeIdentityOne(empRes.data || { id: effectiveUserId }, idRes.data), company: coRes.data || {}, ytd })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

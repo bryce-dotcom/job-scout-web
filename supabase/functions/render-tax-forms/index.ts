@@ -23,6 +23,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+// SSN, address and EIN come from employee_identity, never employees.
+import { withIdentity } from "../_shared/employeeIdentity.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -136,12 +138,12 @@ const STATE_FIPS: Record<string, string> = { AL: '01', AK: '02', AZ: '04', AR: '
 // disagree with each other.
 async function collectW2Ytd({ supabase, company_id, company, year, ssnFor }: any) {
   const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
-  const { data: employees } = await supabase
+  const { data: employeeRows } = await supabase
     .from('employees')
-    .select('id, name, email, ssn_last4, ssn_encrypted, home_address, home_city, home_state, home_zip, tax_classification')
+    .select('id, name, email, tax_classification')
     .eq('company_id', company_id)
     .or('tax_classification.eq.W2,tax_classification.is.null');
-  const list = employees || [];
+  const list = await withIdentity(supabase, employeeRows);
   if (!list.length) return { employees: [], ytd: {}, problems: [] };
   const { data: paystubs } = await supabase
     .from('paystubs')
@@ -364,11 +366,12 @@ async function generate1099Set({ supabase, company_id, company, year }: any) {
   const yearStart = `${year}-01-01`;
   const yearEnd   = `${year}-12-31`;
 
-  const { data: contractors } = await supabase
+  const { data: contractorRows } = await supabase
     .from('employees')
-    .select('id, name, ssn_last4, w9_legal_name, w9_business_name, w9_federal_classification, w9_tin_type, w9_ein_last4, w9_signed_at, home_address, home_city, home_state, home_zip')
+    .select('id, name, w9_legal_name, w9_business_name, w9_federal_classification, w9_tin_type, w9_signed_at')
     .eq('company_id', company_id)
     .eq('tax_classification', '1099');
+  const contractors = await withIdentity(supabase, contractorRows);
 
   if (!contractors?.length) return { ok: true, generated: 0, contractors: 0 };
 
@@ -735,10 +738,11 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
   }
 
   // Active W-2 employees with paystubs in this quarter
-  const { data: emps } = await supabase
+  const { data: empRows } = await supabase
     .from('employees')
-    .select('id, name, ssn_last4, tax_classification')
+    .select('id, name, tax_classification')
     .eq('company_id', company_id);
+  const emps = await withIdentity(supabase, empRows);
   const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
 
   // Pull both this quarter's paystubs (for reportable wages) and YTD
@@ -1361,8 +1365,9 @@ async function generateDwsWageList({ supabase, company_id, company, year, quarte
   const startMonth = (quarter - 1) * 3;
   const periodStart = `${year}-${String(startMonth + 1).padStart(2, '0')}-01`;
   const periodEnd = new Date(Date.UTC(year, startMonth + 3, 0)).toISOString().slice(0, 10);
-  const { data: emps } = await supabase.from('employees')
-    .select('id, name, ssn_encrypted, tax_classification').eq('company_id', company_id);
+  const { data: empRows } = await supabase.from('employees')
+    .select('id, name, tax_classification').eq('company_id', company_id);
+  const emps = await withIdentity(supabase, empRows);
   const w2 = (emps || []).filter((e: any) => e.tax_classification !== '1099');
   const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay, taxable_wages')
     .eq('company_id', company_id).in('employee_id', w2.length ? w2.map((e: any) => e.id) : [-1])
@@ -1405,9 +1410,10 @@ async function generateDwsWageList({ supabase, company_id, company, year, quarte
 // =====================================================================
 async function generate1099Csv({ supabase, company_id, company, year, ssnFor, einFor }: any) {
   const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
-  const { data: contractors } = await supabase.from('employees')
-    .select('id, name, email, ssn_encrypted, w9_ein_encrypted, w9_tin_type, w9_legal_name, w9_business_name, home_address, home_city, home_state, home_zip')
+  const { data: contractorRows } = await supabase.from('employees')
+    .select('id, name, email, w9_tin_type, w9_legal_name, w9_business_name')
     .eq('company_id', company_id).eq('tax_classification', '1099');
+  const contractors = await withIdentity(supabase, contractorRows);
   if (!contractors?.length) return { ok: false, error: 'No contractors on file.' };
   const ids = contractors.map((c: any) => c.id);
   const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay')

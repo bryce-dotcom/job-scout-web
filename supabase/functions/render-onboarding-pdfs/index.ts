@@ -23,6 +23,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { withIdentity } from "../_shared/employeeIdentity.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -48,12 +49,20 @@ serve(async (req) => {
       .from('employee_onboarding_packets')
       // Explicit FK — there are TWO FKs from this table to employees
       // (employee_id AND created_by), so PostgREST won't auto-pick.
-      .select('*, employee:employees!employee_onboarding_packets_employee_id_fkey(id, name, email, phone, hire_date, home_address, home_city, home_state, home_zip, date_of_birth, ssn_last4, w9_ein_last4, tax_classification)')
+      .select('*, employee:employees!employee_onboarding_packets_employee_id_fkey(id, name, email, phone, hire_date, tax_classification)')
       .eq('id', packet_id)
       .single();
     if (pktErr || !packet) {
       console.error('[render-onboarding-pdfs] packet load failed:', pktErr);
       return json({ error: 'packet not found: ' + (pktErr?.message || 'unknown') }, 404);
+    }
+    // Address, DOB, SSN / EIN last four: employee_identity, not employees.
+    if (packet.employee) {
+      try {
+        packet.employee = (await withIdentity(supabase, [packet.employee]))[0];
+      } catch (e) {
+        return json({ error: (e as Error).message }, 500);
+      }
     }
 
     // Load every signed_documents row in this packet

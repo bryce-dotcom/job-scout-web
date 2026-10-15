@@ -11,8 +11,11 @@
 // Used by Payroll (right after a run) and by the Payroll Inbox (any run,
 // any time — a re-send after an employee adds an email).
 import { supabase } from './supabase'
+import { fetchIdentityMap, mergeIdentity } from './employeeIdentity'
 
-const EMP_SELECT = 'id, name, email, phone, role, pay_type, hourly_rate, ssn_last4, home_address, home_city, home_state, home_zip, tax_classification, w9_business_name, w9_legal_name, active'
+// SSN last four and home address come from employee_identity (HR-only), not
+// employees; see employeeIdentity.js.
+const EMP_SELECT = 'id, name, email, phone, role, pay_type, hourly_rate, tax_classification, w9_business_name, w9_legal_name, active'
 
 /**
  * Render and upload the PDFs a run is missing, then send.
@@ -28,7 +31,11 @@ export async function deliverPaystubs({ companyId, runId, company, channels = { 
   if (eErr) throw new Error('Could not load employees: ' + eErr.message)
   const live = (stubs || []).filter(s => (Number(s.gross_pay) || 0) > 0)
   if (!live.length) return { rendered: 0, emailed: 0, texted: 0, skipped: [], failed: [] }
-  const empById = Object.fromEntries((emps || []).map(e => [e.id, e]))
+  // A stub without the SSN last four and address is a wrong stub, so a failed
+  // identity load stops the run rather than rendering blanks.
+  const { map: identity, error: iErr } = await fetchIdentityMap(supabase, { companyId })
+  if (iErr) throw new Error('Could not load SSN and address: ' + (iErr.message || iErr))
+  const empById = Object.fromEntries(mergeIdentity(emps, identity).map(e => [e.id, e]))
 
   // Year-to-date on the stub needs every stub of that employee.
   const ids = [...new Set(live.map(s => s.employee_id))]

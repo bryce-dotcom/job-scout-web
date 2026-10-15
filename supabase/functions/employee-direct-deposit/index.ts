@@ -21,6 +21,7 @@
 // =====================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { saveIdentity } from "../_shared/employeeIdentity.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -94,11 +95,18 @@ serve(async (req) => {
       }).select('id, signed_at').single();
       if (error) throw new Error('Could not save the authorization: ' + error.message);
       const acct = String(snap.account_number || '');
-      await sb.from('employees').update({
-        dd_account_last4: acct.slice(-4),
-        dd_account_type: snap.account_type || 'checking',
-        updated_at: new Date().toISOString(),
-      }).eq('id', employeeId);
+      // Bank last four lives in employee_identity (the person + payroll admins), not employees.
+      // Non-fatal, as the employees update it replaces was: the signed
+      // authorization above is the record payroll-dd-export reads.
+      try {
+        await saveIdentity(sb, employeeId, companyId, {
+          dd_account_last4: acct.slice(-4),
+          dd_account_type: snap.account_type || 'checking',
+        });
+      } catch (e) {
+        console.error('[employee-direct-deposit]', (e as Error).message);
+      }
+      await sb.from('employees').update({ updated_at: new Date().toISOString() }).eq('id', employeeId);
       return { id: data.id, signed_at: data.signed_at, mask: acct.slice(-4), type: snap.account_type || 'checking', bank_name: snap.bank_name || null };
     };
 

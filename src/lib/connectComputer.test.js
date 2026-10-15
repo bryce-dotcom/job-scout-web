@@ -167,7 +167,9 @@ describe('a running agent picks up a fix by itself', () => {
 describe('no coworker SSN, bank or home address kept on a device', () => {
   const store = read('../lib/store.js')
   it('the startup employee list drops identity fields from every row but your own, before keeping or caching it', () => {
-    expect(store).toMatch(/const IDENTITY = \['ssn_last4', 'ssn_encrypted', 'date_of_birth', 'home_address'/)
+    // The list is the shared one (lib/employeeIdentity.js; its test pins the fields).
+    expect(store).toMatch(/import \{ IDENTITY_FIELDS \} from '\.\/employeeIdentity'/)
+    expect(store).toMatch(/const IDENTITY = IDENTITY_FIELDS/)
     expect(store).toMatch(/if \(!e \|\| e\.id === me\) return e/)
     expect(store).toMatch(/const cached = scrub\(await offlineDb\.getAll\('employees'\)\)/)
     expect(store).toMatch(/await offlineDb\.putAll\('employees', clean\)/)

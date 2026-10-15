@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { fetchIdentityMap, mergeIdentity } from '../lib/employeeIdentity'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -101,20 +102,23 @@ export default function PayrollSetup() {
 
   const load = async () => {
     if (!companyId || !allowed) return
-    const [co, cfg, emps, dd, rn, st] = await Promise.all([
+    const [co, cfg, emps, dd, rn, st, ident] = await Promise.all([
       supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
       supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payroll_config').maybeSingle(),
-      supabase.from('employees').select('id, name, email, phone, role, active, tax_classification, is_hourly, is_salary, hourly_rate, annual_salary, w4_filing_status, ssn_last4, home_address, home_zip, hire_date, is_admin, user_role').eq('company_id', companyId).eq('active', true).order('name'),
+      supabase.from('employees').select('id, name, email, phone, role, active, tax_classification, is_hourly, is_salary, hourly_rate, annual_salary, w4_filing_status, hire_date, is_admin, user_role').eq('company_id', companyId).eq('active', true).order('name'),
       supabase.from('signed_documents').select('employee_id').eq('company_id', companyId).eq('document_kind', 'direct_deposit_auth').eq('status', 'signed'),
       supabase.from('payroll_runs').select('id, pay_date, period_start, period_end, employee_count, total_gross').eq('company_id', companyId).order('pay_date'),
       supabase.from('paystubs').select('id', { count: 'exact', head: true }).eq('company_id', companyId).gte('pay_date', `${new Date().getFullYear()}-01-01`),
+      // SSN last four + address: employee_identity (HR-only), not employees.
+      fetchIdentityMap(supabase, { companyId }),
     ])
+    if (ident.error) console.warn('[PayrollSetup] identity load failed:', ident.error.message || ident.error)
     const { data: lastImp } = await supabase.from('paystubs').select('pay_date, amendment_reason').eq('company_id', companyId).ilike('amendment_reason', 'Imported from %').order('pay_date', { ascending: false }).limit(1)
     setLastImported(lastImp?.[0] || null)
     let parsed = {}
     try { parsed = cfg.data?.value ? JSON.parse(cfg.data.value) : {} } catch { parsed = {} }
     const c = co.data || {}
-    setCompany(c); setConfig(parsed); setEmployees(emps.data || []); setRuns(rn.data || []); setStubCount(st.count || 0)
+    setCompany(c); setConfig(parsed); setEmployees(mergeIdentity(emps.data, ident.map)); setRuns(rn.data || []); setStubCount(st.count || 0)
     const m = {}; for (const d of dd.data || []) m[d.employee_id] = true; setDdByEmp(m)
     setForm({
       ein: c.ein || '', legal_name: c.legal_name || c.company_name || '', entity_type: c.entity_type || '',

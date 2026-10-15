@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { supabase } from '../lib/supabase'
+import { fetchIdentityMap, mergeIdentity } from '../lib/employeeIdentity'
 import PayrollRemittancePanel from '../components/PayrollRemittancePanel'
 import { suiRateStatus, suiStateFor } from '../lib/suiRate'
 import { parseLocalDate, localDateStr } from '../lib/localDate'
@@ -193,7 +194,7 @@ export default function PayrollInbox() {
     const today = new Date()
     const sixtyDaysAgo = new Date(today.getTime() - 60 * 86400000).toISOString().slice(0, 10)
 
-    const [{ data: liab }, { data: fil }, { data: emps }, { data: suiRows }] = await Promise.all([
+    const [{ data: liab }, { data: fil }, { data: empRows }, { data: suiRows }, { map: identity, error: idErr }] = await Promise.all([
       supabase
         .from('payroll_tax_liabilities')
         .select('*')
@@ -209,7 +210,7 @@ export default function PayrollInbox() {
       // Pull employees for new-hire reports (within 60 days of hire) + setup-gap detection.
       supabase
         .from('employees')
-        .select('id, name, email, active, tax_classification, hire_date, new_hire_reported_at, w4_filing_status, w9_signed_at, ssn_last4, w9_ein_last4, dd_account_last4')
+        .select('id, name, email, active, tax_classification, hire_date, new_hire_reported_at, w4_filing_status, w9_signed_at')
         .eq('company_id', companyId)
         .order('id'),
       supabase
@@ -217,7 +218,11 @@ export default function PayrollInbox() {
         .select('id, rate_pct, effective_date, source')
         .eq('company_id', companyId)
         .order('effective_date', { ascending: false }),
+      // SSN / EIN / bank last four: employee_identity (HR-only), not employees.
+      fetchIdentityMap(supabase, { companyId }),
     ])
+    if (idErr) console.warn('[PayrollInbox] identity load failed:', idErr.message || idErr)
+    const emps = mergeIdentity(empRows, identity)
 
     setLiabilities(liab || [])
     setFilings(fil || [])

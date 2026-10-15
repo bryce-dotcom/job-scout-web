@@ -6,6 +6,7 @@ import { offlineDb } from './offlineDb';
 import { syncQueue } from './syncQueue';
 import { dedupeStripePayouts } from './bankLedger';
 import { geocodeAddress } from './geocode';
+import { IDENTITY_FIELDS } from './employeeIdentity';
 
 // Geocode on save, client half: a lead typed into the app gets its pin before
 // the row leaves the browser, so Liahona shows it immediately. The server
@@ -289,12 +290,12 @@ export const useStore = create(
         // home address. Nothing read them from here: Payroll, Payroll Inbox,
         // Payroll setup, My Pay, paystubs and the Employees page each fetch
         // what they need themselves. So they are dropped from every row but
-        // the person's own before the list is kept or cached. (The database
-        // itself still lets a signed-in user ask for them — that is the next
-        // step, a separate table only HR and the person can read.)
+        // the person's own before the list is kept or cached. (They now live
+        // in employee_identity, which only HR and the person can read; this
+        // scrub covers older cached copies and the legacy columns until the
+        // follow-up migration empties them.)
         const me = get().user?.id;
-        const IDENTITY = ['ssn_last4', 'ssn_encrypted', 'date_of_birth', 'home_address', 'home_city', 'home_state', 'home_zip',
-          'dd_account_encrypted', 'dd_routing_encrypted', 'dd_account_last4', 'dd_account_type', 'w9_ein_encrypted', 'w9_ein_last4'];
+        const IDENTITY = IDENTITY_FIELDS;
         const scrub = (rows) => (rows || []).map((e) => {
           if (!e || e.id === me) return e;
           const out = { ...e };
