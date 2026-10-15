@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { serviceAddressToShow } from '../lib/serviceAddress'
 import { sendInvoice, markJobInvoicedAfterSend } from '../lib/invoiceSend'
+import { textInvoicePreview } from '../lib/invoiceText'
+import { mayTextProblem, TRANSACTIONAL } from '../lib/smsConsent'
 import { emailListIsClean } from '../../supabase/functions/_shared/emailList.ts'
 import { parseEmailList } from '../../supabase/functions/_shared/emailList.ts'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -8,7 +10,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { RecordHistoryButton } from '../components/RecordHistory'
 import { useTheme } from '../components/Layout'
-import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip, Receipt } from 'lucide-react'
+import { ArrowLeft, Plus, X, DollarSign, CheckCircle, Send, Lock, Pencil, Download, FileText, Trash2, Mail, Link2, RotateCcw, AlertTriangle, CreditCard, ExternalLink, Paperclip, Receipt, MessageSquare } from 'lucide-react'
 import DealBreadcrumb from '../components/DealBreadcrumb'
 import { invoiceStatusColors as statusColors } from '../lib/statusColors'
 import { toast } from '../lib/toast'
@@ -152,6 +154,7 @@ export default function InvoiceDetail() {
 
   // Send modal state
   const [showSendModal, setShowSendModal] = useState(false)
+  const [textingInvoice, setTextingInvoice] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
   // Tracy (9d5a7267): "a way to CC someone on an invoice email so a couple of
   // people can see the same invoice at the same time."
@@ -2196,6 +2199,46 @@ ${CHANGE_INSTEAD}`)
     setSendingEmail(false)
   }
 
+  // Text the invoice. Tracy, 2026-10-02: "It would be awesome to have the
+  // ability to text an invoice when an email is not provided."
+  //
+  // Transactional, so it goes under the business relationship rather than a
+  // marketing opt-in — lib/smsConsent is the rule and this does not second-
+  // guess it. A STOP clears sms_consent and mayText reads that.
+  const handleTextInvoice = async () => {
+    const preview = textPreview
+    if (preview.problem) { toast.error(preview.problem); return }
+    setTextingInvoice(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('send-sms', {
+        body: {
+          company_id: invoice.company_id || companyId,
+          to: invoice.customer?.phone,
+          message: preview.body,
+          customer_id: invoice.customer_id || null,
+          trigger: 'invoice_sent',
+          log: true,
+          // Wait for Twilio to say it took the message, so a rejection is
+          // reported here rather than logged as sent and forgotten.
+          verify: true,
+        },
+      })
+      if (error) throw new Error(error.message || 'send-sms failed')
+      if (data && data.ok === false) throw new Error(data.error || data.message || 'The carrier refused it')
+
+      // Sending the invoice is what moves the job to Invoiced — the same
+      // rule as the email path, because to the customer it is the same act
+      // of being billed (lib/invoiceSend).
+      await markJobInvoicedAfterSend(supabase, invoice)
+      toast.success('Invoice texted')
+      setShowSendModal(false)
+      await fetchInvoiceData()
+    } catch (err) {
+      toast.error('Could not text it: ' + err.message)
+    }
+    setTextingInvoice(false)
+  }
+
   const formatCurrency = (amount) => {
     if (!amount) return '$0.00'
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
@@ -2281,6 +2324,16 @@ ${CHANGE_INSTEAD}`)
   const salesTaxOnInvoice = parseFloat(invoice.tax_amount) || 0
   const customerTotal = (isLegacyNetInvoice ? grossAmount : (grossAmount - discountApplied)) + salesTaxOnInvoice
   const balanceDue = customerTotal + ccFeeOnInvoice - totalPaid
+
+  // Everything the Send panel needs to offer a text: the body, the portal
+  // link, what it will cost in segments, and why it cannot go if it cannot.
+  // balanceDue, not the gross — the customer is told what they still owe.
+  const textPreview = textInvoicePreview({
+    company,
+    invoice,
+    amountDue: balanceDue,
+    consentProblem: mayTextProblem(invoice?.customer, TRANSACTIONAL),
+  })
 
   // If the invoice was generated from a job with a paid deposit, the deposit
   // amount was rolled into discount_applied alongside the utility incentive
@@ -4675,6 +4728,57 @@ ${CHANGE_INSTEAD}`)
                   </label>
                 </div>
               </div>
+              {/* Text it instead — Tracy's customer who never gave an email.
+                  The body and what it costs are shown before anyone sends:
+                  one segment is one message, two is two, and nobody should
+                  find that out from the Twilio bill. */}
+              {invoice?.customer?.phone && (
+                <div style={{
+                  border: `1px solid ${textPreview.problem ? theme.border : 'rgba(90,99,73,0.3)'}`,
+                  backgroundColor: theme.bg, borderRadius: '10px',
+                  padding: '12px', marginBottom: '12px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Or text it to {invoice.customer.phone}
+                    </span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                      {textPreview.segments} message{textPreview.segments === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {textPreview.problem ? (
+                    <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0, lineHeight: 1.5 }}>
+                      {textPreview.problem}
+                    </p>
+                  ) : (
+                    <>
+                      <div style={{
+                        fontSize: '12.5px', color: theme.text, backgroundColor: theme.bgCard,
+                        border: `1px solid ${theme.border}`, borderRadius: '8px',
+                        padding: '9px', marginBottom: '8px', wordBreak: 'break-word',
+                      }}>
+                        {textPreview.body}
+                      </div>
+                      <button
+                        onClick={handleTextInvoice}
+                        disabled={textingInvoice}
+                        style={{
+                          padding: '9px 16px', fontSize: '13px', fontWeight: 600,
+                          backgroundColor: 'transparent', color: theme.accent,
+                          border: `1px solid ${theme.accent}`, borderRadius: '8px',
+                          cursor: textingInvoice ? 'not-allowed' : 'pointer',
+                          opacity: textingInvoice ? 0.6 : 1,
+                          display: 'flex', alignItems: 'center', gap: '7px',
+                        }}
+                      >
+                        <MessageSquare size={15} />
+                        {textingInvoice ? 'Texting…' : 'Text the invoice'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setShowSendModal(false)}
