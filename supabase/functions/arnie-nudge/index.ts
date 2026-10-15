@@ -31,7 +31,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { accessLevel } from '../_shared/auth.ts'
 import { tzOffsetMinutes } from '../_shared/arnieTime.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
-import { isServiceRole, sendArnieEmail, sendArnieSms } from '../_shared/arnieSend.ts'
+import { isServiceRole, sendArnieEmail, sendArnieSms, assistantName } from '../_shared/arnieSend.ts'
 import { buildNudges, composeNudge, MAX_ITEMS, type Nudge } from '../_shared/arnieNudge.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -97,7 +97,12 @@ Deno.serve(async (req) => {
       const to = s.channel === 'sms' ? String(emp.phone || '').trim() : String(emp.email || '').trim()
       const sent = !to ? { sent: false, error: `no ${s.channel === 'sms' ? 'phone' : 'email'} on the employee` }
         : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text, { trigger: 'arnie_nudge', employee_id: emp.id })
-        : await sendArnieEmail(to, `Arnie: ${mine.length === 1 ? mine[0].subject : mine.length + ' things need a look'}`, 'From Arnie', text)
+        : await (async () => {
+          // In their own assistant's name — Jenny's people were getting "Arnie:".
+          const who = await assistantName(r, emp.id)
+          const first = who.replace(/^OG\s+/i, '').split(/\s+/)[0]
+          return sendArnieEmail(to, `${first}: ${mine.length === 1 ? mine[0].subject : mine.length + ' things need a look'}`, `From ${first}`, text, who)
+        })()
       out.sent = sent.sent; if (sent.error) out.error = sent.error
       // Record every item, sent or not: a failed send is retried next hour
       // only if nothing was recorded — so record only on success, and keep

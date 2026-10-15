@@ -491,7 +491,7 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     table: 'arnie_routines',
     minLevel: 0,
     verb: 'Set up',
-    done: 'Set up. It runs at that hour in your zone and you can stop it any time from Arnie.',
+    done: 'Set up. It runs at that hour in your zone and you can stop it any time from Routines, on your assistant’s page.',
     fields: {
       routine_name: { column: null, label: 'Name', max: 60 },
       prompt: { column: null, label: 'Asks',  required: true, max: 600 },
@@ -509,7 +509,7 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     table: 'arnie_memories',
     minLevel: 0,
     verb: 'Remember',
-    done: 'Remembered. It rides into every conversation from now on; forget it from Arnie → Settings.',
+    done: 'Remembered. It rides into every conversation from now on; forget it from Settings, on your assistant’s page.',
     fields: {
       text: { column: 'text', label: 'Remember', required: true, max: 240 },
       kind: { column: 'kind', label: 'Kind', max: 12, oneOf: ['preference', 'alias', 'fact'] },
@@ -526,7 +526,7 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       }
       const mine = await readRecordList(r, `arnie_memories?select=id,text&company_id=eq.${caller.companyId}&employee_id=eq.${caller.employeeId}&limit=100`)
       if (mine.some((m: any) => String(m.text).trim().toLowerCase() === text.toLowerCase())) return { ok: false, error: `I already have that: "${text}".` }
-      if (mine.length >= 40) return { ok: false, error: `I am holding 40 things for you already — that is the limit. Forget one from Arnie → Settings first.` }
+      if (mine.length >= 40) return { ok: false, error: `I am holding 40 things for you already — that is the limit. Forget one from Settings, on your assistant's page, first.` }
       return {
         ok: true,
         columns: { employee_id: caller.employeeId, created_by: caller.email, source: 'arnie' },

@@ -93,10 +93,12 @@ describe('the words', () => {
 
 describe('one sender for the brief and the nudge, one cron pattern', () => {
   it('the brief and the nudge send through _shared/arnieSend.ts', () => {
-    expect(brief).toMatch(/import \{ isServiceRole, sendArnieEmail, sendArnieSms \} from '\.\.\/_shared\/arnieSend\.ts'/)
+    expect(brief).toMatch(/import \{ isServiceRole, sendArnieEmail, sendArnieSms, assistantName \} from '\.\.\/_shared\/arnieSend\.ts'/)
     expect(brief).not.toMatch(/api\.resend\.com/)
-    // Sends from arnie@ since 2026-10-10, so a reply reaches him.
-    expect(send).toMatch(/from: 'OG Arnie <arnie@appsannex.com>'/)
+    // Sends from arnie@ since 2026-10-10, so a reply reaches him — under the
+    // person's own assistant's name since 2026-10-14.
+    expect(send).toMatch(/from: `\$\{fromName\} <arnie@appsannex.com>`/)
+    expect(brief).toMatch(/await assistantName\(r, emp\.id\)/)
     expect(send).toMatch(/role \|\| ''\) === 'service_role'/)
   })
   it('the cron carries the service key, runs at :35 (the brief is :05), and is in the deploy list', () => {

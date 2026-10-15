@@ -139,3 +139,20 @@ describe('no coworker SSN, bank or home address kept on a device', () => {
     expect(store).toMatch(/await offlineDb\.putAll\('employees', clean\)/)
   })
 })
+
+describe('small things from London\'s evening', () => {
+  const panel = read('../pages/agents/arnie/MachinePanel.jsx')
+  const send = read('../../supabase/functions/_shared/arnieSend.ts')
+  const chat = read('../../supabase/functions/arnie-chat/index.ts')
+  it('an old launcher is asked for one re-download', () => {
+    expect(panel).toMatch(/session\?\.capabilities\?\.self_update === false/)
+  })
+  it('emails go out in the person\'s own assistant\'s name', () => {
+    expect(send).toMatch(/from: `\$\{fromName\} <arnie@appsannex\.com>`/)
+    expect(send).toMatch(/`Put \$\{firstName\(who\)\} on it`/)
+    expect(send).not.toMatch(/'Ask Arnie'/)
+  })
+  it('a website is never the app', () => {
+    expect(chat).toMatch(/A WEBSITE is never the app/)
+  })
+})

@@ -20,7 +20,7 @@ import { callerFor, type Caller } from '../_shared/auth.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { tzOffsetMinutes } from '../_shared/arnieTime.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
-import { isServiceRole, sendArnieEmail, sendArnieSms } from '../_shared/arnieSend.ts'
+import { isServiceRole, sendArnieEmail, sendArnieSms, assistantName } from '../_shared/arnieSend.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
       const to = s.channel === 'sms' ? String(emp.phone || '').trim() : String(emp.email || '').trim()
       const sent = !to ? { sent: false, error: `no ${s.channel === 'sms' ? 'phone' : 'email'} on the employee` }
         : s.channel === 'sms' ? await sendArnieSms(r, emp.company_id, to, text, { trigger: 'arnie_brief', employee_id: emp.id })
-        : await sendArnieEmail(to, `Your morning brief, ${String(emp.name).split(' ')[0]}`, `Morning brief — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`, text)
+        : await sendArnieEmail(to, `Your morning brief, ${String(emp.name).split(' ')[0]}`, `Morning brief — ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`, text, await assistantName(r, emp.id))
       out.sent = sent.sent; if (sent.error) out.error = sent.error
       await fetch(`${SUPABASE_URL}/rest/v1/arnie_brief_subscriptions?id=eq.${s.id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify(sent.sent ? { last_sent_on: date, last_error: null, updated_at: new Date().toISOString() } : { last_error: sent.error || 'send failed', updated_at: new Date().toISOString() }) })

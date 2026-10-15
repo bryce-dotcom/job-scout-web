@@ -55,7 +55,8 @@ describe('what he will not keep', () => {
 describe('the card says Remember, and forgetting is one tap', () => {
   it('verb and done', () => {
     expect(entry).toMatch(/verb: 'Remember'/)
-    expect(entry).toMatch(/forget it from Arnie → Settings/)
+    // Not "Arnie → Settings" — said to Jenny's people too (2026-10-14).
+    expect(entry).toMatch(/forget it from Settings, on your assistant’s page/)
   })
   it('the settings panel lists only the caller\'s rows, with a delete and no add', () => {
     expect(panel).toMatch(/\.eq\('company_id', companyId\)\.eq\('employee_id', user\.id\)/)

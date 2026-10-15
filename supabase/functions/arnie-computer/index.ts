@@ -163,6 +163,8 @@ Deno.serve(async (req) => {
                 const tri = (v: unknown) => (v === true ? true : v === false ? false : null)
                 return { screen: tri(p.screen), accessibility: tri(p.accessibility) }
               })(),
+              // Can this computer's launcher pick up new builds by itself?
+              self_update: (body.capabilities as Record<string, unknown>).self_update === true,
             }
             : null,
         }),

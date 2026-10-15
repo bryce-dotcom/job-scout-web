@@ -241,7 +241,9 @@ describe('how anyone finds out he can be texted', () => {
   it('the brief comes FROM an address that reaches him', () => {
     // A reply to invoices@ went nowhere; recipientKind routes arnie@ to the
     // conversation branch.
-    expect(send).toMatch(/from: 'OG Arnie <arnie@appsannex\.com>', reply_to: 'arnie@appsannex\.com'/)
+    // The display name follows the person's assistant (2026-10-14); the
+    // ADDRESS is still arnie@ for everyone, which is what routes a reply.
+    expect(send).toMatch(/from: `\$\{fromName\} <arnie@appsannex\.com>`, reply_to: 'arnie@appsannex\.com'/)
     expect(send).not.toMatch(/from: 'OG Arnie <invoices@/)
   })
 

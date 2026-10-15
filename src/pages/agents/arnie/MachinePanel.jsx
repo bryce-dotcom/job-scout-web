@@ -147,6 +147,18 @@ export default function MachinePanel({ who = 'Arnie', session, status, connected
           </p>
         )}
 
+        {/* AN OLD LAUNCHER. Since 2026-10-14 a running agent picks up new
+            builds by itself — but only under a launcher that can loop round,
+            and the .cmd people saved before then cannot. One re-download fixes
+            it for good, and nobody would know to do it unless told here.
+            Absent from older agents' reports, so only an explicit false asks. */}
+        {connected && session?.capabilities?.self_update === false && (
+          <p style={{ margin: '10px 0 0', color: c.faint, fontSize: 12, lineHeight: 1.45 }}>
+            Download the agent once more from this page and use the new copy — after that it
+            keeps itself up to date without anyone restarting it.
+          </p>
+        )}
+
         {/* What this machine cannot do, from the machine itself. On a Mac this
             is the difference between teaching working and recording nothing. */}
         {connected && session?.capabilities?.record === false && (

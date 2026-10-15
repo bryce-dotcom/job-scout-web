@@ -515,7 +515,12 @@ const handshake = {
   platform: process.platform,
   agent_version: VERSION,
   agent_build: BUILD,
-  capabilities: { perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes },
+  capabilities: {
+    perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes,
+    // Whether this launcher can loop round for a new build (see newerBuildOut).
+    // The page uses it to ask for ONE re-download from computers that cannot.
+    self_update: process.env.JOBSCOUT_LAUNCHER_LOOP === '1',
+  },
 }
 // The Mac's switches, asked of macOS itself (see checkPermissions). The
 // specific "turn on X" lines lead the notes, so the page and the assistant
