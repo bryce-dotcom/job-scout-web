@@ -3724,17 +3724,12 @@ export default function Payroll() {
             </>
           )
         })()}
-        {locationTrailEntry && (
-          <LocationTrailModal
-            entry={locationTrailEntry}
-            employeeName={(() => {
-              const emp = employees?.find(e => e.id === locationTrailEntry.employee_id)
-              return emp ? emp.name : 'Employee'
-            })()}
-            onClose={() => setLocationTrailEntry(null)}
-            theme={theme}
-          />
-        )}
+        {/* The location trail modal is rendered ONCE, at the foot of this
+            component. It used to be here as well, and both copies hung off the
+            same locationTrailEntry — so one click on "View location trail"
+            mounted two Leaflet maps over each other, each building its own
+            tiles, markers and pan animation, and each tearing the other's
+            timing about on close. */}
 
         <AddTimeModal
           show={showAddTimeModal}

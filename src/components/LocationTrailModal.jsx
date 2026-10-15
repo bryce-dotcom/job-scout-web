@@ -128,6 +128,9 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
   useEffect(() => {
     if (loading || !mapRef.current) return
     if (mapInstance.current) {
+      // Same reason as the cleanup below: this effect re-runs on object deps,
+      // so it tears down a map that may still be mid-animation.
+      try { mapInstance.current.stop() } catch { /* older Leaflet: nothing to stop */ }
       mapInstance.current.remove()
       mapInstance.current = null
     }
@@ -259,10 +262,28 @@ export default function LocationTrailModal({ entry, employeeName, onClose, theme
     const boundPoints = [...points.map(p => [p.lat, p.lng]), ...truckLatLngs]
     if (hasJobPin) boundPoints.push([jobLat, jobLng])
     const bounds = L.latLngBounds(boundPoints)
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 })
+    // animate: false is the fix for Alayda's white screen on /payroll.
+    //
+    // fitBounds ANIMATES by default: it queues a pan and returns. This effect
+    // re-runs on `entry`, `job`, `vehicle` and `vehiclePoints` — all objects,
+    // all new references on most renders — and the first thing it does is
+    // map.remove(). Remove the map mid-pan and the queued frame still calls
+    // panBy, which reaches for a map pane that no longer exists:
+    //
+    //   TypeError: Cannot read properties of undefined (reading 'classList')
+    //       at cn (…) at K.panBy (…)
+    //
+    // Nothing to animate, nothing left to fire after the map is gone. The
+    // frame still lands where it should — fitBounds without animation sets
+    // the same view, it just arrives instead of gliding.
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16, animate: false })
 
     return () => {
       if (mapInstance.current) {
+        // Belt and braces: stop() cancels any pan or zoom still in flight
+        // (a user's own drag, inertia, a double-click zoom) before the
+        // container goes. Leaflet provides it for exactly this.
+        try { mapInstance.current.stop() } catch { /* older Leaflet: nothing to stop */ }
         mapInstance.current.remove()
         mapInstance.current = null
       }
