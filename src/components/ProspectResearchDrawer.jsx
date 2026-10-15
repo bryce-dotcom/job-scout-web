@@ -27,7 +27,11 @@ import { Search, X, ExternalLink, Sparkles, MapPin, Users, Briefcase, CheckCircl
 // handed to the map to plot; otherwise a "View on map" button opens Liahona.
 // mapArea: { lat, lng, radius_km, label } — set by Liahona so the search is
 // scoped to what the map is showing; the Where field starts from its label.
-export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile, onResults, mapArea = null }) {
+// inline: render as a panel in the page (the Marketing Find tab) rather than
+// a drawer over it. importLabel: what the big green button says; onImported
+// receives the lead ids (new and already-imported) so the caller can act on
+// them — Marketing opens a campaign with exactly those people.
+export default function ProspectResearchDrawer({ companyId, employees = [], onClose, onImported, theme, isMobile, onResults, mapArea = null, inline = false, importLabel = null }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [where, setWhere] = useState(mapArea?.label || '')
@@ -133,16 +137,17 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
 
   const importSelected = async () => {
     if (selectedIds.size === 0 || importing) return
-    if (!window.confirm(`Add ${selectedIds.size} prospect${selectedIds.size === 1 ? '' : 's'} to the lead pipeline?`)) return
+    if (!importLabel && !window.confirm(`Add ${selectedIds.size} prospect${selectedIds.size === 1 ? '' : 's'} to the lead pipeline?`)) return
     setImporting(true)
     try {
       const data = await call('import', {
         candidate_ids: Array.from(selectedIds),
         salesperson_id: assigneeId ? Number(assigneeId) : undefined,
       })
-      alert(`Imported ${data.imported} new lead${data.imported === 1 ? '' : 's'}` +
+      if (!importLabel) alert(`Imported ${data.imported} new lead${data.imported === 1 ? '' : 's'}` +
         (data.already_imported > 0 ? ` (${data.already_imported} already in pipeline)` : ''))
-      onImported?.()
+      onImported?.(data.lead_ids || [])
+      setSelectedIds(new Set())
       onClose?.()
     } catch (err) {
       alert('Import failed: ' + err.message)
@@ -150,14 +155,18 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
   }
 
   // ── Styles ─────────────────────────────────────────────────────
-  const overlay = {
+  const overlay = inline ? { display: 'flex' } : {
     position: 'fixed', inset: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 90,
     display: 'flex',
     justifyContent: isMobile ? 'stretch' : 'flex-end',
   }
-  const panel = {
+  const panel = inline ? {
+    width: '100%', minHeight: 420, maxHeight: 'calc(100dvh - 180px)',
+    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden',
+    display: 'flex', flexDirection: 'column',
+  } : {
     width: isMobile ? '100%' : 540,
     height: '100dvh',
     backgroundColor: theme.bg,
@@ -186,7 +195,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
   }
 
   return (
-    <div style={overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+    <div style={overlay} onClick={(e) => { if (!inline && e.target === e.currentTarget) onClose?.() }}>
       <div style={panel}>
         {/* Header */}
         <div style={header}>
@@ -205,7 +214,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
               )}
             </div>
           </div>
-          <button
+          {!inline && <button
             onClick={onClose}
             style={{
               padding: 8, minWidth: 36, minHeight: 36,
@@ -215,7 +224,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
             aria-label="Close"
           >
             <X size={20} />
-          </button>
+          </button>}
         </div>
 
         {/* Quota strip — shows how much of this month's plan is used */}
@@ -554,7 +563,7 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
                   opacity: importing ? 0.6 : 1,
                 }}
               >
-                {importing ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Importing…</> : <><UserPlus size={16} /> Add {selectedIds.size} to leads</>}
+                {importing ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Importing…</> : <><UserPlus size={16} /> {importLabel ? `${importLabel} (${selectedIds.size})` : `Add ${selectedIds.size} to leads`}</>}
               </button>
             </div>
           </div>

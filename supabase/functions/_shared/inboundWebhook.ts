@@ -110,12 +110,13 @@ export function isAutoReply(subject: string | null | undefined, headers: Record<
 //                                   alerts and forwarded invitations land there
 //   other      invoices@, receipts@, noreply@, anything else — never an estimate
 //                                   reply, so never filed on one
-export type RecipientKind = 'token' | 'feedback' | 'bids' | 'estimates' | 'arnie' | 'other'
+export type RecipientKind = 'token' | 'feedback' | 'bids' | 'estimates' | 'arnie' | 'other' | 'campaign'
 export function recipientKind(to: string | null | undefined): RecipientKind {
   const local = String(to || '').toLowerCase().split('@')[0]
   if (/^reply\+/.test(local)) return 'token'
   if (/^feedback\+/.test(local)) return 'feedback'
   if (/^bids\+/.test(local)) return 'bids'
+  if (/^campaign\+/.test(local)) return 'campaign'
   if (local === 'estimates') return 'estimates'
   // Mail TO Arnie: a person writing to their own assistant, not a customer
   // replying to a document. Handled before any of the filing below.

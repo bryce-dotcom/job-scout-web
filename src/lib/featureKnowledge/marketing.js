@@ -114,6 +114,9 @@ export default {
       "Closing the loop (2026-10-12): the nightly pass emails managers a digest of what it drafted (settings marketing_digest_email=false turns it off); the Calendar marks the days still needed to hit the weekly target as open and a tap on an empty day offers the next approved posts for 9:00 that morning; per-post performance numbers are kept on the post and the five best-performing captions are examples for the drafter beside the marketer's edits; the Performance tab shows the month's AI pictures, tracks and narration against the caps with their cost; the owner's Arnie panel shows the platform company the ElevenLabs pool used by every tenant together.",
       "Website & listings card: 'Use the company settings' pulls companies.website, the Google place (listing + review link) and settings google_review_url into the brand's links; 'Save these to company settings' pushes them back (website, place id parsed from the Maps URL, review URL). The card says whether they match.",
       "The Email tab is a link to Conrad Connect.",
+      "Find tab (2026-10-15): Prospect Scout, re-homed from Lead Setter. Say who you want in plain words ('roofing contractors in Utah County with 10+ trucks'), tick the matches, press Add to a campaign. The ticked people become leads (lead_source 'AI Prospect Research') on the Lead Setter board and the Campaigns tab opens a new campaign with exactly them. Same prospecting quota as before (free 3 searches/10 enrichments a month; Pro 50/200).",
+      "Campaigns tab (2026-10-15, week one of MARKETING_REVIEW.md §3): ONE object — who (Prospects / Leads by stage / Past customers who opted in, or the people picked on Find), what (up to four emails on days 0, 3, 7, 14 — Write it for me drafts each from the brand kit; fields {{first_name}} {{name}} {{company}} {{our_company}}), and Stop when they reply. Start materialises campaign_members; a 15-minute pg_cron tick (marketing-campaign {tick:true}, Vault key) sends what is due through Resend from '<brand> <marketing@appsannex.com>', only 8am-7pm in the company's timezone, at most 300 a day per company. Every email carries the company name and address, an Unsubscribe link and List-Unsubscribe (one-click) headers. A reply goes to campaign+<token>@appsannex.com → inbound-email marks the member replied, moves a New lead to Contacted, and notifies the setter/salesperson (type campaign_reply, route /lead-setter). Unsubscribes, bounces and complaints land in email_suppressions, which every campaign send checks. Texts and call cards are week two; a text touch is never sent to anyone without sms_consent.",
+      "Only a Manager or above runs campaigns (RLS on marketing_campaigns; campaign_members and campaign_events are server-written). Send me a test mails the touch to the signed-in person with a sample name. Nothing in Conrad Connect is touched: campaigns send through Resend like every other email in the app.",
     ],
 
     faqs: [
@@ -122,6 +125,8 @@ export default {
       { q: 'Can a tech post directly?', a: 'No. Techs share photos and can draft; a Manager or above approves and publishes.' },
       { q: 'How does it learn my style?', a: 'Every approved caption and every edit you make to an AI draft is fed back as an example on the next draft. Delete or archive a post to remove it from the examples.' },
       { q: 'Does it post to Google Ads?', a: 'Not yet. Phase 1 is organic posts through the publisher. Google Business Profile posts are included; paid ads are a later phase.' },
+      { q: 'How do I email a list of prospects?', a: 'Find tab: describe who you want, tick the matches, Add to a campaign. Name it, let Write it for me draft the emails, Start. Replies show up on the Lead Setter board.' },
+      { q: 'Can a campaign text people?', a: 'Not this week. Email goes out now; text touches come next and only to people who have given SMS consent. Call touches will make a Callback card on the board.' },
     ],
 
     actions: {
@@ -129,9 +134,11 @@ export default {
       newPost:  { route: '/marketing', label: 'New post', hint: 'Top-right New post' },
       brand:    { route: '/marketing', label: 'Edit the brand kit', hint: 'Brand tab' },
       channels: { route: '/marketing', label: 'Connect social accounts', hint: 'Channels tab' },
+      find:     { route: '/marketing', label: 'Find prospects', hint: 'Find tab' },
+      campaigns:{ route: '/marketing', label: 'Start a campaign', hint: 'Campaigns tab → New campaign' },
     },
   },
 
-  lastVerified: '2026-10-04',
+  lastVerified: '2026-10-15',
   freshUntil: 90,
 }

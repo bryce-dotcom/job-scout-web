@@ -3,9 +3,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
-import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, bidsTokenFromAddresses } from "../_shared/replyToken.ts";
+import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, bidsTokenFromAddresses, parseCampaignToken, campaignTokenFromAddresses } from "../_shared/replyToken.ts";
 import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
+import { managerIds } from "../_shared/marketing.ts";
 import { arnieByEmail } from "../_shared/arnieSms.ts";
 import { employeeByContact } from "../_shared/arnieHeadless.ts";
 
@@ -345,6 +346,63 @@ serve(async (req) => {
       return json({ ok: true, matched: true, kind: 'bids', company_id: bidsCompanyId, bid_inbox_id: inboxId, attachments: attachments.length });
     }
     console.warn(`[inbound-email] mail to a bids address did not resolve to a company (${bidsToken ? 'token did not verify' : 'no token'}) — handling as other mail`);
+    kind = 'other';
+  }
+
+  // ── a reply to a campaign email ──────────────────────────────────────────
+  // The whole point of a campaign: someone wrote back. The member is marked
+  // replied (and, if the campaign says so, hears nothing more), the lead
+  // moves to Contacted on the Lead Setter board, and the person who owns
+  // the lead — the setter, else the salesperson, else the managers — gets
+  // a notification with the first lines of what was said. A token that
+  // does not verify is ordinary mail.
+  if (kind === 'campaign') {
+    const cToken = campaignTokenFromAddresses([mail.to, ...(mail.allRecipients || [])]);
+    const memberId = cToken && REPLY_SECRET ? await parseCampaignToken(cToken, REPLY_SECRET) : null;
+    const { data: member } = memberId
+      ? await supabase.from('campaign_members').select('id, company_id, campaign_id, lead_id, customer_id, email, name, state, replied_at').eq('id', memberId).maybeSingle()
+      : { data: null as any };
+    if (member) {
+      const nowIso = new Date().toISOString();
+      const { data: camp } = await supabase.from('marketing_campaigns').select('id, name, stop_on_reply').eq('id', member.campaign_id).maybeSingle();
+      const snippet = String(mail.body || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      await supabase.from('campaign_events').insert({
+        company_id: member.company_id, campaign_id: member.campaign_id, member_id: member.id, kind: 'replied',
+        meta: { from: mail.from, subject: mail.subject, snippet },
+      });
+      const patch: Record<string, unknown> = { replied_at: member.replied_at || nowIso, last_event_at: nowIso };
+      if (camp?.stop_on_reply !== false) { patch.state = 'replied'; patch.next_at = null; }
+      await supabase.from('campaign_members').update(patch).eq('id', member.id);
+
+      let route = '/lead-setter';
+      const who = new Set<number>();
+      if (member.lead_id) {
+        const { data: lead } = await supabase.from('leads').select('id, status, setter_owner_id, salesperson_id, lead_owner_id, customer_name, business_name').eq('id', member.lead_id).maybeSingle();
+        if (lead) {
+          const leadPatch: Record<string, unknown> = { last_contact_at: nowIso };
+          if (['New', 'Assigned'].includes(String(lead.status || ''))) leadPatch.status = 'Contacted';
+          await supabase.from('leads').update(leadPatch).eq('id', lead.id);
+          for (const id of [lead.setter_owner_id, lead.salesperson_id, lead.lead_owner_id]) if (id) who.add(Number(id));
+        }
+      } else if (member.customer_id) {
+        route = `/customers/${member.customer_id}`;
+        const { data: cust } = await supabase.from('customers').select('salesperson_id').eq('id', member.customer_id).maybeSingle();
+        if (cust?.salesperson_id) who.add(Number(cust.salesperson_id));
+      }
+      if (!who.size) for (const id of await managerIds(supabase, member.company_id)) who.add(id);
+      const name = member.name || member.email;
+      if (who.size) {
+        await supabase.from('employee_notifications').insert([...who].map((employee_id) => ({
+          company_id: member.company_id, employee_id, type: 'campaign_reply',
+          title: `${name} replied to "${camp?.name || 'your campaign'}"`,
+          message: snippet || 'They wrote back. Open the board and take it from here.',
+          route, metadata: { campaign_id: member.campaign_id, member_id: member.id, lead_id: member.lead_id, customer_id: member.customer_id, from_email: mail.from },
+          dedupe_key: `campaign-reply-${member.id}-${Date.now()}`,
+        })));
+      }
+      return json({ ok: true, matched: true, kind: 'campaign', member_id: member.id, campaign_id: member.campaign_id });
+    }
+    console.warn(`[inbound-email] mail to a campaign address did not resolve to a member (${cToken ? 'token did not verify' : 'no token'}) — handling as other mail`);
     kind = 'other';
   }
 

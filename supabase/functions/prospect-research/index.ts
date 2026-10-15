@@ -480,7 +480,10 @@ Rules:
         .in('external_prospect_id', candidate_ids);
 
       const toImport = (cached || []).filter(c => !c.imported_as_lead_id);
-      if (!toImport.length) return json({ ok: true, imported: 0, already_imported: cached?.length || 0 });
+      // The lead ids, new and already-imported alike: "Add to a campaign"
+      // in Marketing needs every pick, not only the ones made this minute.
+      const alreadyIds = (cached || []).map(c => c.imported_as_lead_id).filter(Boolean);
+      if (!toImport.length) return json({ ok: true, imported: 0, already_imported: cached?.length || 0, lead_ids: alreadyIds });
 
       const leadRows = toImport.map(c => {
         const p = c.payload || {};
@@ -546,6 +549,7 @@ Rules:
         ok: true,
         imported: inserted?.length || 0,
         already_imported: (cached?.length || 0) - toImport.length,
+        lead_ids: [...(inserted || []).map(l => l.id), ...alreadyIds],
       });
     }
 

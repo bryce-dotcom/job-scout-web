@@ -14,6 +14,8 @@ import {
 } from '../lib/marketing'
 import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
+import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
+import CampaignsTab from './marketing/CampaignsTab'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
@@ -105,6 +107,9 @@ export default function Marketing() {
 
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('queue')
+  // "Add to a campaign" on the Find tab hands the picked people to the
+  // Campaigns tab, which opens a new campaign with them already in it.
+  const [campaignPreset, setCampaignPreset] = useState(null)
   // On a phone the page opens on "shoot it and send it". The queue, tabs and
   // settings are the marketer's; a tech in the field never needs them.
   const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'capture' : 'full'))
@@ -366,6 +371,8 @@ export default function Marketing() {
     { id: 'performance', label: 'Performance', icon: BarChart3 },
     { id: 'brand', label: 'Brand', icon: Palette },
     { id: 'channels', label: 'Channels', icon: Link2 },
+    { id: 'find', label: 'Find', icon: Search },
+    { id: 'campaigns', label: 'Campaigns', icon: Send },
     { id: 'email', label: 'Email', icon: Mail },
   ]
   const brandPosts = brands.length > 1 ? posts.filter((p) => (p.brand || '') === (brandId || '')) : posts
@@ -496,6 +503,14 @@ export default function Marketing() {
             if (error) { toast.error(error.message); return }
             await publishPost({ ...p, scheduled_for: when })
           }} />
+      ) : tab === 'find' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Say who you want in plain words. The people you tick become leads on the Lead Setter board; Add to a campaign writes to them from here.</div>
+          <ProspectResearchDrawer inline importLabel="Add to a campaign" companyId={companyId} employees={(employees || []).filter((e) => e.active !== false)} theme={theme} isMobile={isMobile}
+            onImported={(ids) => { if (ids?.length) { setCampaignPreset({ kind: 'leads', ids }); setTab('campaigns') } else toast.error('Nothing was added.') }} />
+        </div>
+      ) : tab === 'campaigns' ? (
+        <CampaignsTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} invoke={invoke} preset={campaignPreset} onPresetUsed={() => setCampaignPreset(null)} />
       ) : tab === 'performance' ? (
         <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} />
       ) : tab === 'channels' ? (

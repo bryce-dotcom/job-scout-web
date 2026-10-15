@@ -479,6 +479,11 @@ verify_jwt = false
 [functions.marketing-suggest]
 verify_jwt = false
 
+# Campaigns: the 15-minute tick (Vault key), a recipient's Unsubscribe link
+# and a mail client's one-click unsubscribe POST all arrive without a JWT.
+[functions.marketing-campaign]
+verify_jwt = false
+
 # The SMS terms page (/sms-terms/:slug) is opened by a carrier reviewing an A2P
 # 10DLC campaign, who is not logged in and cannot send a Supabase JWT. Without
 # this pin a routine redeploy flips verify_jwt back to true, the page can no

@@ -58,6 +58,24 @@ Deno.serve(async (req) => {
     }
     const simpleStatus = statusMap[eventType]
 
+    // A campaign send: the event lands on the member, and a bounce or a
+    // complaint puts the address on the company's suppression list so no
+    // campaign writes to it again.
+    if (simpleStatus && ['delivered', 'bounced', 'complained', 'opened', 'clicked'].includes(simpleStatus)) {
+      const { data: sentEv } = await supabase.from('campaign_events').select('company_id, campaign_id, member_id, touch_index').eq('resend_id', emailId).eq('kind', 'sent').limit(1)
+      const ev = sentEv?.[0]
+      if (ev) {
+        const nowIso = new Date().toISOString()
+        await supabase.from('campaign_events').insert({ company_id: ev.company_id, campaign_id: ev.campaign_id, member_id: ev.member_id, kind: simpleStatus, touch_index: ev.touch_index, resend_id: emailId, meta: bounceReason ? { reason: bounceReason } : {} })
+        await supabase.from('campaign_members').update({ last_event_at: nowIso }).eq('id', ev.member_id)
+        if (simpleStatus === 'bounced' || simpleStatus === 'complained') {
+          const { data: mem } = await supabase.from('campaign_members').select('email').eq('id', ev.member_id).maybeSingle()
+          await supabase.from('campaign_members').update({ state: simpleStatus === 'bounced' ? 'bounced' : 'unsubscribed', next_at: null }).eq('id', ev.member_id)
+          if (mem?.email) await supabase.from('email_suppressions').upsert({ company_id: ev.company_id, email: String(mem.email).toLowerCase(), reason: simpleStatus, source: 'resend-webhook' }, { onConflict: 'company_id,email', ignoreDuplicates: true })
+        }
+      }
+    }
+
     if (simpleStatus) {
       const update: Record<string, unknown> = {}
 

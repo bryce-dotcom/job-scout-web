@@ -183,3 +183,45 @@ export function bidsTokenFromAddresses(addresses: (string | null | undefined)[])
   }
   return null
 }
+
+
+// ── Campaign replies: campaign+<token>@… names the campaign member ──────
+// A reply to a campaign email is the whole point of the campaign: it turns
+// into a card on the Lead Setter board. Same shape as the bids token — the
+// member id in base36 plus a short HMAC — so a stranger cannot mark someone
+// as having replied by counting upwards.
+
+export async function campaignReplyToken(memberId: number | string, secret: string): Promise<string> {
+  const id = Number(memberId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error('campaignReplyToken: not a member id')
+  const sig = (await hmacHex(`campaign:${id}`, secret)).slice(0, SIG_LEN)
+  return `${id.toString(36)}${sig}`
+}
+
+export async function campaignReplyAddress(memberId: number | string, secret: string, domain: string): Promise<string> {
+  return `campaign+${await campaignReplyToken(memberId, secret)}@${domain}`
+}
+
+/** Recover the member id from a campaign token, or null if it does not verify. */
+export async function parseCampaignToken(token: string | null | undefined, secret: string): Promise<number | null> {
+  const t = String(token || '').trim().toLowerCase()
+  if (t.length <= SIG_LEN) return null
+  const idPart = t.slice(0, t.length - SIG_LEN)
+  const sig = t.slice(-SIG_LEN)
+  const id = parseInt(idPart, 36)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const expected = (await hmacHex(`campaign:${id}`, secret)).slice(0, SIG_LEN)
+  if (sig.length !== expected.length) return null
+  let diff = 0
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i)
+  return diff === 0 ? id : null
+}
+
+/** Pull a campaign token out of any of the To/Cc addresses on an inbound email. */
+export function campaignTokenFromAddresses(addresses: (string | null | undefined)[]): string | null {
+  for (const raw of addresses || []) {
+    const m = String(raw || '').toLowerCase().match(/campaign\+([a-z0-9]+)@/)
+    if (m) return m[1]
+  }
+  return null
+}
