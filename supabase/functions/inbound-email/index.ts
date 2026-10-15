@@ -3,7 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   matchInboundToEstimate, normalizeEmail, stripQuotedReply, type QuoteCandidate,
 } from "../_shared/inboundMatch.ts";
-import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, bidsTokenFromAddresses, parseCampaignToken, campaignTokenFromAddresses } from "../_shared/replyToken.ts";
+import { parseReplyToken, tokenFromAddresses, parseFeedbackToken, feedbackTokenFromAddresses, parseBidsToken, parseVenmoToken, venmoTokenFromAddresses, bidsTokenFromAddresses, parseCampaignToken, campaignTokenFromAddresses } from "../_shared/replyToken.ts";
+import { parseVenmoNotice, noticeRow } from "../_shared/venmoNotice.ts";
 import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail } from "../_shared/inboundWebhook.ts";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 import { managerIds } from "../_shared/marketing.ts";
@@ -282,6 +283,64 @@ serve(async (req) => {
   // against the wrong key. Verifying with a secret that might be wrong is worse
   // than not verifying: it turns a deterministic match into a silent miss.
   const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
+
+  // ── Venmo: "someone paid you", which the bank feed never carries ────────
+  //
+  // A customer's Venmo payment lands in the Venmo balance. HHH's bank shows 45
+  // rows saying Venmo and every one is money going OUT; no Venmo account is
+  // connectable, and the eventual transfer is one lump naming nobody. Venmo's
+  // own email is the only moment the payment is visible, so the office
+  // forwards it here (Tracy, 2026-10-09).
+  //
+  // FILED AS A NOTICE, NEVER A PAYMENT. The sender is checked against Venmo's
+  // own domains and the address is signed, but a forward can still be a
+  // duplicate, a personal payment to the owner, or a refund. A person says
+  // which invoice it belongs to; only then is a payment written, by the
+  // ordinary code.
+  if (kind === 'venmo') {
+    const venmoToken = venmoTokenFromAddresses([mail.to, ...(mail.allRecipients || [])]);
+    const venmoCompanyId = venmoToken && REPLY_SECRET ? await parseVenmoToken(venmoToken, REPLY_SECRET) : null;
+    if (venmoCompanyId) {
+      // The forwarded mail's From is the forwarder, so the ORIGINAL sender has
+      // to be found in the body when this arrives as a forward.
+      const forwardedFrom = (mail.text || '').match(/^\s*from:\s*(.+)$/im)?.[1] || '';
+      const notice = parseVenmoNotice({ from: mail.from, subject: mail.subject, text: mail.text })
+        || parseVenmoNotice({ from: forwardedFrom, subject: mail.subject, text: mail.text });
+
+      if (!notice) {
+        console.warn('[inbound-email] venmo: not a payment notice, ignoring');
+        return json({ ok: true, matched: false, kind: 'venmo', reason: 'not a venmo payment notice' });
+      }
+
+      const emailId = payload?.data?.email_id ? String(payload.data.email_id) : null;
+      const row = {
+        ...noticeRow({ companyId: venmoCompanyId, notice, raw: { subject: mail.subject } }),
+        email_id: emailId,
+      };
+      // (company_id, email_id) makes a webhook retry or a second forward a
+      // no-op rather than a second payment waiting to be filed.
+      const ins = emailId
+        ? await supabase.from('venmo_notices').upsert(row, { onConflict: 'company_id,email_id', ignoreDuplicates: true }).select('id')
+        : await supabase.from('venmo_notices').insert(row).select('id');
+      if (ins.error) console.error('[inbound-email] venmo insert failed:', ins.error.message);
+
+      const noticeId = ins.data?.[0]?.id ?? null;
+      if (noticeId) {
+        for (const employee_id of await managerIds(supabase, venmoCompanyId)) {
+          await supabase.from('employee_notifications').insert({
+            company_id: venmoCompanyId, employee_id,
+            type: 'venmo_payment',
+            title: 'Venmo payment received',
+            message: `${notice.payer} sent $${notice.amount.toFixed(2)}${notice.note ? ` — ${notice.note}` : ''}`,
+            route: '/books',
+            metadata: { venmo_notice_id: noticeId, amount: notice.amount, payer: notice.payer },
+          }).then(({ error }) => { if (error) console.error('[inbound-email] venmo notify failed:', error.message); });
+        }
+      }
+      return json({ ok: true, matched: true, kind: 'venmo', company_id: venmoCompanyId, venmo_notice_id: noticeId });
+    }
+    kind = 'other';
+  }
 
   // ── Sal's inbox: a procurement portal alert or a forwarded invitation ────
   // The bids+ token names the tenant. The mail is filed whole — text, html

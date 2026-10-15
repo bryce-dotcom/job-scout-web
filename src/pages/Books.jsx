@@ -31,8 +31,9 @@ import { summarizePayroll, payrollJournalRows, isPayrollBankRow } from '../lib/p
 import { buildJournal, journalCsv, journalTotals, qboBankCsvs } from '../lib/journalExport'
 import { suggestExpensesForTransaction, autoLinkReceipts } from '../lib/expenseMatch'
 import { captureReceipt, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
-import { Receipt as ReceiptIcon , Gift} from 'lucide-react'
+import { Receipt as ReceiptIcon , Gift, Smartphone } from 'lucide-react'
 import { absorbedTotal, isAbsorbed, deductionKind, deductionAmount, DEDUCTION_KINDS } from '../lib/writeOff'
+import { matchNoticeToInvoice } from '../lib/venmoNotice'
 import { computeRevenue, computeExpenses, collectedIncentives as incentivesCollectedIn } from '../lib/revenueBasis'
 import { inLocalRange, localDateStr } from '../lib/localDate'
 import { isLegacyNetShape, totalCustomerAR, totalUtilityAR, invoiceBalance, isInvoiceOpen, paymentsByInvoiceIndex } from '../lib/arHelpers'
@@ -487,6 +488,54 @@ export default function Books() {
   // which is how every other invoice figure on this page is dated: only 3
   // HHH invoices have an invoice_date at all, and updated_at is never a date
   // money happened.
+  // Venmo payments the bank feed never sees. The notice arrives by email
+  // (inbound-email, venmo+<token>@) and waits here until somebody says which
+  // invoice it belongs to — a notice is not a payment (lib/venmoNotice).
+  const [venmoNotices, setVenmoNotices] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    supabase.from('venmo_notices')
+      .select('id, payer_name, amount, note, received_at, status')
+      .eq('company_id', companyId).eq('status', 'new')
+      .order('received_at', { ascending: false }).limit(50)
+      .then(({ data }) => { if (live) setVenmoNotices(data || []) })
+    return () => { live = false }
+  }, [companyId])
+
+  // Attaching a notice writes an ordinary payment — the same shape the bank
+  // matcher writes — and then the notice is done. source 'venmo_notice'
+  // keeps the trail back to the email it came from.
+  const linkVenmoNotice = async (notice, invoice) => {
+    const { data: payRow, error } = await supabase.from('payments').insert([{
+      company_id: companyId,
+      invoice_id: invoice.id,
+      customer_id: invoice.customer_id || null,
+      job_id: invoice.job_id || null,
+      amount: Math.round(Number(notice.amount) * 100) / 100,
+      date: String(notice.received_at).slice(0, 10),
+      method: 'Venmo',
+      status: 'Completed',
+      source: 'venmo_notice',
+      source_transaction_id: String(notice.id),
+      paid_by: notice.payer_name || null,
+      notes: `Venmo from ${notice.payer_name}${notice.note ? ` — ${notice.note}` : ''}`,
+    }]).select('id').single()
+    if (error) { alert('Could not record it: ' + error.message); return }
+    await supabase.from('venmo_notices').update({
+      status: 'linked', linked_invoice_id: invoice.id, linked_payment_id: payRow?.id ?? null,
+      decided_at: new Date().toISOString(),
+    }).eq('id', notice.id)
+    setVenmoNotices(prev => prev.filter(x => x.id !== notice.id))
+  }
+
+  const ignoreVenmoNotice = async (notice) => {
+    await supabase.from('venmo_notices').update({
+      status: 'ignored', decided_at: new Date().toISOString(),
+    }).eq('id', notice.id)
+    setVenmoNotices(prev => prev.filter(x => x.id !== notice.id))
+  }
+
   const [giveaways, setGiveaways] = useState([])
   // Declared inside the effect so the dependency list is honestly just
   // companyId — a function defined in the body would be a new reference
@@ -2566,6 +2615,76 @@ export default function Books() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Venmo payments, which the bank feed never carries.
+              Tracy: "I don't see those transactions." The money sits in the
+              Venmo balance; Venmo's email is the only moment it is visible, so
+              the office forwards it and it waits here to be attached to an
+              invoice. Nothing reaches the books until somebody says which. */}
+          {venmoNotices.length > 0 && (
+            <div style={{
+              ...statCardStyle, marginBottom: '24px',
+              border: '1px solid rgba(59,130,246,0.3)',
+              backgroundColor: 'rgba(59,130,246,0.04)',
+            }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, margin: '0 0 2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Smartphone size={16} style={{ color: '#2563eb' }} /> Venmo payments to match
+              </h3>
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: '0 0 12px' }}>
+                Venmo told us about these. They are not in the books until you say which invoice they belong to.
+              </p>
+
+              {venmoNotices.map(n => {
+                const open = (invoices || []).filter(i => i.payment_status !== 'Paid' && i.payment_status !== 'Cancelled')
+                const guess = matchNoticeToInvoice(n, open.map(i => ({
+                  ...i, balance_due: (parseFloat(i.amount) || 0) - (parseFloat(i.discount_applied) || 0),
+                })))
+                return (
+                  <div key={n.id} style={{
+                    padding: '10px 12px', borderRadius: '8px', marginBottom: '6px',
+                    backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
+                          {n.payer_name} · {formatCurrency(n.amount)}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: theme.textMuted }}>
+                          {n.note ? `"${n.note}" · ` : ''}{formatDate(n.received_at)}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {guess?.invoice && (
+                          <button
+                            onClick={() => linkVenmoNotice(n, guess.invoice)}
+                            style={{ padding: '7px 12px', fontSize: '12px', fontWeight: 600, borderRadius: '7px', cursor: 'pointer', backgroundColor: theme.accent, color: '#fff', border: 'none' }}
+                          >
+                            Link to {guess.invoice.invoice_id || `#${guess.invoice.id}`}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => navigate('/invoices')}
+                          style={{ padding: '7px 12px', fontSize: '12px', borderRadius: '7px', cursor: 'pointer', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}` }}
+                        >
+                          Pick an invoice
+                        </button>
+                        <button
+                          onClick={() => ignoreVenmoNotice(n)}
+                          style={{ padding: '7px 12px', fontSize: '12px', borderRadius: '7px', cursor: 'pointer', backgroundColor: 'transparent', color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                        >
+                          Not a job
+                        </button>
+                      </div>
+                    </div>
+                    {/* Why we think it is that invoice — or why we will not guess. */}
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '5px' }}>
+                      {guess?.why || 'nothing to compare it against yet'}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
 

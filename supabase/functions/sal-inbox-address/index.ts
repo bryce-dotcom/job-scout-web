@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { bidsInboxAddress } from '../_shared/replyToken.ts'
+import { bidsInboxAddress, venmoInboxAddress } from '../_shared/replyToken.ts'
 
 // Sal's inbox address for the caller's company.
 //
@@ -44,7 +44,14 @@ serve(async (req) => {
     if (!secret) return json({ error: 'Sal\'s inbox is not configured on the server yet (REPLY_TOKEN_SECRET)' }, 503)
 
     const address = await bidsInboxAddress(companyId, secret, domain)
-    return json({ ok: true, address, domain })
+    // The Venmo inbox rides along: same roster check, same secret, same
+    // shape. A customer's Venmo payment never reaches the bank feed, so
+    // forwarding Venmo's own email to this address is how the office finds
+    // out (Tracy, 2026-10-09). Returned beside Sal's rather than behind a
+    // second function because the question is the same one — what are this
+    // company's signed inbox addresses.
+    const venmoAddress = await venmoInboxAddress(companyId, secret, domain)
+    return json({ ok: true, address, venmo_address: venmoAddress, domain })
   } catch (err) {
     console.error('[sal-inbox-address]', err)
     return json({ error: (err as Error)?.message || 'Could not build the address' }, 500)

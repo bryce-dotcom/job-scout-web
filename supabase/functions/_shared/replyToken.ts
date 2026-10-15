@@ -175,6 +175,53 @@ export async function parseBidsToken(token: string | null | undefined, secret: s
   return diff === 0 ? id : null
 }
 
+// ── Venmo notices: venmo+<token>@… names the COMPANY ───────────────────
+//
+// A customer paying by Venmo is invisible to JobScout: the money sits in the
+// Venmo balance, no Venmo account is connectable through the bank feed, and
+// the eventual transfer out is one lump that says nothing about who paid.
+// Venmo does send an email the moment it happens, so that email is the feed —
+// the office forwards it here (Tracy, 2026-10-09).
+//
+// Signed, and namespaced `venmo:<id>`, for the same reason as the bids token:
+// From is forged trivially, and this address creates MONEY records. An
+// unsigned company id would let a stranger file payments into any tenant by
+// counting upwards. Even signed, a leaked address can only create unlinked
+// notices a person still has to attach to an invoice.
+
+export async function venmoInboxToken(companyId: number | string, secret: string): Promise<string> {
+  const id = Number(companyId)
+  if (!Number.isFinite(id) || id <= 0) throw new Error('venmoInboxToken: not a company id')
+  const sig = (await hmacHex(`venmo:${id}`, secret)).slice(0, SIG_LEN)
+  return `${id.toString(36)}${sig}`
+}
+
+export async function venmoInboxAddress(companyId: number | string, secret: string, domain: string): Promise<string> {
+  return `venmo+${await venmoInboxToken(companyId, secret)}@${domain}`
+}
+
+export async function parseVenmoToken(token: string | null | undefined, secret: string): Promise<number | null> {
+  const t = String(token || '').trim().toLowerCase()
+  if (t.length <= SIG_LEN) return null
+  const idPart = t.slice(0, t.length - SIG_LEN)
+  const sig = t.slice(-SIG_LEN)
+  const id = parseInt(idPart, 36)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const expected = (await hmacHex(`venmo:${id}`, secret)).slice(0, SIG_LEN)
+  if (sig.length !== expected.length) return null
+  let diff = 0
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i)
+  return diff === 0 ? id : null
+}
+
+export function venmoTokenFromAddresses(addresses: (string | null | undefined)[]): string | null {
+  for (const raw of addresses || []) {
+    const m = String(raw || '').toLowerCase().match(/venmo+([a-z0-9]+)@/)
+    if (m) return m[1]
+  }
+  return null
+}
+
 /** Pull a bids token out of any of the To/Cc addresses on an inbound email. */
 export function bidsTokenFromAddresses(addresses: (string | null | undefined)[]): string | null {
   for (const raw of addresses || []) {
