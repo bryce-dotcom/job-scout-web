@@ -711,7 +711,11 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
   // Connected while this panel was open — the moment worth showing. Without
   // it the flow just stops: you run the file, something happens somewhere,
   // and you go looking for whether it worked.
-  const arrived = connected && dl !== 'idle'
+  // On a Mac the main way in is a pasted command, not a download (see
+  // MacCommandOffer). Copying it is the moment we start listening.
+  const macPaste = mac && !mine.signed
+  const [pasted, setPasted] = useState(false)
+  const arrived = connected && (dl !== 'idle' || pasted)
 
   return (
     <div style={{ marginTop: 14, borderTop: `1px solid ${t.line}`, paddingTop: 16 }}>
@@ -763,6 +767,12 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
             A window opens and a browser tab asks “Connect this computer?”. Press Connect —
             nothing to type, nothing to copy. This page will say so the moment it lands.
           </div>
+          {mac && !mine.signed && (
+            <div style={{ fontSize: 12.5, color: t.amber, lineHeight: 1.55, marginTop: 8, maxWidth: 420, margin: '8px auto 0' }}>
+              If macOS will not open it, press <strong>Nothing happened</strong> and use the Terminal
+              line instead — macOS has nothing to block there.
+            </div>
+          )}
           {/* The agent opens /connect in the DEFAULT browser, so somebody who
               started in the installed app gets dropped into Chrome halfway
               through setting up — which is where Bryce ended up. The manifest
@@ -824,7 +834,27 @@ function GetTheAgent({ who = 'Arnie', connected = false, onWaiting }) {
         // One action, their platform, no caveats in front of it. Everything
         // that might go wrong is one line below, folded away: leading with
         // the warnings is what made this read as something cobbled together.
-        <>
+        macPaste ? (
+          <>
+            <MacCommandOffer who={who} onCopied={() => { setPasted(true); onWaiting?.(true) }} />
+            {pasted && (
+              <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
+                <ScoutLoader label="Waiting for your Mac…" size={48} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 10, fontSize: 12.5 }}>
+              <button
+                onClick={() => grab(file)}
+                style={{ background: 'none', border: 0, padding: 0, color: t.muted, textDecoration: 'underline', cursor: 'pointer', font: 'inherit', fontSize: 12.5 }}
+              >
+                Download the file instead
+              </button>
+              <a href={`${base}/${encodeURIComponent(other.name)}`} download style={{ color: t.muted, textDecoration: 'underline' }}>
+                I need the Windows one
+              </a>
+            </div>
+          </>
+        ) : <>
           <div style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.55, marginBottom: 12 }}>
             One small file, on the computer you want {who} to work on. It starts the agent
             and keeps it up to date — put it somewhere you will find it again.
@@ -1012,22 +1042,89 @@ const input = {
  * is the thing the whole download flow exists to avoid — it is the fallback,
  * not the path.
  */
+// The one-line install, for a terminal. A file fetched by curl (or
+// PowerShell's irm) carries no quarantine flag and needs no run permission
+// added, so there is nothing for Gatekeeper or SmartScreen to refuse.
+//
+// The backslashes in the Windows one matter: a single one is an escape and
+// the path comes out as $env:TEMPJobScoutAgent.cmd, which fails in a way
+// nobody could debug.
+export function agentCommand(mac) {
+  return mac
+    ? `curl -fsSL "${releaseBase}/JobScout%20Agent.command" -o "$TMPDIR/jobscout-agent.command" && bash "$TMPDIR/jobscout-agent.command"`
+    : `irm "${releaseBase}/JobScout%20Agent.cmd" -OutFile "$env:TEMP\\JobScoutAgent.cmd"; & "$env:TEMP\\JobScoutAgent.cmd"`
+}
+
+/**
+ * THE MAC WAY IN, first and on its own (Bryce, 2026-10-14: "make the copy
+ * command the main mac option").
+ *
+ * A downloaded .command is refused twice over until we are signed by Apple:
+ * the browser strips its permission to run, and Gatekeeper refuses it as
+ * unverified. London hit both and ended up pasting a line from Grok into
+ * Terminal. Pasting OUR line skips both — so on a Mac it is the main option,
+ * in three numbered steps, and the download is the fallback.
+ */
+function MacCommandOffer({ who, onCopied }) {
+  const [copied, setCopied] = useState(false)
+  const [manual, setManual] = useState(false)
+  const cmd = agentCommand(true)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(cmd)
+      setCopied(true)
+      onCopied?.()
+    } catch {
+      // No clipboard permission: select it so Command-C works.
+      setManual(true)
+    }
+  }
+  return (
+    <div>
+      <div style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.55, marginBottom: 12 }}>
+        On a Mac, {who} goes on with one line pasted into Terminal — no download for macOS to block.
+      </div>
+      <Step n={1} title="Open Terminal">
+        Press <strong>Command + Space</strong>, type <strong>terminal</strong>, press <strong>Return</strong>.
+      </Step>
+      <Step n={2} title="Copy this, paste it into Terminal, press Return">
+        <code
+          onClick={(e) => { const r = document.createRange(); r.selectNodeContents(e.currentTarget); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r) }}
+          style={{
+            display: 'block', background: '#fff', border: `1px solid ${manual ? t.amber : t.line}`, borderRadius: 7,
+            padding: '8px 10px', fontSize: 11, color: t.ink, overflowX: 'auto', whiteSpace: 'nowrap',
+            userSelect: 'all', margin: '6px 0 8px', cursor: 'text',
+          }}
+        >{cmd}</code>
+        <button
+          onClick={copy}
+          style={{ ...btn(t.accent, '#fff'), width: '100%', justifyContent: 'center', minHeight: 46, fontSize: 14.5, fontWeight: 650, borderRadius: 11 }}
+        >
+          {copied ? <><Check size={16} /> Copied — now paste it into Terminal</> : 'Copy the command'}
+        </button>
+        {manual && (
+          <div style={{ fontSize: 12.5, color: t.amber, marginTop: 6 }}>
+            This browser would not copy it. Click the line above to select it, then press Command + C.
+          </div>
+        )}
+      </Step>
+      <Step n={3} title="Press Connect">
+        A browser page opens. Check it shows <strong>your</strong> name, then press Connect. The first
+        run takes about a minute; after that, macOS asks you to allow Screen Recording and
+        Accessibility for Terminal — allow both so {who} can see and work the screen.
+      </Step>
+    </div>
+  )
+}
+
 function PasteInstead({ open: openByDefault = false, mac = false }) {
   const [open, setOpen] = useState(openByDefault)
   const [copied, setCopied] = useState(false)
   // This used to be Windows-only, which left the Mac with no way out at all —
   // and the Mac is where it is needed MOST. London downloaded the agent and
   // macOS refused it outright: "Apple could not verify JobScout is free of
-  // malware". A file fetched by curl carries no quarantine flag, so there is
-  // nothing for Gatekeeper to refuse; it is the same trick as the PowerShell
-  // line, and on a Mac it is often the only one that works.
-  //
-  // The backslashes in the Windows one matter: a single one is an escape and
-  // the path comes out as $env:TEMPJobScoutAgent.cmd, which fails in a way
-  // nobody could debug.
-  const cmd = mac
-    ? `curl -fsSL "${releaseBase}/JobScout%20Agent.command" -o "$TMPDIR/jobscout-agent.command" && bash "$TMPDIR/jobscout-agent.command"`
-    : `irm "${releaseBase}/JobScout%20Agent.cmd" -OutFile "$env:TEMP\\JobScoutAgent.cmd"; & "$env:TEMP\\JobScoutAgent.cmd"`
+  // malware". (On a Mac this is now the MAIN option — MacCommandOffer.)
+  const cmd = agentCommand(mac)
 
   if (!open) {
     return (

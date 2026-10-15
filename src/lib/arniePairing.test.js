@@ -497,8 +497,18 @@ describe('the button can no longer fail in silence', () => {
   it('and the moment it connects is shown, not left to be discovered', () => {
     // The old flow ended at "it is in your Downloads". You ran it, something
     // happened somewhere, and you went looking for whether it had worked.
-    expect(page).toMatch(/const arrived = connected && dl !== 'idle'/)
+    // A download OR, on a Mac, a copied command (2026-10-14) starts the watch.
+    expect(page).toMatch(/const arrived = connected && \(dl !== 'idle' \|\| pasted\)/)
     expect(page).toMatch(/>Connected\.</)
+  })
+
+  it('on a Mac the pasted command is the main way in, the download the fallback', () => {
+    expect(page).toMatch(/const macPaste = mac && !mine\.signed/)
+    expect(page).toMatch(/macPaste \? \(\s*<>\s*<MacCommandOffer/)
+    expect(page).toMatch(/Download the file instead/)
+    // One definition of the command, used by both places.
+    expect((page.match(/agentCommand\(/g) || []).length).toBeGreaterThanOrEqual(3)
+    expect(page).toMatch(/curl -fsSL "\$\{releaseBase\}\/JobScout%20Agent\.command" -o "\$TMPDIR\/jobscout-agent\.command" && bash "\$TMPDIR\/jobscout-agent\.command"/)
   })
 
   it('the wait is polled fast enough to watch', () => {
