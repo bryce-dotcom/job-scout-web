@@ -926,7 +926,9 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       // Through the rail, as the person, because that rail accepts no other
       // identity and holds the only copy of the decision. Nothing here
       // re-implements a permission check; it reports what the leash said.
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
+      // One retry if the platform rate-limits a function calling a function —
+      // a step must not die on a 429 the person never caused.
+      const queueOnce = () => fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
         method: 'POST',
         headers: {
           // The apikey header only has to be a key the gateway knows; the
@@ -954,7 +956,12 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           value: kind === 'key' ? undefined : typeof input?.value === 'string' ? input.value : undefined,
         }),
       })
+      let res = await queueOnce()
+      if (res.status === 429) { await new Promise((r) => setTimeout(r, 3000)); res = await queueOnce() }
       const out = await res.json().catch(() => ({}))
+      if (res.status === 429) {
+        return { not_done: true, why: 'busy', say: 'Nothing was sent — it was a moment too soon. Say so in a few words and try the same step again now.' }
+      }
       if (out?.decision === 'needs_grant') {
         return {
           offered: true,
@@ -977,7 +984,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         // move blind — which is exactly the state this is fixing. So this one
         // waits for the agent, then hands the image to the model.
         if (String(input?.kind || '') === 'screenshot') {
-          const look = await waitForShot(bearer, out.action_id)
+          const look = await waitForShot(employeeId, out.action_id)
           if (look.url) {
             const img = await fetch(look.url)
             const buf = img.ok ? new Uint8Array(await img.arrayBuffer()) : null
@@ -1004,7 +1011,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         // nothing telling him what next, he stopped after one step ("Chrome is
         // launching now", 2026-10-15, with Gmail never opened). His Enter that
         // failed on the agent ("not a key this agent will press") went unseen.
-        const done = await waitForDone(bearer, out.action_id)
+        const done = await waitForDone(employeeId, out.action_id)
         if (done.decision === 'allowed') {
           return {
             done: true, action_id: out.action_id, device: session.device_label,
@@ -2281,43 +2288,54 @@ function toolContent(result: Record<string, unknown>): unknown {
   ]
 }
 
-/** How an action finished on the agent — the same status call as a look, without the picture. */
-async function waitForDone(bearer: string, actionId: number): Promise<{ decision?: string; reason?: string }> {
-  const until = Date.now() + 15000
+/** How an action finished on the agent — read from its row, without the picture. */
+async function waitForDone(employeeId: number | null | undefined, actionId: number): Promise<{ decision?: string; reason?: string }> {
+  const until = Date.now() + 20000
   while (Date.now() < until) {
-    await new Promise((r) => setTimeout(r, 1000))
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
-      method: 'POST',
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'shot', action_id: actionId }),
-    })
-    const j = await res.json().catch(() => ({}))
-    if (j?.status === 'nothing' || j?.status === 'ready') return { decision: j.decision, reason: j.reason }
-    if (j?.error) return { reason: j.error }
+    await new Promise((r) => setTimeout(r, 1200))
+    const row = await actionRow(employeeId, actionId)
+    if (!row) return { reason: 'that action is not theirs' }
+    if (row.completed_at) return { decision: row.decision, reason: row.reason }
   }
   return {}
 }
 
-async function waitForShot(bearer: string, actionId: number): Promise<{ url?: string; why?: string }> {
-  const until = Date.now() + 25000
-  let last = 'the agent did not report back in time'
+async function waitForShot(employeeId: number | null | undefined, actionId: number): Promise<{ url?: string; why?: string }> {
+  const until = Date.now() + 30000
   while (Date.now() < until) {
-    await new Promise((r) => setTimeout(r, 1200))
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/arnie-computer`, {
+    await new Promise((r) => setTimeout(r, 1500))
+    const row = await actionRow(employeeId, actionId)
+    if (!row) return { why: 'that action is not theirs' }
+    if (!row.completed_at) continue
+    if (!row.shot_after) return { why: row.reason || `the action came back ${row.decision}` }
+    const signed = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/arnie-recordings/${row.shot_after}`, {
       method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${bearer}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: 'shot', action_id: actionId }),
+      headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 120 }),
     })
-    const j = await res.json().catch(() => ({}))
-    if (j?.status === 'ready' && j.url) return { url: j.url }
-    if (j?.status === 'nothing') return { why: j.reason || `the action came back ${j.decision}` }
-    if (j?.error) return { why: j.error }
+    if (!signed.ok) return { why: 'the picture could not be opened' }
+    const { signedURL } = await signed.json()
+    return { url: `${SUPABASE_URL}/storage/v1${signedURL}` }
   }
-  return { why: last }
+  return { why: 'the agent did not report back in time' }
+}
+
+/**
+ * One action's row, read straight from the table — scoped to the person.
+ *
+ * These waits used to ask arnie-computer every second, function calling
+ * function, and Supabase rate-limits that: Jenny's third look of a turn came
+ * back "Rate-limited — needs about 10 seconds" and she stopped (2026-10-15).
+ * The queue still goes through arnie-computer, because that is where the
+ * permission decision lives; only the WAITING reads the table directly.
+ */
+async function actionRow(employeeId: number | null | undefined, actionId: number): Promise<any | null> {
+  if (employeeId == null || !Number.isFinite(actionId)) return null
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/arnie_computer_actions?select=decision,reason,shot_after,completed_at&id=eq.${actionId}&employee_id=eq.${employeeId}&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+    return r.ok ? (await r.json())?.[0] || null : null
+  } catch { return null }
 }
 
 /**
