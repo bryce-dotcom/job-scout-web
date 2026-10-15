@@ -309,8 +309,24 @@ const KEYS_MAC = {
   home: 115, end: 119, pageup: 116, pagedown: 121,
 }
 
+// Go to the browser's address bar. Typing an address with nothing focused
+// sends the letters into the PAGE — on Bryce's Gmail (2026-10-15) that is
+// where "mail.google.com" went, and Gmail's one-letter shortcuts are e, c, a.
+const ADDRESS_BAR = new Set(['ctrl+l', 'cmd+l', 'address_bar', 'addressbar'])
+
 export async function pressKey(name) {
-  const k = String(name || '').toLowerCase()
+  const k = String(name || '').toLowerCase().replace(/\s+/g, '')
+  if (ADDRESS_BAR.has(k)) {
+    if (WIN) {
+      const r = await ps("Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^l')")
+      return r.ok ? {} : { error: r.err || 'key failed' }
+    }
+    if (MAC) {
+      const r = await osa('tell application "System Events" to keystroke "l" using command down')
+      return r.ok ? {} : { error: macHint(r.err) }
+    }
+    return { error: `no keyboard on ${process.platform}` }
+  }
   if (WIN) {
     const seq = KEYS_WIN[k]
     if (!seq) return { error: `not a key this agent will press: ${name}` }

@@ -74,6 +74,30 @@ describe('a look at an allowed Mac app brings it forward (London, 2026-10-14)', 
   })
 })
 
+describe('a key press reaches the keyboard (Bryce, 2026-10-15)', () => {
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const hands = read('../../scripts/agent/hands.mjs')
+  const chat = read('../../supabase/functions/arnie-chat/index.ts')
+  it('the key name Arnie puts in value is moved to target.key, and not logged as typed text', () => {
+    expect(chat).toMatch(/kind === 'key' && !input\?\.target\?\.key && typeof input\?\.value === 'string' \? \{ key: input\.value\.trim\(\)\.slice\(0, 24\) \}/)
+    expect(chat).toMatch(/value: kind === 'key' \? undefined :/)
+  })
+  it('the agent reads either, so an older server cannot strand it', () => {
+    expect(agent).toMatch(/case 'key': return await pressKey\(t\.key \?\? t\.value\)/)
+  })
+  it('ctrl+l goes to the address bar instead of typing a web address into the page', () => {
+    expect(hands).toMatch(/const ADDRESS_BAR = new Set\(\['ctrl\+l', 'cmd\+l', 'address_bar', 'addressbar'\]\)/)
+    expect(hands).toMatch(/SendWait\('\^l'\)/)
+    expect(hands).toMatch(/keystroke "l" using command down/)
+    expect(chat).toMatch(/or ctrl\+l \(puts the cursor in a browser\\'s address bar/)
+  })
+  it('anything else off the fixed list still never reaches a shell', async () => {
+    const { pressKey } = await import('../../scripts/agent/hands.mjs')
+    expect(await pressKey("'); Remove-Item C:\\ -Recurse; ('")).toMatchObject({ error: expect.stringMatching(/not a key this agent will press/) })
+    expect(await pressKey(undefined)).toMatchObject({ error: expect.stringMatching(/not a key/) })
+  })
+})
+
 describe('a click lands on what was seen', () => {
   const agent = read('../../scripts/jobscout-agent.mjs')
   const hands = read('../../scripts/agent/hands.mjs')

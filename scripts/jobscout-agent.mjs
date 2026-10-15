@@ -302,7 +302,9 @@ const run = async (a) => {
     case 'double_click': return await clickAt(...toScreen(t.x, t.y), 'left', true)
     case 'right_click': return await clickAt(...toScreen(t.x, t.y), 'right')
     case 'type': return await typeText(t.value ?? '')
-    case 'key': return await pressKey(t.key)
+    // The key's name arrives as target.key — or as the value, which is where
+    // Arnie put "Enter" every time (2026-10-15: "not a key … : undefined").
+    case 'key': return await pressKey(t.key ?? t.value)
     case 'scroll': return await scroll(t.direction, t.amount)
     // Deliberately not implemented rather than approximated.
     case 'read_text': return { error: 'this agent cannot read the screen yet' }

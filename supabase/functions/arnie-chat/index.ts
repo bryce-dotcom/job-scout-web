@@ -678,7 +678,7 @@ const USE_COMPUTER_TOOL = {
         type: 'object',
         description: 'Where on screen. A click, double_click or right_click NEEDS { x, y }: pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen. So look first, then click where you saw it. Add { label } to name what it is ("Inbox", "Send") for the log; a label alone is never something the agent can find.',
       },
-      value: { type: 'string', description: 'For kind=type, the text to type. Never a password or a code.' },
+      value: { type: 'string', description: 'For kind=type, the text to type — it goes wherever the cursor is, so click the field first. Never a password or a code. For kind=key, the key: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, or ctrl+l (puts the cursor in a browser\'s address bar — do that before typing a web address, never type one into the page).' },
       why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
     },
     // app is required, INCLUDING for a screenshot. A look with no program
@@ -907,8 +907,16 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           kind: String(input?.kind || ''),
           app: input?.app ? String(input.app).toLowerCase() : null,
           host: input?.host ? String(input.host).toLowerCase() : null,
-          target: { ...(input?.target || {}), why: input?.why ? String(input.why).slice(0, 200) : undefined },
-          value: typeof input?.value === 'string' ? input.value : undefined,
+          // A key's NAME belongs in target.key, which is where the agent reads
+          // it (and the log keeps it — a key name is not anybody's text).
+          // Arnie put "Enter" in value, and every key he ever pressed failed
+          // as "not a key this agent will press: undefined" (2026-10-15).
+          target: {
+            ...(input?.target || {}),
+            ...(kind === 'key' && !input?.target?.key && typeof input?.value === 'string' ? { key: input.value.trim().slice(0, 24) } : {}),
+            why: input?.why ? String(input.why).slice(0, 200) : undefined,
+          },
+          value: kind === 'key' ? undefined : typeof input?.value === 'string' ? input.value : undefined,
         }),
       })
       const out = await res.json().catch(() => ({}))
