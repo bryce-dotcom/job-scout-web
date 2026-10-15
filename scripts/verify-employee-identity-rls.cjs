@@ -46,7 +46,7 @@ const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ?
     }, { onConflict: 'employee_id' })
     if (idErr) throw new Error('seed identity: ' + idErr.message)
     const { data: pkt, error: pErr } = await ADMIN.from('employee_onboarding_packets').insert({
-      company_id: COMPANY, employee_id: people.peer.id, token: 'idrls-' + stamp, status: 'in_progress', draft_data: { ssn: { value: '000000000' } },
+      company_id: COMPANY, employee_id: people.peer.id, token: require('crypto').randomUUID(), status: 'in_progress', draft_data: { ssn: { value: '000000000' } },
     }).select('id').single()
     if (pErr) throw new Error('seed packet: ' + pErr.message)
     made.pkt.push(pkt.id)
