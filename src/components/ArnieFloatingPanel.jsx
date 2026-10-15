@@ -3,7 +3,7 @@ import AssistantAvatar, { useAssistant } from './AssistantAvatar'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import ArnieChat from '../pages/agents/arnie/ArnieChat'
-import { X, Clock, SquarePen, ChevronRight, ChevronDown, MessageCircle, Monitor, GraduationCap } from 'lucide-react'
+import { X, Clock, SquarePen, ChevronRight, ChevronDown, MessageCircle, Monitor, GraduationCap, Maximize2 } from 'lucide-react'
 import ArnieComputer from '../pages/agents/arnie/ArnieComputer'
 import ArnieSkills from '../pages/agents/arnie/ArnieSkills'
 import ArnieRoutines from '../pages/agents/arnie/ArnieRoutines'
@@ -199,6 +199,14 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
     navigate('/agents/arnie/history')
   }
 
+  // The tab you are on, opened full size — and for the chat, the SAME
+  // conversation (ArnieChatPage reads it from location state).
+  const PAGE_FOR_TAB = { chat: '/agents/arnie', computer: '/agents/arnie/computer', taught: '/agents/arnie/taught', routines: '/agents/arnie/routines' }
+  const expandToPage = () => {
+    handleClose()
+    navigate(PAGE_FOR_TAB[tab] || '/agents/arnie', tab === 'chat' && sessionId ? { state: { sessionId } } : undefined)
+  }
+
   if (!user || !hasAgent('arnie-og')) return null
 
   return (
@@ -364,9 +372,26 @@ export default function ArnieFloatingPanel({ hideLauncher = false } = {}) {
                 >
                   <Clock size={18} color={showRecent ? dark.orange : dark.textMuted} />
                 </button>
-                {/* There was an expand-to-the-page button here for about an
-                    hour. It is gone because the thing it expanded to no
-                    longer has anything this does not — which is the point. */}
+                {/* EXPAND TO THE PAGE — desktop and laptop only. It was taken
+                    out once because the page has nothing this drawer lacks;
+                    what the page HAS is room. A 400px column is tight for
+                    reading a job's lines or watching her work on your
+                    computer (Bryce, 2026-10-15). Same conversation, same tab.
+                    `hidden` is Layout's class: gone on a phone, where this
+                    drawer already is the whole screen. */}
+                <button
+                  className="hidden"
+                  onClick={expandToPage}
+                  title="Open full screen"
+                  aria-label="Open full screen"
+                  style={{
+                    width: 36, height: 36, borderRadius: 8, border: 'none',
+                    backgroundColor: 'transparent', cursor: 'pointer',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Maximize2 size={17} color={dark.textMuted} />
+                </button>
                 <button
                   onClick={handleClose}
                   title="Close"
