@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useLoca
 import { getWalkthrough } from './components/walkthroughs'
 import { supabase } from './lib/supabase'
 import { useStore } from './lib/store'
+import { rememberAfterLogin } from './lib/afterLogin'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Terms from './pages/Terms'
@@ -187,6 +188,8 @@ function ProtectedRoute({ children }) {
   // home page lands on the public storefront, not a sign-in wall — deep app
   // links still go to /login so returning users end up where they meant to.
   if (!companyId) {
+    // Come back here after signing in — see lib/afterLogin.
+    if (location.pathname !== '/') rememberAfterLogin(location.pathname + location.search)
     return <Navigate to={location.pathname === '/' ? '/pricing' : '/login'} replace />
   }
 

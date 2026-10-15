@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { rememberAfterLogin } from '../lib/afterLogin'
 import { Monitor, Check, AlertTriangle, Loader2 } from 'lucide-react'
 
 const t = {
@@ -26,7 +27,20 @@ export default function ConnectComputer() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const user = useStore((s) => s.user)
+  const company = useStore((s) => s.company)
+  const clearSession = useStore((s) => s.clearSession)
   const code = params.get('code') || ''
+  // The shared public demo (Login's "Explore the live demo").
+  const isDemo = String(user?.email || '').toLowerCase() === 'demo@jobscout.app'
+
+  // Sign out and come straight back to THIS code once signed in as the right
+  // person (lib/afterLogin), so the agent waiting on that computer still pairs.
+  const switchAccount = async () => {
+    rememberAfterLogin(`/connect?code=${encodeURIComponent(code)}`)
+    try { await clearSession() } catch { /* signed out either way below */ }
+    try { await supabase.auth.signOut() } catch { /* already out */ }
+    navigate('/login')
+  }
 
   const [asking, setAsking] = useState(null)   // what the agent said it is
   const [state, setState] = useState('loading') // loading|ready|none|done|error
@@ -137,8 +151,35 @@ export default function ConnectComputer() {
       <p style={{ fontSize: 12.5, color: t.muted, margin: '0 0 14px' }}>
         {PLATFORM[asking?.platform] || asking?.platform || ''}
         {asking?.agent_version ? ` · agent ${asking.agent_version}` : ''}
-        {user?.email ? ` · as ${user.email}` : ''}
       </p>
+
+      {/* WHOSE ACCOUNT, said plainly — and the way out when it is the wrong one.
+          This used to be " · as demo@jobscout.app" in grey at the end of a
+          line. London's Mac browser was signed in to the demo, he pressed
+          Connect, and his computer went to Mike Sullivan's account — so his
+          own Computer page stayed empty and it looked as if nothing worked. */}
+      <div style={{
+        border: `1px solid ${isDemo ? t.amber : t.line}`, background: isDemo ? t.amberBg : '#faf8f2',
+        borderRadius: 11, padding: '11px 13px', margin: '0 0 14px', textAlign: 'left',
+      }}>
+        <div style={{ fontSize: 11.5, color: t.muted, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Connecting to</div>
+        <div style={{ fontSize: 15, color: t.ink, fontWeight: 650, marginTop: 2 }}>{user?.name || user?.email || 'this account'}</div>
+        <div style={{ fontSize: 12.5, color: t.sub }}>{[user?.email, company?.company_name].filter(Boolean).join(' · ')}</div>
+        {isDemo && (
+          <div style={{ fontSize: 13, color: t.amber, marginTop: 8, lineHeight: 1.5 }}>
+            This is the <strong>demo account</strong>, not yours. Sign in as yourself and this
+            computer connects to you.
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={switchAccount}
+          disabled={busy}
+          style={{ background: 'none', border: 0, padding: 0, marginTop: 8, color: t.accent, fontWeight: 600, fontSize: 13, textDecoration: 'underline', cursor: 'pointer' }}
+        >
+          {isDemo ? 'Sign in as myself' : 'Not you? Sign in as someone else'}
+        </button>
+      </div>
 
       <p style={{ fontSize: 13.5, color: t.sub, lineHeight: 1.6, margin: '0 0 16px', textAlign: 'left' }}>
         This lets Arnie work on that computer <strong>as you</strong> — but only in programs you
@@ -153,7 +194,8 @@ export default function ConnectComputer() {
       )}
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={connect} disabled={busy} style={{ ...btn(t.accent, '#fff'), flex: 1 }}>
+        {/* Never one tap to pair a real computer to the demo. */}
+        <button onClick={connect} disabled={busy || isDemo} style={{ ...btn(t.accent, '#fff'), flex: 1, opacity: isDemo ? 0.45 : 1 }}>
           {busy ? 'Connecting…' : 'Connect'}
         </button>
         <button onClick={() => navigate('/')} disabled={busy} style={{ ...btn('#f0ebdd', t.sub), flex: 1 }}>

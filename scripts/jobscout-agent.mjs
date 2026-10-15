@@ -29,7 +29,7 @@
 // refused, and nothing more runs on it ever.
 
 import { readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { tmpdir, hostname } from 'node:os'
 import { spawn } from 'node:child_process'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -153,7 +153,12 @@ const pair = async () => {
 }
 
 const APP_URL = process.env.JOBSCOUT_APP_URL || 'https://jobscout.appsannex.com'
-const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || process.env.COMPUTERNAME || process.env.HOSTNAME || 'this computer'
+// A Mac sets neither COMPUTERNAME nor an exported HOSTNAME, so London's Mac
+// paired as "this computer" — a name nobody can tell apart from another.
+// The system's own name ("Londons-MacBook-Air.local") is always there.
+const DEVICE = process.env.JOBSCOUT_DEVICE_LABEL || process.env.COMPUTERNAME || process.env.HOSTNAME
+  || (() => { try { return hostname().replace(/\.local$/i, '') } catch { return '' } })()
+  || 'this computer'
 const VERSION = '0.5.0'
 // WHICH BUILD THIS IS, baked in at release time from a hash of the agent's
 // own sources. The version is for people and only changes when somebody
@@ -468,7 +473,17 @@ const handshake = {
   agent_build: BUILD,
   capabilities: { perform: capabilities.perform, record: capabilities.record, notes: capabilities.notes },
 }
-const hello = await call('hello', handshake)
+let hello = await call('hello', handshake)
+// Paired to the wrong account — the public demo (London's Mac, 2026-10-14).
+// The server refuses it and says `repair`: forget that sign-in and ask again,
+// so the person presses Connect while signed in as themselves.
+if (!hello.ok && hello.repair) {
+  console.log(`\n  ${hello.error}\n`)
+  try { rmSync(TOKEN_FILE, { force: true }) } catch { /* nothing saved */ }
+  access = ''; accessUntil = 0
+  TOKEN = await pair()
+  hello = await call('hello', handshake)
+}
 if (!hello.ok) die(`could not connect: ${hello.error || hello.status}`)
 sessionId = hello.session_id
 

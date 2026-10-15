@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { takeAfterLogin } from '../lib/afterLogin'
 import { useStore } from '../lib/store'
 import { Eye, EyeOff } from 'lucide-react'
 
@@ -171,7 +172,7 @@ export default function AuthCallback() {
       // Store Google Calendar token if present (provider_token is only available from code exchange)
       await storeGoogleCalendarToken(session, result.employee)
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-      navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : '/'), { replace: true })
+      navigate(gcalConnect ? '/appointments' : (result.company.setup_complete === false ? '/onboarding' : (takeAfterLogin() || '/')), { replace: true })
     }
 
     handleCallback()

@@ -63,11 +63,25 @@ Deno.serve(async (req) => {
   if (!caller?.companyId || !caller.employeeId) {
     return json({ error: 'Sign in to use this.' }, 401)
   }
+
+
   const me = caller.employeeId
   const company = caller.companyId
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const action = String(body.action || '')
+
+  // NEVER A REAL COMPUTER ON THE PUBLIC DEMO.
+  //
+  // The demo's password is printed on the login page so anyone can explore
+  // it. A computer paired to it could be driven by anyone who opens the
+  // demo. On 2026-10-14 London's Mac did exactly that — his browser was
+  // signed in to the demo when the agent asked him to press Connect. So
+  // pairing and starting a session are refused for it outright, and the
+  // agent, told `repair`, throws the demo sign-in away and pairs afresh.
+  if (String(caller.email || '').toLowerCase() === 'demo@jobscout.app' && ['hello', 'pair_claim'].includes(action)) {
+    return json({ error: 'This browser is signed in to the JobScout demo, which cannot have a computer. Sign in as yourself, then press Connect.', repair: true }, 403)
+  }
 
   const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' }
   const rest = async (path: string, init: RequestInit = {}) => {

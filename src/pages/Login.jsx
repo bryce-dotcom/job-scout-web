@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { takeAfterLogin, forgetAfterLogin } from '../lib/afterLogin'
 import { PLANS } from '../lib/billingPlans'
 import { Eye, EyeOff, Check, ArrowRight } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -117,7 +118,9 @@ export default function Login() {
       setCompany(result.company)
       checkDeveloperStatus().catch(() => {})
       supabase.from('employees').update({ last_login: new Date().toISOString() }).eq('id', result.employee.id).then()
-      navigate(result.company.setup_complete === false ? '/onboarding' : '/')
+      // Back to where they were going (lib/afterLogin) — above all a
+      // "Connect this computer?" page the agent opened before they signed in.
+      navigate(result.company.setup_complete === false ? '/onboarding' : (takeAfterLogin() || '/'))
     } catch (err) {
       console.error('[Login] Sign in error:', err)
       setError('Sign in failed. Please try again.')
@@ -139,6 +142,9 @@ export default function Login() {
       setUser(result.employee)
       setCompany(result.company)
       checkDeveloperStatus().catch(() => {})
+      // Never into a page meant for a real account: London's Mac paired to
+      // the demo because the Connect page took whoever was signed in.
+      forgetAfterLogin()
       navigate('/')
     } catch (err) {
       console.error('[Login] Demo login error:', err)
