@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm run guard && vite build && node scripts/stash-sourcemaps.mjs",
     "build:only": "vite build",
-    "guard": "node scripts/guard.mjs",
+    "guard": "node scripts/guard.mjs && node scripts/check-cycles.mjs src",
     "test": "vitest run",
     "test:watch": "vitest",
     "schema:check": "node scripts/schema-check.mjs",

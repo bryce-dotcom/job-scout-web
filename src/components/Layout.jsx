@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import BuildTag from './BuildTag'
@@ -6,6 +6,7 @@ import { configFromSettings, navLabel } from '../lib/documentVocabulary'
 import { fetchDueFollowUpCount } from '../lib/followUpDue'
 import FeedbackButton from './FeedbackButton'
 import { pageVisible } from '../../supabase/functions/_shared/appMap.ts'
+import { ThemeContext, theme, useTheme } from './ThemeContext'
 import ArnieFloatingPanel from './ArnieFloatingPanel'
 import NavCustomizer from './NavCustomizer'
 import { applyNavPrefs, loadNavPrefs, resetNavPrefs, saveNavPrefs } from '../lib/navPrefs'
@@ -73,29 +74,15 @@ import {
   PlayCircle as Play,
   Target, SlidersHorizontal, Megaphone } from 'lucide-react'
 
-// Theme context
-const ThemeContext = createContext(null)
-
-// Job Scout Theme - Light Topo
-const theme = {
-  bg: '#f7f5ef',
-  bgCard: '#ffffff',
-  bgCardHover: '#eef2eb',
-  border: '#d6cdb8',
-  text: '#2c3530',
-  textSecondary: '#4d5a52',
-  textMuted: '#7d8a7f',
-  accent: '#5a6349',
-  accentHover: '#4a5239',
-  accentBg: 'rgba(90,99,73,0.12)',
-  shadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
-  shadowLg: '0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05)'
-}
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext)
-  return context || { theme }
-}
+// The theme, the context and useTheme now live in ./ThemeContext, which
+// imports nothing but React. They were here, and that made every component
+// wanting the theme import Layout — including the ones Layout renders, which
+// closed a cycle (Layout -> ArnieFloatingPanel -> ArnieChat -> Layout) that
+// the production bundler turns into a read-before-initialisation error.
+//
+// Re-exported so the 117 files already importing useTheme from here keep
+// working untouched.
+export { useTheme }
 
 // SVG Topo Map Pattern - subtle tan contour lines
 const TopoBackground = () => (

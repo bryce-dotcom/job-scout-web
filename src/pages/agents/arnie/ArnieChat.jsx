@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useTheme } from '../../../components/Layout'
+// From ThemeContext, NOT Layout: Layout renders ArnieFloatingPanel which
+// renders this file, so importing Layout here closes a circular import that
+// the production bundle turns into a read-before-initialisation crash.
+import { useTheme } from '../../../components/ThemeContext'
 import { useStore } from '../../../lib/store'
 import { supabase } from '../../../lib/supabase'
 import { sendMessageStream, createSession, saveMessage, updateSessionTitle, loadSessionMessages, rememberLastSession } from './arnieEngine'

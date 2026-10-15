@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../lib/store'
-import { dataConsoleTheme as theme } from './DataConsole'
+import { dataConsoleTheme as theme } from './dataConsoleTheme'
 import { RefreshCw, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 
 // Migrations console — one place to see every HCP import / backfill /

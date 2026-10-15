@@ -25,6 +25,7 @@ import DataConsoleFeedback from './DataConsoleFeedback'
 import DataConsoleCrashes from './DataConsoleCrashes'
 import DataConsoleAuditLog from './DataConsoleAuditLog'
 import DataConsoleSystem from './DataConsoleSystem'
+import { dataConsoleTheme } from './dataConsoleTheme'
 import DataConsoleMigrations from './DataConsoleMigrations'
 import DataConsoleDrift from './DataConsoleDrift'
 
@@ -56,21 +57,12 @@ const navItems = [
   { path: 'ai-assist', label: 'AI Assistant', icon: Sparkles },
 ]
 
-const theme = {
-  bg: '#0a0a0a',
-  bgCard: '#141414',
-  bgHover: '#1f1f1f',
-  border: '#2a2a2a',
-  text: '#ffffff',
-  textMuted: '#888888',
-  accent: '#f97316',
-  accentBg: 'rgba(249, 115, 22, 0.15)',
-  success: '#22c55e',
-  warning: '#eab308',
-  error: '#ef4444'
-}
+// The palette moved to ./dataConsoleTheme so the Migrations tab can read it
+// without importing this page back (a circular import the production bundler
+// turns into a read-before-initialisation crash).
+const theme = dataConsoleTheme
 
-export { theme as dataConsoleTheme }
+export { dataConsoleTheme }
 
 export default function DataConsole() {
   const navigate = useNavigate()
