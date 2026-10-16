@@ -1073,8 +1073,11 @@ async function render1096Pdf({ company, year, totals }: any): Promise<Uint8Array
   drawBox(page, margin, y, 530, 50, '5 Total amount reported with this Form 1096', money(totals.total_paid), font, fontB, ink, muted);
   y -= 60;
 
-  // Box "Type of form being filed" — check 1099-NEC
-  drawBox(page, margin, y, 530, 36, 'Type of form being filed', '☑ 1099-NEC (Nonemployee Compensation)', font, fontB, ink, muted);
+  // Box "Type of form being filed" — check 1099-NEC. "[X]", not "☑": the
+  // standard Helvetica here only encodes WinAnsi, and pdf-lib THROWS on any
+  // other glyph, so the ballot box failed the whole 1099-NEC set from the day
+  // it was written (found 2026-10-16). taxFormGlyphs.test.js guards this.
+  drawBox(page, margin, y, 530, 36, 'Type of form being filed', '[X] 1099-NEC (Nonemployee Compensation)', font, fontB, ink, muted);
   y -= 46;
 
   drawWrapped(page, margin, 80,
