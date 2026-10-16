@@ -19,6 +19,7 @@
     "where": "node scripts/where.mjs",
     "ship": "node scripts/ship.mjs",
     "deployed": "node scripts/deployed.mjs",
+    "deploy:fn": "node scripts/deploy-fn.mjs",
     "setup:sessions": "node scripts/setup-sessions.mjs",
     "fresh": "node scripts/fresh.mjs",
     "fleet": "node scripts/fleet.mjs",
