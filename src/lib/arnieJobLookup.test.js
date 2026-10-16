@@ -89,6 +89,19 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
   })
 })
 
+describe('a status as people say it, and "moved there today" (Alayda, 2026-10-16)', () => {
+  const q = chat.slice(chat.indexOf("    if (name === 'query_jobs') {"), chat.indexOf("    if (name === 'query_my_pay'"))
+  it('matched against the company\'s own status list — exact first, then contains — never a bare literal', () => {
+    expect(q).toMatch(/settings\?select=value&company_id=eq\.\$\{companyId\}&key=eq\.job_statuses&limit=1/)
+    expect(q).toMatch(/const near = exact\.length \? exact : list\.filter\(\(s\) => norm\(s\.name\)\.includes\(want\)/)
+    expect(q).toMatch(/no_such_status: String\(input\.status\), statuses: list\.map/)
+  })
+  it('status_changed_on filters by the local day the status changed', () => {
+    expect(chat).toMatch(/status_changed_on: \{ type: 'string'/)
+    expect(q).toMatch(/params\.append\('last_status_change_at', `gte\.\$\{dayStartUtc\(day, tz\)\.toISOString\(\)\}`\)/)
+  })
+})
+
 describe('email it to me — and only to me', () => {
   const start = chat.indexOf("if (name === 'email_me') {")
   const branch = chat.slice(start, start + 900)

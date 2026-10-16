@@ -13,7 +13,7 @@ import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { playbookFor } from '../_shared/lightingPlaybook.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
-import { setGoals, scoreboard, localDay } from '../_shared/repGoals.ts'
+import { setGoals, scoreboard, localDay, dayStartUtc } from '../_shared/repGoals.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -151,7 +151,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         job: { type: 'string', description: 'One job to open: its number (JOB-…) or words from its title, address, or customer/business name.' },
-        status: { type: 'string', description: 'Filter by job status (e.g. Complete, In Progress, Scheduled)' },
+        status: { type: 'string', description: 'Filter by job status, as the person says it ("post inspection") — it is matched against this company\'s own status list, so a close name works.' },
+        status_changed_on: { type: 'string', description: 'Only jobs whose status CHANGED on this day: YYYY-MM-DD or "today". With status, that is "moved to <status> today".' },
         assigned_to: { type: 'integer', description: 'Filter by employee ID' },
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
@@ -1317,7 +1318,36 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
 
     if (name === 'query_jobs') {
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
-      if (input.status) params.append('status', `eq.${input.status}`)
+      // THE COMPANY'S OWN STATUS NAMES. This was an exact match on what the
+      // model typed, so Alayda's 5pm routine — "any job that moved to Post
+      // Inspection today" — asked for "Post Inspection", the status is "Post
+      // Inspection (Req)", and it reported none with 14 jobs sitting there
+      // (2026-10-16). jobs.status holds the status ID.
+      if (input.status) {
+        const st = await fetch(sb(`settings?select=value&company_id=eq.${companyId}&key=eq.job_statuses&limit=1`), { headers: hdr }).then((x) => x.ok ? x.json() : []).catch(() => [])
+        let list: { id: string; name: string }[] = []
+        try { list = (JSON.parse(st?.[0]?.value || '[]') || []).filter((s: any) => s && (s.id || s.name)).map((s: any) => ({ id: String(s.id ?? s.name), name: String(s.name ?? s.id) })) } catch { /* fall through to the literal */ }
+        const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const want = norm(String(input.status))
+        const exact = list.filter((s) => norm(s.name) === want || norm(s.id) === want)
+        const near = exact.length ? exact : list.filter((s) => norm(s.name).includes(want) || norm(s.id).includes(want))
+        if (list.length && !near.length) {
+          return { count: 0, no_such_status: String(input.status), statuses: list.map((s) => s.name), say: 'There is no status by that name. Say which of these they mean.' }
+        }
+        if (near.length === 1) params.append('status', `eq.${near[0].id}`)
+        else if (near.length > 1) params.append('status', `in.(${near.map((s) => `"${s.id.replace(/"/g, '')}"`).join(',')})`)
+        else params.append('status', `eq.${input.status}`)
+      }
+      if (input.status_changed_on) {
+        const co = await fetch(sb(`companies?select=timezone&id=eq.${companyId}&limit=1`), { headers: hdr }).then((x) => x.ok ? x.json() : []).catch(() => [])
+        const tz = String(co?.[0]?.timezone || 'America/Denver')
+        const day = String(input.status_changed_on).toLowerCase() === 'today' ? localDay(new Date(), tz) : String(input.status_changed_on).slice(0, 10)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          const next = new Date(Date.parse(`${day}T12:00:00Z`) + 86400000).toISOString().slice(0, 10)
+          params.append('last_status_change_at', `gte.${dayStartUtc(day, tz).toISOString()}`)
+          params.append('last_status_change_at', `lt.${dayStartUtc(next, tz).toISOString()}`)
+        }
+      }
       if (input.assigned_to) params.append('salesperson_id', `eq.${input.assigned_to}`)
       if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
       if (input.start_date) params.append('start_date', `gte.${input.start_date}`)
