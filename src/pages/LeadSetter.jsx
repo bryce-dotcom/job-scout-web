@@ -16,6 +16,7 @@ import {
 import EntityCard from '../components/EntityCard'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
+import { recordConsent } from '../lib/smsConsent'
 import SearchableSelect from '../components/SearchableSelect'
 import SalespeopleMultiSelect from '../components/SalespeopleMultiSelect'
 import { findSimilarLeads } from '../lib/leadDuplicates'
@@ -1894,6 +1895,22 @@ export default function LeadSetter() {
                   </a>
                 )}
               </div>
+
+              {/* Texting consent: a campaign text touch goes only to a lead with this on.
+                  Recorded by the office (source 'office'); START by text sets it too. */}
+              {selectedLead.phone && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, fontSize: 13, color: theme.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selectedLead.sms_consent === true} style={{ width: 18, height: 18 }}
+                    onChange={async (e) => {
+                      const patch = recordConsent({ on: e.target.checked, source: 'office', existing: selectedLead })
+                      const { error } = await supabase.from('leads').update(patch).eq('id', selectedLead.id).eq('company_id', companyId)
+                      if (error) { alert('Could not save: ' + error.message); return }
+                      setSelectedLead({ ...selectedLead, ...patch })
+                      setLeads((xs) => xs.map((l) => (l.id === selectedLead.id ? { ...l, ...patch } : l)))
+                    }} />
+                  <span><b>Texting OK</b> <span style={{ color: theme.textMuted }}>— they agreed to texts from us (campaign texts need this; STOP turns it off)</span></span>
+                </label>
+              )}
 
               {/* Address */}
               {selectedLead.address && (

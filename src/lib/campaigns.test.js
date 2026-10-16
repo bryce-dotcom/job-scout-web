@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newTouch, audienceLabel, campaignProblem, campaignNumbers, mergeText } from './campaigns'
+import { newTouch, audienceLabel, campaignProblem, campaignNumbers, mergeText, touchesSummary, bookedCount, TEXT_MAX } from './campaigns'
 
 describe('campaigns', () => {
   it('newTouch walks the default days and never goes backwards', () => {
@@ -7,8 +7,9 @@ describe('campaigns', () => {
     expect(a.day).toBe(0)
     const b = newTouch([a])
     expect(b.day).toBe(3)
-    const c = newTouch([a, { ...b, day: 10 }])
+    const c = newTouch([a, { ...b, day: 10 }], 'text')
     expect(c.day).toBeGreaterThan(10)
+    expect(c.kind).toBe('text')
   })
 
   it('audienceLabel reads like a sentence', () => {
@@ -18,13 +19,23 @@ describe('campaigns', () => {
     expect(audienceLabel({})).toBe('Nobody yet')
   })
 
-  it('campaignProblem names the first thing to fix', () => {
+  it('touchesSummary says what goes out', () => {
+    expect(touchesSummary([{ kind: 'email', day: 0 }])).toBe('1 email')
+    expect(touchesSummary([{ kind: 'email', day: 0 }, { kind: 'text', day: 3 }, { kind: 'call', day: 7 }])).toBe('1 email, 1 text and 1 call over 7 days')
+    expect(touchesSummary([])).toBe('no touches')
+  })
+
+  it('campaignProblem names the first thing to fix, per kind', () => {
+    const aud = { kind: 'prospects' }
     expect(campaignProblem({})).toMatch(/name/)
     expect(campaignProblem({ name: 'x' })).toMatch(/who/)
-    expect(campaignProblem({ name: 'x', audience: { kind: 'prospects' } })).toMatch(/one email/)
-    expect(campaignProblem({ name: 'x', audience: { kind: 'prospects' }, touches: [{ kind: 'email', day: 0, subject: '', body: 'hi' }] })).toMatch(/subject/)
-    expect(campaignProblem({ name: 'x', audience: { kind: 'prospects' }, touches: [{ kind: 'email', day: 0, subject: 's', body: 'b' }, { kind: 'email', day: 0, subject: 's', body: 'b' }] })).toMatch(/after/)
-    expect(campaignProblem({ name: 'x', audience: { kind: 'prospects' }, touches: [{ kind: 'email', day: 0, subject: 's', body: 'b' }] })).toBe('')
+    expect(campaignProblem({ name: 'x', audience: aud })).toMatch(/one touch/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'email', day: 0, subject: '', body: 'hi' }] })).toMatch(/subject/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'text', day: 0, body: '' }] })).toMatch(/something to say/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'text', day: 0, body: 'x'.repeat(TEXT_MAX + 1) }] })).toMatch(/characters/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'call', day: 0, body: '' }] })).toMatch(/caller/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'email', day: 0, subject: 's', body: 'b' }, { kind: 'call', day: 0, body: 'b' }] })).toMatch(/after/)
+    expect(campaignProblem({ name: 'x', audience: aud, touches: [{ kind: 'text', day: 0, body: 'Hi {{first_name}}' }, { kind: 'call', day: 2, body: 'Ask about the roof' }] })).toBe('')
   })
 
   it('campaignNumbers counts people, not events', () => {
@@ -32,6 +43,12 @@ describe('campaigns', () => {
       { state: 'queued', touch_index: 0 }, { state: 'sent', touch_index: 1 }, { state: 'replied', touch_index: 1, replied_at: 'x' }, { state: 'unsubscribed', touch_index: 1 },
     ])
     expect(n).toMatchObject({ people: 4, sent: 3, replied: 1, unsubscribed: 1, waiting: 1 })
+  })
+
+  it('bookedCount reads the lead, not the campaign', () => {
+    const members = [{ lead_id: 1 }, { lead_id: 2 }, { lead_id: 3 }, { customer_id: 9 }]
+    const leads = { 1: { status: 'Appointment Set' }, 2: { status: 'Contacted', appointment_id: 44 }, 3: { status: 'New' } }
+    expect(bookedCount(members, leads)).toBe(2)
   })
 
   it('mergeText fills the four fields and has a fallback for each', () => {

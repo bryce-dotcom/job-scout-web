@@ -15,7 +15,7 @@ import {
 import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
-import CampaignsTab from './marketing/CampaignsTab'
+import CampaignsTab, { CampaignPerformance } from './marketing/CampaignsTab'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
@@ -512,7 +512,7 @@ export default function Marketing() {
       ) : tab === 'campaigns' ? (
         <CampaignsTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} invoke={invoke} preset={campaignPreset} onPresetUsed={() => setCampaignPreset(null)} />
       ) : tab === 'performance' ? (
-        <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} />
+        <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} companyId={companyId} brands={brands} />
       ) : tab === 'channels' ? (
         <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit}
           companyLinks={companyLinks} onPushToCompany={pushLinksToCompany} />
@@ -1826,7 +1826,7 @@ function CalendarTab({ theme, isMobile, posts, captureMap, kit, isManager, onCad
 // ── Performance ──────────────────────────────────────────────────────
 // What the posts did. Metrics come from the publisher's cached analytics,
 // keyed to our posts by the native post id each network gave back.
-function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, publisher }) {
+function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, publisher, companyId, brands = [] }) {
   const [spend, setSpend] = useState(null)          // this month's AI pictures / tracks / narration against the caps
   useEffect(() => {
     let live = true
@@ -1884,6 +1884,9 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
         <Stat label="Views · 30 days" value={sum('views')} />
         <Stat label="Likes · 30 days" value={sum('likes')} />
       </div>
+
+      {/* Campaigns: people, reached, replied, booked — read from the board */}
+      <CampaignPerformance theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brand} />
 
       {/* What the AI spent this month, against the company's caps */}
       {spend && (

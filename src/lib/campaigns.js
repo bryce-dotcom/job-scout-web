@@ -6,13 +6,22 @@
 export const MAX_TOUCHES = 4
 export const TOUCH_DAY_DEFAULTS = [0, 3, 7, 14]
 export const LEAD_STATUSES = ['New', 'Contacted', 'Callback', 'Appointment Set', 'Qualified', 'Quote Sent']
+export const TEXT_MAX = 320
+
+/** The three kinds of touch, in the words the sheet uses. */
+export const TOUCH_KINDS = [
+  { id: 'email', label: 'Email', body: 'Subject and a short note.' },
+  { id: 'text', label: 'Text', body: 'Only to people who said yes to texts.' },
+  { id: 'call', label: 'Call', body: 'A Callback card on the board, with a script.' },
+]
+export const kindLabel = (kind) => (TOUCH_KINDS.find((k) => k.id === kind) || TOUCH_KINDS[0]).label
 
 /** A fresh touch for position `index`: the next sensible day, email, empty. */
-export function newTouch(touches = []) {
+export function newTouch(touches = [], kind = 'email') {
   const index = touches.length
   const lastDay = touches.length ? Number(touches[touches.length - 1].day) || 0 : -1
   const day = TOUCH_DAY_DEFAULTS[index] != null && TOUCH_DAY_DEFAULTS[index] > lastDay ? TOUCH_DAY_DEFAULTS[index] : lastDay + 3
-  return { day: index === 0 ? 0 : day, kind: 'email', subject: '', body: '' }
+  return { day: index === 0 ? 0 : day, kind, subject: '', body: '' }
 }
 
 /** What the audience picker says about an audience, in words. */
@@ -26,6 +35,19 @@ export function audienceLabel(a = {}) {
   }
 }
 
+/** "2 emails, a text and a call over 7 days" — the card's one-line summary of the touches. */
+export function touchesSummary(touches = []) {
+  const n = { email: 0, text: 0, call: 0 }
+  for (const t of touches) n[t.kind in n ? t.kind : 'email'] += 1
+  const parts = []
+  if (n.email) parts.push(`${n.email} ${n.email === 1 ? 'email' : 'emails'}`)
+  if (n.text) parts.push(`${n.text} ${n.text === 1 ? 'text' : 'texts'}`)
+  if (n.call) parts.push(`${n.call} ${n.call === 1 ? 'call' : 'calls'}`)
+  const words = parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+  const span = touches.length > 1 ? Number(touches[touches.length - 1]?.day) || 0 : 0
+  return words ? `${words}${span ? ` over ${span} days` : ''}` : 'no touches'
+}
+
 /**
  * Why a campaign cannot start, or '' when it can. One sentence, the first
  * problem only — the person fixes it and presses again.
@@ -35,12 +57,14 @@ export function campaignProblem(c = {}) {
   if (!c.audience?.kind) return 'Pick who it goes to.'
   if (c.audience.kind === 'leads' && !(c.audience.ids || []).length) return 'Pick who it goes to.'
   const touches = Array.isArray(c.touches) ? c.touches : []
-  if (!touches.length) return 'Add at least one email.'
+  if (!touches.length) return 'Add at least one touch.'
   for (let i = 0; i < touches.length; i++) {
     const t = touches[i]
-    if (t.kind !== 'email') return `Touch ${i + 1}: only email goes out this week.`
-    if (!String(t.subject || '').trim()) return `Touch ${i + 1} needs a subject line.`
-    if (!String(t.body || '').trim()) return `Touch ${i + 1} needs something to say.`
+    const kind = t.kind || 'email'
+    if (!['email', 'text', 'call'].includes(kind)) return `Touch ${i + 1}: that kind of touch does not exist.`
+    if (kind === 'email' && !String(t.subject || '').trim()) return `Touch ${i + 1} needs a subject line.`
+    if (!String(t.body || '').trim()) return kind === 'call' ? `Touch ${i + 1} needs a line or two for the caller.` : `Touch ${i + 1} needs something to say.`
+    if (kind === 'text' && String(t.body).length > TEXT_MAX) return `Touch ${i + 1} is over ${TEXT_MAX} characters for a text.`
     if (i > 0 && Number(t.day) <= Number(touches[i - 1].day)) return `Touch ${i + 1} has to come after touch ${i}.`
   }
   return ''
@@ -56,6 +80,17 @@ export function campaignNumbers(members = []) {
     if (m.state === 'bounced') n.bounced += 1
     if (m.state === 'queued') n.waiting += 1
     if (m.state === 'done') n.done += 1
+  }
+  return n
+}
+
+/** A lead counts as booked once it has an appointment or has moved past the board. */
+export const BOOKED_STATUSES = ['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won']
+export function bookedCount(members = [], leadsById = {}) {
+  let n = 0
+  for (const m of members) {
+    const l = m.lead_id ? leadsById[m.lead_id] : null
+    if (l && (l.appointment_id || BOOKED_STATUSES.includes(l.status) || l.converted_at)) n += 1
   }
   return n
 }

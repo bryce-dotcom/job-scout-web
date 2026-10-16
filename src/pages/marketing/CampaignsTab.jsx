@@ -1,12 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../lib/toast'
-import { MAX_TOUCHES, LEAD_STATUSES, newTouch, audienceLabel, campaignProblem, campaignNumbers, MERGE_FIELDS } from '../../lib/campaigns'
-import { Send, Plus, Trash2, Sparkles, Pause, Play, Pencil, X, Loader2, Users, Mail, Reply, Ban } from 'lucide-react'
+import { MAX_TOUCHES, LEAD_STATUSES, TOUCH_KINDS, TEXT_MAX, newTouch, audienceLabel, campaignProblem, campaignNumbers, touchesSummary, bookedCount, MERGE_FIELDS } from '../../lib/campaigns'
+import { Send, Plus, Trash2, Sparkles, Pause, Play, Pencil, X, Loader2, Users, Mail, Reply, Ban, MessageSquare, Phone, CalendarCheck } from 'lucide-react'
 
 // Campaigns — ONE object: who, what, where results land. Three things on the
 // screen: the list, a card per campaign, and one sheet to make or edit one.
 // No sequences, no lists, no plays. If it needs a tutorial it is wrong.
+//
+// Touches: an email (subject + note), a text (only to people who said yes to
+// texts; the server checks consent on every send), or a call (nothing is
+// sent — on its day the lead becomes a Callback card with the script on it).
 
 const MKT = '#e11d48'
 const MKT_BG = 'rgba(225,29,72,0.10)'
@@ -16,11 +20,13 @@ const STATUS = {
   paused:  { label: 'Paused',  color: '#a16207' },
   done:    { label: 'Done',    color: '#3b82f6' },
 }
+const KIND_ICON = { email: Mail, text: MessageSquare, call: Phone }
 const input = (theme) => ({ width: '100%', boxSizing: 'border-box', padding: '10px 12px', minHeight: 44, borderRadius: 8, border: `1px solid ${theme.border}`, background: '#fff', color: theme.text, fontSize: 14, outline: 'none' })
 const primary = (color = MKT) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 14px', minHeight: 44, borderRadius: 8, border: 'none', background: color, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' })
 const ghost = (theme) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 12px', minHeight: 44, borderRadius: 8, border: `1px solid ${theme.border}`, background: theme.bgCard, color: theme.text, fontSize: 14, fontWeight: 500, cursor: 'pointer' })
 const label = (theme) => ({ fontSize: 12, fontWeight: 700, color: theme.textSecondary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 })
 const pill = (color) => ({ display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color, background: `${color}22` })
+const chip = (theme, on) => ({ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', minHeight: 32, borderRadius: 999, border: `1px solid ${on ? MKT : theme.border}`, background: on ? MKT_BG : theme.bgCard, color: on ? MKT : theme.textSecondary, fontSize: 12, fontWeight: on ? 700 : 500, cursor: 'pointer' })
 
 export default function CampaignsTab({ theme, isMobile, companyId, brands = [], brand = '', invoke, preset = null, onPresetUsed }) {
   const [campaigns, setCampaigns] = useState([])
@@ -66,7 +72,7 @@ export default function CampaignsTab({ theme, isMobile, companyId, brands = [], 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, fontSize: 13, color: theme.textMuted }}>
-          Who it goes to, what it says, and replies land on the Lead Setter board. Email this week; texts and call cards next.
+          Who it goes to, what it says, and replies land on the Lead Setter board. Emails, texts to people who said yes, and call cards for the setters.
         </div>
         <button type="button" style={primary()} onClick={() => setEditing({ company_id: companyId, brand: brand || null, name: '', audience: {}, touches: [newTouch([])], stop_on_reply: true, status: 'draft' })}>
           <Plus size={16} /> New campaign
@@ -103,13 +109,15 @@ function CampaignCard({ theme, c, members, onEdit, onAct }) {
         <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Untitled campaign'}</div>
         <span style={pill(st.color)}>{st.label}</span>
       </div>
-      <div style={{ fontSize: 13, color: theme.textSecondary }}>
-        {audienceLabel(c.audience)} · {touches.length} {touches.length === 1 ? 'email' : 'emails'}{touches.length > 1 ? ` over ${Number(touches[touches.length - 1]?.day) || 0} days` : ''}
+      <div style={{ fontSize: 13, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span>{audienceLabel(c.audience)} ·</span>
+        <span style={{ display: 'inline-flex', gap: 3 }}>{touches.map((t, i) => { const I = KIND_ICON[t.kind] || Mail; return <I key={i} size={13} /> })}</span>
+        <span>{touchesSummary(touches)}</span>
       </div>
       {c.status !== 'draft' && (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: theme.text }}>
           <span title="People in it"><Users size={13} style={{ verticalAlign: -2 }} /> {n.people}</span>
-          <span title="Got at least one email"><Mail size={13} style={{ verticalAlign: -2 }} /> {n.sent}</span>
+          <span title="Reached at least once"><Send size={13} style={{ verticalAlign: -2 }} /> {n.sent}</span>
           <span title="Replied" style={{ color: n.replied ? '#16a34a' : theme.text }}><Reply size={13} style={{ verticalAlign: -2 }} /> {n.replied}</span>
           <span title="Unsubscribed or bounced" style={{ color: theme.textMuted }}><Ban size={13} style={{ verticalAlign: -2 }} /> {n.unsubscribed + n.bounced}</span>
         </div>
@@ -125,30 +133,31 @@ function CampaignCard({ theme, c, members, onEdit, onAct }) {
 }
 
 function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, onClose, onSaved }) {
-  const [c, setC] = useState(() => ({ ...initial, touches: (Array.isArray(initial.touches) && initial.touches.length ? initial.touches : [newTouch([])]).map((t) => ({ ...t })) }))
+  const [c, setC] = useState(() => ({ ...initial, touches: (Array.isArray(initial.touches) && initial.touches.length ? initial.touches : [newTouch([])]).map((t) => ({ kind: 'email', ...t })) }))
   const [saving, setSaving] = useState(false)
   const [writing, setWriting] = useState(null) // touch index being written
-  const [preview, setPreview] = useState(null) // {count, sample, skipped}
+  const [preview, setPreview] = useState(null) // {count, textable, sample, skipped}
   const [testing, setTesting] = useState(null)
   const started = c.status && c.status !== 'draft'
   const set = (patch) => setC((x) => ({ ...x, ...patch }))
   const setTouch = (i, patch) => setC((x) => ({ ...x, touches: x.touches.map((t, j) => (j === i ? { ...t, ...patch } : t)) }))
   const previewTimer = useRef(null)
+  const kinds = useMemo(() => [...new Set(c.touches.map((t) => t.kind || 'email'))], [c.touches])
+  const hasText = kinds.includes('text')
 
-  // The audience, counted as it would be sent to. Debounced: the picker changes fast.
+  // The audience, counted as it would be reached. Debounced: the picker changes fast.
   useEffect(() => {
     if (!c.audience?.kind) { setPreview(null); return }
     clearTimeout(previewTimer.current)
     previewTimer.current = setTimeout(async () => {
-      const r = await invoke('marketing-campaign', { action: 'preview_audience', audience: c.audience })
+      const r = await invoke('marketing-campaign', { action: 'preview_audience', audience: c.audience, kinds })
       if (r.ok) setPreview(r)
     }, 400)
     return () => clearTimeout(previewTimer.current)
-  }, [JSON.stringify(c.audience)]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(c.audience), kinds.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
-    const row = { company_id: companyId, brand: c.brand || null, name: c.name.trim(), audience: c.audience, touches: c.touches, stop_on_reply: c.stop_on_reply !== false, about: undefined }
-    delete row.about
+    const row = { company_id: companyId, brand: c.brand || null, name: c.name.trim(), audience: c.audience, touches: c.touches, stop_on_reply: c.stop_on_reply !== false }
     setSaving(true)
     let saved
     if (c.id) {
@@ -175,7 +184,7 @@ function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, on
     if (!s) return
     const r = await invoke('marketing-campaign', { action: 'start', campaign_id: s.id })
     if (!r.ok) { toast.error(r.error || 'Could not start'); return }
-    toast.success(`Going out to ${r.people} ${r.people === 1 ? 'person' : 'people'}. First email leaves within 15 minutes, 8am to 7pm.`)
+    toast.success(`Going out to ${r.people} ${r.people === 1 ? 'person' : 'people'}. The first touch goes within 15 minutes, 8am to 7pm.`)
     onSaved()
   }
   const write = async (i) => {
@@ -183,16 +192,16 @@ function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, on
     const r = await invoke('marketing-campaign', { action: 'write', campaign: { ...c, about: c.about || '' }, index: i })
     setWriting(null)
     if (!r.ok) { toast.error(r.error || 'Could not write it'); return }
-    setTouch(i, { subject: r.subject, body: r.body })
+    setTouch(i, { subject: r.subject || '', body: r.body })
   }
   const test = async (i) => {
     const t = c.touches[i]
-    if (!t?.subject?.trim() || !t?.body?.trim()) { toast.error('Write the email first.'); return }
+    if (!t?.body?.trim() || (t.kind === 'email' && !t.subject?.trim())) { toast.error('Write it first.'); return }
     setTesting(i)
     const r = await invoke('marketing-campaign', { action: 'test', campaign: { ...c, id: c.id || 0 }, index: i })
     setTesting(null)
     if (!r.ok) { toast.error(r.error || 'Could not send the test'); return }
-    toast.success(`Sent to ${r.to}. Check your inbox.`)
+    toast.success(`Sent to ${r.to}.`)
   }
 
   const aud = c.audience || {}
@@ -250,7 +259,8 @@ function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, on
             )}
             {preview && (
               <div style={{ fontSize: 13, color: preview.count ? theme.textSecondary : '#b45309', marginTop: 8 }}>
-                {preview.count ? <>Goes to <b>{preview.count}</b> {preview.count === 1 ? 'person' : 'people'}{preview.sample?.length ? ` — ${preview.sample.slice(0, 3).join(', ')}${preview.count > 3 ? '…' : ''}` : ''}.</> : 'Nobody here has an email address we may write to.'}
+                {preview.count ? <>Reaches <b>{preview.count}</b> {preview.count === 1 ? 'person' : 'people'}{preview.sample?.length ? ` — ${preview.sample.slice(0, 3).join(', ')}${preview.count > 3 ? '…' : ''}` : ''}.</> : (hasText && kinds.length === 1 ? 'Nobody here has said yes to texts yet, so a text-only campaign reaches no one. Add an email or a call, or tick Texting OK on the leads who agreed.' : 'Nobody here can be reached by these touches.')}
+                {hasText && preview.count ? <> <b>{preview.textable || 0}</b> {preview.textable === 1 ? 'has' : 'have'} said yes to texts; the rest skip the text touch.</> : ''}
                 {preview.skipped?.no_email ? ` ${preview.skipped.no_email} have no email.` : ''}{preview.skipped?.suppressed ? ` ${preview.skipped.suppressed} unsubscribed.` : ''}
               </div>
             )}
@@ -262,30 +272,52 @@ function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, on
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {c.touches.map((t, i) => (
-              <div key={i} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>Email {i + 1}</span>
-                  <span style={{ fontSize: 13, color: theme.textMuted }}>on day</span>
-                  <input type="number" min={i === 0 ? 0 : Number(c.touches[i - 1].day) + 1} max={60} value={t.day} onChange={(e) => setTouch(i, { day: Number(e.target.value) })} disabled={started || i === 0}
-                    style={{ ...input(theme), width: 72, minHeight: 36, padding: '6px 8px' }} />
-                  <span style={{ flex: 1 }} />
-                  <button type="button" style={{ ...ghost(theme), minHeight: 36, padding: '6px 10px', fontSize: 13 }} onClick={() => write(i)} disabled={writing != null}>
-                    {writing === i ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} {t.subject || t.body ? 'Rewrite' : 'Write it for me'}
-                  </button>
-                  {c.touches.length > 1 && !started && <button type="button" aria-label="Remove" style={{ ...ghost(theme), minHeight: 36, padding: '6px 8px' }} onClick={() => set({ touches: c.touches.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>}
+            {c.touches.map((t, i) => {
+              const kind = t.kind || 'email'
+              const Icon = KIND_ICON[kind]
+              return (
+                <div key={i} style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Icon size={15} color={MKT} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>Touch {i + 1}</span>
+                    <span style={{ fontSize: 13, color: theme.textMuted }}>on day</span>
+                    <input type="number" min={i === 0 ? 0 : Number(c.touches[i - 1].day) + 1} max={60} value={t.day} onChange={(e) => setTouch(i, { day: Number(e.target.value) })} disabled={started || i === 0}
+                      style={{ ...input(theme), width: 72, minHeight: 36, padding: '6px 8px' }} />
+                    <span style={{ flex: 1 }} />
+                    <button type="button" style={{ ...ghost(theme), minHeight: 36, padding: '6px 10px', fontSize: 13 }} onClick={() => write(i)} disabled={writing != null}>
+                      {writing === i ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} {t.subject || t.body ? 'Rewrite' : 'Write it for me'}
+                    </button>
+                    {c.touches.length > 1 && !started && <button type="button" aria-label="Remove" style={{ ...ghost(theme), minHeight: 36, padding: '6px 8px' }} onClick={() => set({ touches: c.touches.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>}
+                  </div>
+                  {!started && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {TOUCH_KINDS.map((k) => <button key={k.id} type="button" title={k.body} style={chip(theme, kind === k.id)} onClick={() => setTouch(i, { kind: k.id })}>{k.label}</button>)}
+                      <span style={{ fontSize: 12, color: theme.textMuted, alignSelf: 'center' }}>{TOUCH_KINDS.find((k) => k.id === kind)?.body}</span>
+                    </div>
+                  )}
+                  {kind === 'email' && <input style={input(theme)} value={t.subject || ''} onChange={(e) => setTouch(i, { subject: e.target.value })} placeholder="Subject" />}
+                  <textarea style={{ ...input(theme), minHeight: kind === 'email' ? 120 : 88, resize: 'vertical', fontFamily: 'inherit' }} value={t.body || ''}
+                    maxLength={kind === 'text' ? TEXT_MAX : undefined}
+                    onChange={(e) => setTouch(i, { body: e.target.value })}
+                    placeholder={kind === 'email' ? 'Hi {{first_name}},\n\n…' : kind === 'text' ? 'Hi {{first_name}}, this is {{our_company}}. …' : 'Who is calling and why · one question · the offer · the ask'} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: theme.textMuted }}>
+                    <span>
+                      {kind === 'email' && <>Fields: {MERGE_FIELDS.join(' ')}. Your signature and an unsubscribe line are added.</>}
+                      {kind === 'text' && <>{(t.body || '').length}/{TEXT_MAX}. "Reply STOP to opt out" is added. Goes only to people who said yes to texts.</>}
+                      {kind === 'call' && <>On day {t.day} the lead becomes a Callback card on the Lead Setter board with this script; the setter is notified.</>}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    {kind !== 'call' && <button type="button" style={{ ...ghost(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} onClick={() => test(i)} disabled={testing != null}>{testing === i ? 'Sending…' : 'Send me a test'}</button>}
+                  </div>
                 </div>
-                <input style={input(theme)} value={t.subject} onChange={(e) => setTouch(i, { subject: e.target.value })} placeholder="Subject" />
-                <textarea style={{ ...input(theme), minHeight: 120, resize: 'vertical', fontFamily: 'inherit' }} value={t.body} onChange={(e) => setTouch(i, { body: e.target.value })} placeholder={`Hi {{first_name}},\n\n…`} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: theme.textMuted }}>
-                  <span>Fields: {MERGE_FIELDS.join(' ')}. Your signature and an unsubscribe line are added.</span>
-                  <span style={{ flex: 1 }} />
-                  <button type="button" style={{ ...ghost(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} onClick={() => test(i)} disabled={testing != null}>{testing === i ? 'Sending…' : 'Send me a test'}</button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
             {c.touches.length < MAX_TOUCHES && !started && (
-              <button type="button" style={{ ...ghost(theme), alignSelf: 'flex-start' }} onClick={() => set({ touches: [...c.touches, newTouch(c.touches)] })}><Plus size={15} /> Add a follow-up</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" style={ghost(theme)} onClick={() => set({ touches: [...c.touches, newTouch(c.touches, 'email')] })}><Plus size={15} /> Email</button>
+                <button type="button" style={ghost(theme)} onClick={() => set({ touches: [...c.touches, newTouch(c.touches, 'text')] })}><Plus size={15} /> Text</button>
+                <button type="button" style={ghost(theme)} onClick={() => set({ touches: [...c.touches, newTouch(c.touches, 'call')] })}><Plus size={15} /> Call</button>
+              </div>
             )}
           </div>
 
@@ -302,6 +334,55 @@ function CampaignSheet({ theme, isMobile, companyId, brands, invoke, initial, on
           {!started && <button type="button" style={primary()} onClick={start} disabled={saving}><Play size={15} /> Start</button>}
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The campaign numbers for the Performance tab: per campaign, how many people,
+ * how many reached, how many replied, how many booked (the lead has an
+ * appointment or moved past the board). Reads what the board already knows;
+ * nothing here is a new source of truth.
+ */
+export function CampaignPerformance({ theme, isMobile, companyId, brands = [], brand = '' }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      const { data: cs } = await supabase.from('marketing_campaigns').select('id, name, brand, status, started_at, touches').eq('company_id', companyId).neq('status', 'draft').order('created_at', { ascending: false }).limit(50)
+      if (!cs?.length) { if (live) setRows([]); return }
+      const { data: ms } = await supabase.from('campaign_members').select('campaign_id, lead_id, customer_id, state, touch_index, replied_at').eq('company_id', companyId).in('campaign_id', cs.map((c) => c.id)).limit(20000)
+      const leadIds = [...new Set((ms || []).map((m) => m.lead_id).filter(Boolean))]
+      const leadsById = {}
+      for (let i = 0; i < leadIds.length; i += 500) {
+        const { data: ls } = await supabase.from('leads').select('id, status, appointment_id, converted_at').eq('company_id', companyId).in('id', leadIds.slice(i, i + 500))
+        for (const l of ls || []) leadsById[l.id] = l
+      }
+      if (!live) return
+      setRows(cs.map((c) => {
+        const mine = (ms || []).filter((m) => m.campaign_id === c.id)
+        return { c, n: campaignNumbers(mine), booked: bookedCount(mine, leadsById) }
+      }))
+    })()
+    return () => { live = false }
+  }, [companyId])
+  const visible = (rows || []).filter((r) => brands.length <= 1 || (r.c.brand || '') === (brand || ''))
+  if (!rows || !visible.length) return null
+  return (
+    <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>Campaigns</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr) repeat(4, 56px)' : 'minmax(0,1fr) repeat(4, 90px)', gap: 6, fontSize: 12, color: theme.textMuted, fontWeight: 700 }}>
+        <span /><span style={{ textAlign: 'right' }}><Users size={12} style={{ verticalAlign: -2 }} /> People</span><span style={{ textAlign: 'right' }}><Send size={12} style={{ verticalAlign: -2 }} /> Reached</span><span style={{ textAlign: 'right' }}><Reply size={12} style={{ verticalAlign: -2 }} /> Replied</span><span style={{ textAlign: 'right' }}><CalendarCheck size={12} style={{ verticalAlign: -2 }} /> Booked</span>
+      </div>
+      {visible.map(({ c, n, booked }) => (
+        <div key={c.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr) repeat(4, 56px)' : 'minmax(0,1fr) repeat(4, 90px)', gap: 6, fontSize: 13, color: theme.text, alignItems: 'center' }}>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Untitled'} <span style={{ ...pill((STATUS[c.status] || STATUS.draft).color), marginLeft: 6 }}>{(STATUS[c.status] || STATUS.draft).label}</span></span>
+          <span style={{ textAlign: 'right' }}>{n.people}</span>
+          <span style={{ textAlign: 'right' }}>{n.sent}</span>
+          <span style={{ textAlign: 'right', color: n.replied ? '#16a34a' : theme.text }}>{n.replied}</span>
+          <span style={{ textAlign: 'right', fontWeight: booked ? 700 : 400 }}>{booked}</span>
+        </div>
+      ))}
     </div>
   )
 }

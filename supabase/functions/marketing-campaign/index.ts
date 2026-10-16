@@ -1,5 +1,7 @@
 // marketing-campaign: ONE object, a campaign — who, what, and where results
-// land (MARKETING_REVIEW.md §3, week one: email only).
+// land (MARKETING_REVIEW.md §3). Week one: email. Week two: text touches,
+// sent only to people with sms_consent, and call touches, which make a
+// Callback card on the Lead Setter board instead of sending anything.
 //
 // Deployed with verify_jwt=false because three callers have no JWT:
 //   • the 15-minute tick from pg_cron  {tick:true} + x-internal-key (Vault)
@@ -24,7 +26,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
-import { brandKey, brandsFrom } from '../_shared/marketing.ts'
+import { brandKey, brandsFrom, managerIds } from '../_shared/marketing.ts'
 import { campaignReplyAddress } from '../_shared/replyToken.ts'
 
 const corsHeaders = {
@@ -45,7 +47,9 @@ const FROM_ADDRESS = 'marketing@appsannex.com'
 
 type Touch = { day: number; kind: string; subject: string; body: string }
 type Audience = { kind?: string; ids?: number[]; status?: string; months?: number }
-type Person = { lead_id: number | null; customer_id: number | null; email: string; name: string; company: string }
+type Person = { lead_id: number | null; customer_id: number | null; email: string; name: string; company: string; phone: string; sms_consent: boolean }
+const TEXT_MAX = 320
+const STOP_LINE = 'Reply STOP to opt out.'
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const lower = (s: unknown) => String(s || '').trim().toLowerCase()
@@ -109,21 +113,21 @@ async function companyFacts(sb: any, companyId: number, brandId: string | null) 
 // ── Audiences → people ─────────────────────────────────────────────────
 async function resolveAudience(sb: any, companyId: number, a: Audience): Promise<Person[]> {
   const people: Person[] = []
-  const leadRows = (rows: any[]) => rows.map((l) => ({ lead_id: l.id, customer_id: null, email: lower(l.email), name: l.customer_name || l.business_name || '', company: l.business_name || '' }))
+  const leadRows = (rows: any[]) => rows.map((l) => ({ lead_id: l.id, customer_id: null, email: lower(l.email), name: l.customer_name || l.business_name || '', company: l.business_name || '', phone: String(l.phone || ''), sms_consent: l.sms_consent === true }))
   if (a.kind === 'leads') {
     const ids = (a.ids || []).map(Number).filter(Boolean).slice(0, 2000)
     if (!ids.length) return []
-    const { data } = await sb.from('leads').select('id, email, customer_name, business_name').eq('company_id', companyId).in('id', ids)
+    const { data } = await sb.from('leads').select('id, email, customer_name, business_name, phone, sms_consent').eq('company_id', companyId).in('id', ids)
     people.push(...leadRows(data || []))
   } else if (a.kind === 'prospects') {
-    const { data } = await sb.from('leads').select('id, email, customer_name, business_name').eq('company_id', companyId)
+    const { data } = await sb.from('leads').select('id, email, customer_name, business_name, phone, sms_consent').eq('company_id', companyId)
       .eq('lead_source', 'AI Prospect Research').in('status', ['New', 'Assigned', 'Contacted', 'Callback']).limit(2000)
     people.push(...leadRows(data || []))
   } else if (a.kind === 'lead_status') {
-    const { data } = await sb.from('leads').select('id, email, customer_name, business_name').eq('company_id', companyId).eq('status', String(a.status || 'New')).limit(2000)
+    const { data } = await sb.from('leads').select('id, email, customer_name, business_name, phone, sms_consent').eq('company_id', companyId).eq('status', String(a.status || 'New')).limit(2000)
     people.push(...leadRows(data || []))
   } else if (a.kind === 'customers') {
-    const { data } = await sb.from('customers').select('id, email, name, business_name').eq('company_id', companyId).eq('marketing_opt_in', true).limit(5000)
+    const { data } = await sb.from('customers').select('id, email, name, business_name, phone, sms_consent').eq('company_id', companyId).eq('marketing_opt_in', true).limit(5000)
     let rows = data || []
     if (a.months && Number(a.months) > 0) {
       const since = new Date(Date.now() - Number(a.months) * 30 * 86400000).toISOString()
@@ -131,7 +135,7 @@ async function resolveAudience(sb: any, companyId: number, a: Audience): Promise
       const busy = new Set((recent || []).map((j: any) => j.customer_id))
       rows = rows.filter((c: any) => !busy.has(c.id))
     }
-    people.push(...rows.map((c: any) => ({ lead_id: null, customer_id: c.id, email: lower(c.email), name: c.name || c.business_name || '', company: c.business_name || '' })))
+    people.push(...rows.map((c: any) => ({ lead_id: null, customer_id: c.id, email: lower(c.email), name: c.name || c.business_name || '', company: c.business_name || '', phone: String(c.phone || ''), sms_consent: c.sms_consent === true })))
   }
   return people
 }
@@ -141,21 +145,75 @@ async function suppressedSet(sb: any, companyId: number): Promise<Set<string>> {
   return new Set((data || []).map((r: any) => lower(r.email)))
 }
 
-/** The audience as it would be sent to: valid email, not suppressed, one row per address. */
-async function sendablePeople(sb: any, companyId: number, a: Audience) {
+/**
+ * The audience as it would be sent to. A person is kept when they can be
+ * reached by at least one touch the campaign has: a valid, unsuppressed
+ * email for an email touch; a phone with consent for a text; a phone for a
+ * call card. One row per person; the email is the dedupe key when there is
+ * one. `textable` says how many a text touch would actually reach.
+ */
+async function sendablePeople(sb: any, companyId: number, a: Audience, kinds: string[] = ['email']) {
   const all = await resolveAudience(sb, companyId, a)
   const sup = await suppressedSet(sb, companyId)
   const seen = new Set<string>()
   const keep: Person[] = []
-  let noEmail = 0, suppressed = 0
+  let noEmail = 0, suppressed = 0, textable = 0, noWay = 0
+  const wantsEmail = kinds.includes('email'), wantsText = kinds.includes('text'), wantsCall = kinds.includes('call')
   for (const p of all) {
-    if (!p.email || !validEmail(p.email)) { noEmail += 1; continue }
-    if (sup.has(p.email)) { suppressed += 1; continue }
-    if (seen.has(p.email)) continue
-    seen.add(p.email)
+    const emailOk = !!p.email && validEmail(p.email) && !sup.has(p.email)
+    if (p.email && validEmail(p.email) && sup.has(p.email)) suppressed += 1
+    if (!p.email || !validEmail(p.email)) noEmail += 1
+    const textOk = !!digitsOf(p.phone) && p.sms_consent === true
+    const callOk = !!digitsOf(p.phone)
+    const reachable = (wantsEmail && emailOk) || (wantsText && textOk) || (wantsCall && callOk)
+    if (!reachable) { noWay += 1; continue }
+    const key = p.email || `lead:${p.lead_id}|cust:${p.customer_id}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (textOk) textable += 1
     keep.push(p)
   }
-  return { people: keep, skipped: { no_email: noEmail, suppressed } }
+  return { people: keep, textable, skipped: { no_email: noEmail, suppressed, unreachable: noWay } }
+}
+const digitsOf = (s: string) => { const d = String(s || '').replace(/\D/g, ''); return d.length === 10 ? '1' + d : d.length === 11 && d.startsWith('1') ? d : '' }
+
+/** Move a member to the next touch, or finish them. */
+async function advanceMember(sb: any, m: any, touches: Touch[], now: Date, touch: Touch) {
+  const next = touches[m.touch_index + 1]
+  const patch: Record<string, unknown> = { last_event_at: now.toISOString(), touch_index: m.touch_index + 1 }
+  if (next) { patch.state = 'sent'; patch.next_at = new Date(now.getTime() + Math.max(1, Number(next.day) - Number(touch.day)) * 86400000).toISOString() }
+  else { patch.state = 'done'; patch.next_at = null }
+  await sb.from('campaign_members').update(patch).eq('id', m.id)
+  return !next
+}
+
+/** Who hears about a lead or customer: setter, else salesperson, else owner, else the managers. */
+async function peopleToTell(sb: any, companyId: number, m: { lead_id: number | null; customer_id: number | null }): Promise<{ ids: number[]; route: string; lead: any; customer: any }> {
+  const who = new Set<number>()
+  let route = '/lead-setter', lead: any = null, customer: any = null
+  if (m.lead_id) {
+    const { data } = await sb.from('leads').select('id, status, setter_owner_id, salesperson_id, lead_owner_id, customer_name, business_name, phone, sms_consent, callback_notes').eq('id', m.lead_id).maybeSingle()
+    lead = data
+    for (const id of [lead?.setter_owner_id, lead?.salesperson_id, lead?.lead_owner_id]) if (id) who.add(Number(id))
+  } else if (m.customer_id) {
+    const { data } = await sb.from('customers').select('id, name, business_name, phone, sms_consent, salesperson_id').eq('id', m.customer_id).maybeSingle()
+    customer = data
+    route = `/customers/${m.customer_id}`
+    if (customer?.salesperson_id) who.add(Number(customer.salesperson_id))
+  }
+  if (!who.size) for (const id of await managerIds(sb, companyId)) who.add(id)
+  return { ids: [...who], route, lead, customer }
+}
+
+/** A text through the company's own Twilio number, by way of send-sms (which logs it). */
+async function sendText(env: { url: string; key: string }, companyId: number, to: string, message: string, customerId: number | null) {
+  const r = await fetch(`${env.url}/functions/v1/send-sms`, {
+    method: 'POST', headers: { Authorization: `Bearer ${env.key}`, apikey: env.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ company_id: companyId, to, message, trigger: 'campaign', customer_id: customerId, log: true }),
+  })
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) return { ok: false as const, status: r.status, error: String(data?.error || r.status).slice(0, 200) }
+  return { ok: true as const, sid: String(data?.sid || data?.message_sid || '') }
 }
 
 // ── Sending ────────────────────────────────────────────────────────────
@@ -213,9 +271,8 @@ async function runTick(sb: any, env: { url: string; key: string; resend: string;
     const touches: Touch[] = Array.isArray(camp.touches) ? camp.touches : []
     const touch = touches[m.touch_index]
     if (!touch) { await sb.from('campaign_members').update({ state: 'done', next_at: null }).eq('id', m.id); out.done += 1; continue }
-    if (touch.kind !== 'email') { // week two: text and call touches
-      const next = touches[m.touch_index + 1]
-      await sb.from('campaign_members').update(next ? { touch_index: m.touch_index + 1, next_at: new Date(now.getTime() + Math.max(0, Number(next.day) - Number(touch.day)) * 86400000).toISOString() } : { state: 'done', next_at: null }).eq('id', m.id)
+    if (!['email', 'text', 'call'].includes(touch.kind)) {
+      if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
       out.skipped += 1; continue
     }
     const key = `${m.company_id}:${camp.brand || ''}`
@@ -224,15 +281,70 @@ async function runTick(sb: any, env: { url: string; key: string; resend: string;
     const hour = localHour(facts.timezone, now)
     if (hour < QUIET_FROM || hour >= QUIET_TO) { out.skipped += 1; continue }           // leave for a later tick
     if ((sentToday.get(m.company_id) || 0) >= DAILY_CAP) { out.skipped += 1; continue }
+    // Who this is and who looks after them — the merge fields, the phone, the consent, the setter.
+    const tell = await peopleToTell(sb, m.company_id, m)
+    const person = tell.lead || tell.customer || {}
+    const company = person.business_name || ''
+    const vars = { name: m.name || person.customer_name || person.name || '', company, our_company: facts.name }
+
+    // ── A call touch: nothing is sent. The lead becomes a Callback card with the script on it. ──
+    if (touch.kind === 'call') {
+      const script = mergeText(touch.body, vars)
+      if (tell.lead) {
+        const leadPatch: Record<string, unknown> = { callback_date: new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10) }
+        if (['New', 'Assigned', 'Contacted'].includes(String(tell.lead.status || ''))) leadPatch.status = 'Callback'
+        leadPatch.callback_notes = [tell.lead.callback_notes, `Campaign "${camp.name}": ${script}`].filter(Boolean).join('\n')
+        await sb.from('leads').update(leadPatch).eq('id', tell.lead.id)
+      }
+      if (tell.ids.length) {
+        await sb.from('employee_notifications').insert(tell.ids.map((employee_id) => ({
+          company_id: m.company_id, employee_id, type: 'campaign_call', title: `Call ${vars.name || m.email}${company && company !== vars.name ? ' at ' + company : ''}`,
+          message: script.slice(0, 300), route: tell.route,
+          metadata: { campaign_id: camp.id, member_id: m.id, lead_id: m.lead_id, customer_id: m.customer_id, phone: person.phone || null },
+          dedupe_key: `campaign-call-${m.id}-${m.touch_index}`,
+        })))
+      }
+      await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'call_card', touch_index: m.touch_index, meta: { to: tell.ids } })
+      if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
+      out.sent += 1; continue
+    }
+
+    // ── A text touch: consent first, always. ──
+    if (touch.kind === 'text') {
+      const to = digitsOf(person.phone || '')
+      if (!to || person.sms_consent !== true) {
+        await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'skipped', touch_index: m.touch_index, meta: { reason: to ? 'no_consent' : 'no_phone' } })
+        if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
+        out.skipped += 1; continue
+      }
+      let message = mergeText(touch.body, vars).slice(0, TEXT_MAX)
+      if (!/\bSTOP\b/i.test(message)) message = `${message}\n${STOP_LINE}`
+      const t = await sendText(env, m.company_id, '+' + to, message, m.customer_id)
+      if (!t.ok) {
+        await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'failed', touch_index: m.touch_index, meta: { channel: 'text', error: t.error, status: t.status } })
+        // A number Twilio refuses is not coming back; a missing Twilio setup retries next tick.
+        if (t.status === 400 && /not a valid|invalid|unsubscribed|blacklist/i.test(t.error)) { if (await advanceMember(sb, m, touches, now, touch)) out.done += 1 }
+        else await sb.from('campaign_members').update({ next_at: new Date(now.getTime() + 3600000).toISOString() }).eq('id', m.id)
+        out.failed += 1; continue
+      }
+      sentToday.set(m.company_id, (sentToday.get(m.company_id) || 0) + 1)
+      await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'sent', touch_index: m.touch_index, meta: { channel: 'text', sid: t.sid } })
+      if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
+      if (m.lead_id) await sb.from('leads').update({ last_contact_at: now.toISOString(), contact_attempts: (Number(tell.lead?.contact_attempts) || 0) + 1 }).eq('id', m.lead_id)
+      out.sent += 1; continue
+    }
+
+    // ── An email touch. ──
+    if (!m.email || !validEmail(m.email)) {
+      await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'skipped', touch_index: m.touch_index, meta: { reason: 'no_email' } })
+      if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
+      out.skipped += 1; continue
+    }
     if (!supByCo.has(m.company_id)) supByCo.set(m.company_id, await suppressedSet(sb, m.company_id))
     if (supByCo.get(m.company_id)!.has(lower(m.email))) {
       await sb.from('campaign_members').update({ state: 'unsubscribed', next_at: null, last_event_at: now.toISOString() }).eq('id', m.id)
       out.skipped += 1; continue
     }
-    // Their business name for {{company}}: on the lead or customer row.
-    let company = ''
-    if (m.lead_id) { const { data: l } = await sb.from('leads').select('business_name').eq('id', m.lead_id).maybeSingle(); company = l?.business_name || '' }
-    else if (m.customer_id) { const { data: c } = await sb.from('customers').select('business_name').eq('id', m.customer_id).maybeSingle(); company = c?.business_name || '' }
 
     const r = await sendOne(env, facts, { ...m, company }, touch, camp.id)
     if (!r.ok) {
@@ -248,11 +360,7 @@ async function runTick(sb: any, env: { url: string; key: string; resend: string;
     }
     sentToday.set(m.company_id, (sentToday.get(m.company_id) || 0) + 1)
     await sb.from('campaign_events').insert({ company_id: m.company_id, campaign_id: camp.id, member_id: m.id, kind: 'sent', touch_index: m.touch_index, resend_id: r.id || null, meta: { subject: touch.subject } })
-    const next = touches[m.touch_index + 1]
-    const patch: Record<string, unknown> = { last_event_at: now.toISOString(), touch_index: m.touch_index + 1 }
-    if (next) { patch.state = 'sent'; patch.next_at = new Date(now.getTime() + Math.max(1, Number(next.day) - Number(touch.day)) * 86400000).toISOString() }
-    else { patch.state = 'done'; patch.next_at = null; out.done += 1 }
-    await sb.from('campaign_members').update(patch).eq('id', m.id)
+    if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
     if (m.lead_id) {
       const { data: l } = await sb.from('leads').select('contact_attempts').eq('id', m.lead_id).maybeSingle()
       await sb.from('leads').update({ last_contact_at: now.toISOString(), contact_attempts: (Number(l?.contact_attempts) || 0) + 1 }).eq('id', m.lead_id)
@@ -293,14 +401,21 @@ async function writeTouch(sb: any, req: Request, companyId: number, campaign: an
   const who = aud.kind === 'customers' ? (aud.months ? `past customers who have not had a job in ${aud.months} months` : 'past customers who said yes to marketing')
     : aud.kind === 'prospects' ? 'business owners Prospect Scout found who have never heard from us'
     : aud.kind === 'lead_status' ? `leads currently marked "${aud.status || 'New'}"` : 'people the marketer picked by hand'
-  const others = touches.map((t, i) => (i === index ? null : `Touch ${i + 1} (day ${t.day}): ${t.subject || '(no subject yet)'}\n${(t.body || '').slice(0, 400)}`)).filter(Boolean).join('\n\n')
+  const others = touches.map((t, i) => (i === index ? null : `Touch ${i + 1} (day ${t.day}, ${t.kind || 'email'}): ${t.subject || ''}\n${(t.body || '').slice(0, 400)}`)).filter(Boolean).join('\n\n')
+  const kind = touch.kind || 'email'
+  const form = kind === 'text'
+    ? `You write ONE text message for ${facts.name}, a local service business. Under 260 characters, plain words, one clear next step (reply, or a call). Start with {{first_name}} if it reads naturally. No links unless the marketer gave one. Do not write "Reply STOP" — it is added. Reply with JSON only: {"subject": "", "body": "..."}.`
+    : kind === 'call'
+    ? `You write a short call script for a setter at ${facts.name}, a local service business, calling {{first_name}} at {{company}}. Four lines at most: who is calling and why in one breath, one question that gets them talking, the offer in one sentence, the ask (a 15-minute visit or a quote). Plain spoken English. Reply with JSON only: {"subject": "", "body": "..."} where body is the script with line breaks.`
+    : null
   const system = [
-    `You write short, plain, human emails for ${facts.name}, a local service business. They are read on a phone by a busy owner or homeowner.`,
+    form || `You write short, plain, human emails for ${facts.name}, a local service business. They are read on a phone by a busy owner or homeowner.`,
     kit.tagline ? `What they do: ${kit.tagline}` : '', kit.service_area ? `Service area: ${kit.service_area}` : '', kit.voice ? `Voice: ${kit.voice}` : '',
     (kit.tone_words || []).length ? `Tone: ${kit.tone_words.join(', ')}` : '', (kit.uniques || []).length ? `What sets them apart: ${kit.uniques.join('; ')}` : '',
     kit.avoid ? `Never say: ${kit.avoid}` : '',
-    `Rules: under 120 words. One idea. One clear next step (reply, or a call). No hype, no exclamation marks, no "I hope this finds you well", no emoji. Use {{first_name}} once at the start and {{company}} only if it reads naturally; {{our_company}} is our name. No subject line tricks (no RE:, no FWD:). Do not mention price unless the campaign says to. Do not invent facts about the reader.`,
-    `Reply with JSON only: {"subject": "...", "body": "..."} — body is plain text with blank lines between paragraphs, no signature (one is added).`,
+    form ? 'No hype, no exclamation marks, no emoji. {{our_company}} is our name. Do not mention price unless the campaign says to. Do not invent facts about the reader.'
+      : `Rules: under 120 words. One idea. One clear next step (reply, or a call). No hype, no exclamation marks, no "I hope this finds you well", no emoji. Use {{first_name}} once at the start and {{company}} only if it reads naturally; {{our_company}} is our name. No subject line tricks (no RE:, no FWD:). Do not mention price unless the campaign says to. Do not invent facts about the reader.`,
+    form ? '' : `Reply with JSON only: {"subject": "...", "body": "..."} — body is plain text with blank lines between paragraphs, no signature (one is added).`,
   ].filter(Boolean).join('\n')
   const content = [
     `Campaign: ${campaign.name || '(unnamed)'}`, `Audience: ${who}`, `This is touch ${index + 1} of ${Math.max(touches.length, index + 1)}, sent on day ${touch.day}.`,
@@ -315,7 +430,7 @@ async function writeTouch(sb: any, req: Request, companyId: number, campaign: an
   try {
     const m = text.match(/\{[\s\S]*\}/)
     const parsed = m ? JSON.parse(m[0]) : null
-    if (parsed?.subject && parsed?.body) return { ok: true, subject: String(parsed.subject).trim().slice(0, 150), body: String(parsed.body).trim() }
+    if (parsed?.body && (parsed?.subject || kind !== 'email')) return { ok: true, subject: String(parsed.subject || '').trim().slice(0, 150), body: String(parsed.body).trim().slice(0, kind === 'text' ? TEXT_MAX : 4000) }
   } catch { /* fall through */ }
   return { ok: false, error: 'The writer did not come back with an email. Try once more.' }
 }
@@ -366,8 +481,9 @@ serve(async (req) => {
     }
 
     if (action === 'preview_audience') {
-      const { people, skipped } = await sendablePeople(sb, companyId, body.audience || {})
-      return json({ ok: true, count: people.length, sample: people.slice(0, 5).map((p) => p.name || p.email), skipped })
+      const kinds = Array.isArray(body.kinds) && body.kinds.length ? body.kinds.map(String) : ['email']
+      const { people, textable, skipped } = await sendablePeople(sb, companyId, body.audience || {}, kinds)
+      return json({ ok: true, count: people.length, textable, sample: people.slice(0, 5).map((p) => p.name || p.email), skipped })
     }
 
     if (action === 'write') {
@@ -380,15 +496,15 @@ serve(async (req) => {
       const c = await loadCampaign(body.campaign_id)
       if (!c) return json({ ok: false, error: 'No such campaign.' }, 404)
       const touches: Touch[] = Array.isArray(c.touches) ? c.touches : []
-      if (!touches.length || touches.some((t) => !String(t.subject || '').trim() || !String(t.body || '').trim())) return json({ ok: false, error: 'Every touch needs a subject and a body before it can go out.' }, 400)
-      if (!env.resend) return json({ ok: false, error: 'Email is not set up on the server (RESEND_API_KEY).' }, 500)
+      if (!touches.length || touches.some((t) => !String(t.body || '').trim() || (t.kind === 'email' && !String(t.subject || '').trim()))) return json({ ok: false, error: 'Every touch needs something to say (and every email a subject) before it can go out.' }, 400)
+      if (touches.some((t) => t.kind === 'email') && !env.resend) return json({ ok: false, error: 'Email is not set up on the server (RESEND_API_KEY).' }, 500)
       const { count: have } = await sb.from('campaign_members').select('id', { count: 'exact', head: true }).eq('campaign_id', c.id)
       let added = 0, skipped = { no_email: 0, suppressed: 0 }
       if (!Number(have)) {
-        const r = await sendablePeople(sb, companyId, c.audience || {})
+        const r = await sendablePeople(sb, companyId, c.audience || {}, touches.map((t) => t.kind))
         skipped = r.skipped
-        if (!r.people.length) return json({ ok: false, error: 'Nobody in that audience has an email address we may write to.', skipped }, 400)
-        const rows = r.people.map((p) => ({ company_id: companyId, campaign_id: c.id, lead_id: p.lead_id, customer_id: p.customer_id, email: p.email, name: p.name || null, token: randomToken(), touch_index: 0, next_at: new Date().toISOString(), state: 'queued' }))
+        if (!r.people.length) return json({ ok: false, error: 'Nobody in that audience can be reached by these touches: no usable email, no consented phone.', skipped }, 400)
+        const rows = r.people.map((p) => ({ company_id: companyId, campaign_id: c.id, lead_id: p.lead_id, customer_id: p.customer_id, email: p.email || `no-email+${p.lead_id ? 'l' + p.lead_id : 'c' + p.customer_id}@invalid.local`, name: p.name || null, token: randomToken(), touch_index: 0, next_at: new Date().toISOString(), state: 'queued' }))
         for (let i = 0; i < rows.length; i += 500) {
           const { error } = await sb.from('campaign_members').insert(rows.slice(i, i + 500))
           if (error) return json({ ok: false, error: error.message }, 500)
@@ -412,9 +528,19 @@ serve(async (req) => {
       const touches: Touch[] = Array.isArray(c.touches) ? c.touches : []
       const index = Math.max(0, Math.min(touches.length - 1, Number(body.index) || 0))
       const touch = touches[index]
-      if (!touch || !touch.subject || !touch.body) return json({ ok: false, error: 'That touch has nothing to send yet.' }, 400)
-      if (!env.resend) return json({ ok: false, error: 'Email is not set up on the server (RESEND_API_KEY).' }, 500)
+      if (!touch || !touch.body || (touch.kind === 'email' && !touch.subject)) return json({ ok: false, error: 'That touch has nothing to send yet.' }, 400)
       const facts = await companyFacts(sb, companyId, c.brand || null)
+      if (touch.kind === 'call') return json({ ok: false, error: 'A call touch sends nothing: on its day it puts a Callback card with this script on the Lead Setter board.' }, 400)
+      if (touch.kind === 'text') {
+        const { data: me } = caller.employeeId ? await sb.from('employees').select('phone').eq('id', caller.employeeId).maybeSingle() : { data: null as any }
+        const to = digitsOf(me?.phone || '')
+        if (!to) return json({ ok: false, error: 'Put your mobile number on your employee record first; the test text goes there.' }, 400)
+        let message = mergeText(touch.body, { name: 'Dana Sample', company: 'Sample Roofing', our_company: facts.name }).slice(0, TEXT_MAX)
+        if (!/\bSTOP\b/i.test(message)) message = `${message}\n${STOP_LINE}`
+        const t = await sendText(env, companyId, '+' + to, `[Test] ${message}`, null)
+        return json(t.ok ? { ok: true, to: '+' + to } : { ok: false, error: t.error }, t.ok ? 200 : 502)
+      }
+      if (!env.resend) return json({ ok: false, error: 'Email is not set up on the server (RESEND_API_KEY).' }, 500)
       const r = await sendOne(env, facts, { id: 0, email: caller.email, name: 'Dana Sample', company: 'Sample Roofing', token: 'test' }, { ...touch, subject: `[Test] ${touch.subject}` }, Number(c.id) || 0)
       return json(r.ok ? { ok: true, to: caller.email } : { ok: false, error: r.error }, r.ok ? 200 : 502)
     }

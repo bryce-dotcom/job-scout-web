@@ -171,12 +171,41 @@ serve(async (req) => {
     // who has just said no. START puts it back, dated today, because that is
     // when they said it.
     const keyword = keywordOf(body);
-    if (match.kind === 'customer' && match.id && (keyword === 'stop' || keyword === 'start')) {
+    // STOP and START are honoured for leads as well as customers: a campaign
+    // text touch reads the same three columns on either row.
+    if ((match.kind === 'customer' || match.kind === 'lead') && match.id && (keyword === 'stop' || keyword === 'start')) {
       const consent = keyword === 'start'
-        ? { sms_consent: true, sms_consent_at: new Date().toISOString(), sms_consent_source: 'portal' }
+        ? { sms_consent: true, sms_consent_at: new Date().toISOString(), sms_consent_source: match.kind === 'lead' ? 'sms' : 'portal' }
         : { sms_consent: false, sms_consent_at: null, sms_consent_source: null };
-      const { error: cErr } = await sb.from('customers').update(consent).eq('id', match.id);
+      const { error: cErr } = await sb.from(match.kind === 'customer' ? 'customers' : 'leads').update(consent).eq('id', match.id);
       if (cErr) console.error('[inbound-sms] consent update failed:', cErr.message);
+    }
+
+    // A text back from someone in a running campaign is a reply: the member
+    // is marked (and hears nothing more if the campaign stops on reply), a
+    // New lead moves to Contacted. The notification below already tells the
+    // rep who wrote; this only closes the campaign loop.
+    if (!keyword && (match.kind === 'customer' || match.kind === 'lead') && match.id) {
+      try {
+        const col = match.kind === 'lead' ? 'lead_id' : 'customer_id';
+        const { data: members } = await sb.from('campaign_members').select('id, campaign_id, state, replied_at')
+          .eq('company_id', companyId).eq(col, match.id).in('state', ['queued', 'sent', 'done']).order('created_at', { ascending: false }).limit(1);
+        const member = members?.[0];
+        if (member) {
+          const nowIso = new Date().toISOString();
+          const { data: camp } = await sb.from('marketing_campaigns').select('stop_on_reply').eq('id', member.campaign_id).maybeSingle();
+          await sb.from('campaign_events').insert({ company_id: companyId, campaign_id: member.campaign_id, member_id: member.id, kind: 'replied', meta: { channel: 'text', from, snippet: String(body || '').slice(0, 300) } });
+          const patch: Record<string, unknown> = { replied_at: member.replied_at || nowIso, last_event_at: nowIso };
+          if (camp?.stop_on_reply !== false) { patch.state = 'replied'; patch.next_at = null; }
+          await sb.from('campaign_members').update(patch).eq('id', member.id);
+          if (match.kind === 'lead') {
+            const { data: lead } = await sb.from('leads').select('status').eq('id', match.id).maybeSingle();
+            const leadPatch: Record<string, unknown> = { last_contact_at: nowIso };
+            if (['New', 'Assigned'].includes(String(lead?.status || ''))) leadPatch.status = 'Contacted';
+            await sb.from('leads').update(leadPatch).eq('id', match.id);
+          }
+        }
+      } catch (e) { console.error('[inbound-sms] campaign reply bookkeeping failed:', (e as Error)?.message); }
     }
 
     // Tell someone. A keyword is not a message a person needs to read.
