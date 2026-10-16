@@ -23,18 +23,49 @@ import { badgeText } from '../lib/arnieAttention'
  * `persona` may be passed in by a caller that already has the row (saves a
  * fetch); otherwise it is loaded here.
  */
+// WHO YOUR ASSISTANT IS, REMEMBERED ON THE DEVICE. This used to start every
+// page as OG Arnie — name, face, greeting — and switch to Jenny a few seconds
+// later when the persona arrived (Bryce, 2026-10-15). The last-known persona is
+// kept per person (shared devices: a truck tablet gets passed around), so a
+// returning user sees their own assistant from the first paint, and a device
+// that has never known shows nobody rather than the wrong somebody.
+// `undefined` = not known yet; `null` = known, and it is the default (Arnie).
+const personaMemo = new Map()
+const personaKey = (id) => `jobscout_persona:${id}`
+function rememberedPersona(userId) {
+  if (!userId) return undefined
+  if (personaMemo.has(userId)) return personaMemo.get(userId)
+  try {
+    const v = localStorage.getItem(personaKey(userId))
+    if (v != null) { const r = JSON.parse(v); personaMemo.set(userId, r); return r }
+  } catch { /* storage off — fall through to unknown */ }
+  return undefined
+}
+function rememberPersona(userId, row) {
+  if (!userId) return
+  personaMemo.set(userId, row ?? null)
+  try { localStorage.setItem(personaKey(userId), JSON.stringify(row ?? null)) } catch { /* fine */ }
+}
+
 export function useAssistant() {
   const user = useStore((s) => s.user)
   const getAgent = useStore((s) => s.getAgent)
   const getCompanyAgent = useStore((s) => s.getCompanyAgent)
-  const [row, setRow] = useState(null)
+  const [loaded, setLoaded] = useState(undefined)
 
   const reload = useCallback(() => {
     if (!user?.id) return () => {}
     let alive = true
-    loadPersona(user.id).then((r) => { if (alive) setRow(r) }).catch(() => { /* keep the default */ })
+    loadPersona(user.id).then((r) => {
+      rememberPersona(user.id, r)
+      if (alive) setLoaded({ userId: user.id, row: r ?? null })
+    }).catch(() => { /* keep what we had */ })
     return () => { alive = false }
   }, [user?.id])
+
+  // This person's fresh answer if we have it, else what this device last knew.
+  const row = loaded && loaded.userId === user?.id ? loaded.row : rememberedPersona(user?.id)
+  const known = row !== undefined
 
   useEffect(() => reload(), [reload])
 
@@ -50,13 +81,15 @@ export function useAssistant() {
   }, [reload])
 
   return {
-    personaRow: row,
+    known,
+    personaRow: row ?? null,
     persona: personaFor(row?.persona),
-    name: assistantName({
+    // Blank while unknown — never another assistant's name.
+    name: known ? assistantName({
       personaRow: row,
       companyCustomName: getCompanyAgent?.('arnie-og')?.custom_name,
       agentFullName: getAgent?.('arnie-og')?.full_name,
-    }),
+    }) : '',
   }
 }
 
@@ -85,7 +118,10 @@ export default function AssistantAvatar({
       ...(background ? { backgroundColor: background } : null),
       ...(ai || attention ? null : style),
     }}>
-      {broken ? (
+      {!personaKey && !loaded.known ? (
+        // Not known yet: an empty badge, not Arnie's face on Jenny's page.
+        <span style={{ width: '100%', height: '100%', background: 'rgba(127,127,127,0.18)' }} />
+      ) : broken ? (
         <Bot size={Math.round(size * 0.58)} style={{ color: '#f97316' }} />
       ) : (
         <img

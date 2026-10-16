@@ -186,7 +186,8 @@ describe('the face belongs to the persona too', () => {
 
   it('a missing picture falls back to an icon, not a broken image', () => {
     expect(avatar).toMatch(/onError=\{\(\) => setBroken\(true\)\}/)
-    expect(avatar).toMatch(/\{broken \? \(/)
+    // After the "not known yet" branch (an empty badge, never Arnie's face).
+    expect(avatar).toMatch(/\) : broken \? \(/)
     expect(avatar).toMatch(/<Bot size=/)
   })
 

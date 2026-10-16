@@ -73,7 +73,9 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
   // The strapline under the name said "him". assistant.name is already the
   // right name for whoever this person chose; this line is tight, so it takes
   // the first word of it.
-  const firstName = (assistant?.name || 'Arnie').trim().split(/\s+/)[0]
+  // Blank while the persona is unknown — a fallback of "Arnie" here was half
+  // of the page-load flash on Jenny's page.
+  const firstName = (assistant?.name || '').trim().split(/\s+/)[0]
 
   return (
     <div style={{
@@ -124,13 +126,15 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
 
           {/* Said, not quoted. A greeting in italics inside curly quotes is a
               decoration; this is him talking. */}
-          <p style={{
-            margin: '11px 0 0', color: c.dim, fontSize: 14.5, lineHeight: 1.5,
-          }}>
-            <span style={{ color: c.ember, fontWeight: 600 }}>&ldquo;</span>
-            {assistant.persona.greeting}
-            <span style={{ color: c.ember, fontWeight: 600 }}>&rdquo;</span>
-          </p>
+          {assistant.known !== false && (
+            <p style={{
+              margin: '11px 0 0', color: c.dim, fontSize: 14.5, lineHeight: 1.5,
+            }}>
+              <span style={{ color: c.ember, fontWeight: 600 }}>&ldquo;</span>
+              {assistant.persona.greeting}
+              <span style={{ color: c.ember, fontWeight: 600 }}>&rdquo;</span>
+            </p>
+          )}
         </div>
       </div>
 
@@ -160,10 +164,12 @@ export default function ArniePresence({ assistant, personaKey, status, companyNa
             display: 'block', color: c.text, fontSize: 13, fontWeight: 600,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
-            {status?.detail || 'Not on a computer yet'}
+            {/* null = still checking. It used to say "Not on a computer yet"
+                for the first few seconds even with the agent running. */}
+            {status == null ? 'Checking for your computer…' : (status.detail || 'Not on a computer yet')}
           </span>
           <span style={{ display: 'block', color: c.faint, fontSize: 11.5, marginTop: 1 }}>
-            {onMachine ? st.label : `Put ${firstName} on one, to work in your programs`}
+            {status == null ? '' : onMachine ? st.label : `Put ${firstName || 'your assistant'} on one, to work in your programs`}
           </span>
         </span>
         <ChevronRight size={16} style={{ color: c.faint, flexShrink: 0 }} />

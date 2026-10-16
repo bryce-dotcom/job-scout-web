@@ -2,7 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { useEffect, useState, useCallback } from 'react'
 import AgentRequired from '../../../components/AgentRequired'
 import AgentHeader from '../../../components/AgentHeader'
-import AssistantAvatar from '../../../components/AssistantAvatar'
+import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvatar'
 import ArniePersona from './ArniePersona'
 import { useStore } from '../../../lib/store'
 import { myComputer } from '../../../lib/arnieComputer'
@@ -24,7 +24,13 @@ export default function ArnieWorkspace() {
   const getAgent = useStore((s) => s.getAgent)
   const getCompanyAgent = useStore((s) => s.getCompanyAgent)
   const [status, setStatus] = useState(null)
-  const [personaRow, setPersonaRow] = useState(null)
+  // undefined until this page's own load lands; until then the remembered
+  // persona (useAssistant) stands in, so the header never starts as OG Arnie
+  // on Jenny's page.
+  const [loadedRow, setPersonaRow] = useState(undefined)
+  const remembered = useAssistant()
+  const personaRow = loadedRow !== undefined ? loadedRow : remembered.personaRow
+  const personaKnown = loadedRow !== undefined || remembered.known
   const [picking, setPicking] = useState(false)
 
   // Who this person's assistant is. Loaded once here and handed to the engine,
@@ -64,11 +70,11 @@ export default function ArnieWorkspace() {
     return () => { alive = false; clearTimeout(timer) }
   }, [user?.id])
 
-  const name = assistantName({
+  const name = personaKnown ? assistantName({
     personaRow,
     companyCustomName: getCompanyAgent?.('arnie-og')?.custom_name,
     agentFullName: getAgent?.('arnie-og')?.full_name,
-  })
+  }) : ''
 
   return (
     <AgentRequired slug="arnie-og">
