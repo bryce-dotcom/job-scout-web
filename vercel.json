@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/legal/:slug/:doc",
+      "destination": "/api/legal?slug=:slug&doc=:doc"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
