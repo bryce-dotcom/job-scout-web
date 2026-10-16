@@ -9,6 +9,7 @@
 //   - typedText: string fallback when no image is available
 
 import { PDFDocument, StandardFonts } from 'pdf-lib'
+import { drawSignatureAt } from '../../supabase/functions/_shared/signatureTargets.ts'
 
 /**
  * @param {Uint8Array|ArrayBuffer} pdfBytes - the PDF to stamp
@@ -45,33 +46,10 @@ export async function stampSignatureOnPdf(pdfBytes, { signatureBytes, typedText,
     }
   }
 
-  for (const field of signatureFields) {
-    try {
-      const pageIndex = Math.max(0, parseInt(field.page) || 0)
-      if (pageIndex >= pdfDoc.getPageCount()) continue
-      const page = pdfDoc.getPage(pageIndex)
-      if (embeddedImg) {
-        page.drawImage(embeddedImg, {
-          x: field.x,
-          y: field.y,
-          width: field.width,
-          height: field.height,
-        })
-      } else if (italicFont && typedText) {
-        // Fit the typed text to the field height. pdf-lib drawText uses
-        // baseline-anchored coordinates, so nudge y up by ~25% of height.
-        const size = Math.max(10, Math.min(field.height || 24, 28))
-        page.drawText(typedText, {
-          x: field.x + 4,
-          y: field.y + Math.max(4, (field.height || 24) * 0.25),
-          size,
-          font: italicFont,
-        })
-      }
-    } catch (err) {
-      console.warn('[stampSignatureOnPdf] field stamp failed', field, err)
-    }
-  }
+  // The placement arithmetic lives in _shared/signatureTargets so the
+  // portal, the job page and approve-document all put the ink in the same
+  // place (see lib/signatureTargets).
+  drawSignatureAt(pdfDoc, { rects: signatureFields, embeddedImg, italicFont, typedText })
 
   return await pdfDoc.save()
 }

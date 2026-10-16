@@ -504,11 +504,38 @@ serve(async (req) => {
       savedPaymentMethods = savedCards || [];
     }
 
+    // Documents the rep attached for signing. The customer has to be able to
+    // READ what they are signing before they sign it, so each one comes with
+    // a short-lived signed URL — project-documents is a private bucket and a
+    // link the portal cannot open is the same as no link. An hour outlives
+    // any sitting of a proposal.
+    let signingPacket: any[] = [];
+    if (tokenRow.document_type === 'estimate' && document?.id) {
+      const { data: packetRows } = await supabase
+        .from('file_attachments')
+        .select('id, file_name, file_path, storage_bucket, signed_at')
+        .eq('quote_id', document.id)
+        .eq('sign_with_estimate', true)
+        .order('id');
+      for (const row of packetRows || []) {
+        const { data: signed } = await supabase.storage
+          .from(row.storage_bucket || 'project-documents')
+          .createSignedUrl(row.file_path, 3600);
+        signingPacket.push({
+          id: row.id,
+          name: String(row.file_name || 'Document').replace(/\.pdf$/i, '').replace(/[_-]+/g, ' '),
+          url: signed?.signedUrl || null,
+          signed_at: row.signed_at,
+        });
+      }
+    }
+
     return new Response(JSON.stringify({
       token_id: tokenRow.id,
       document_type: tokenRow.document_type,
       document,
       line_items: lineItems,
+      signing_packet: signingPacket,
       company,
       customer,
       business_unit: businessUnit,

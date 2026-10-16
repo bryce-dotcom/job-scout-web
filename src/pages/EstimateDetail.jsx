@@ -1830,10 +1830,34 @@ function EstimateDetailInner() {
     }
   }
 
-  const handleSendEmail = async () => {
+  // signDocIds: the documents the rep ticked to be signed along with the
+  // proposal. One signature covers the lot, so the customer is not chased a
+  // second time for the utility application and the W-9 once the job is real.
+  const handleSendEmail = async (signDocIds) => {
     if (!sendEmail) {
       toast.error('Please enter a recipient email.')
       return
+    }
+
+    if (Array.isArray(signDocIds)) {
+      try {
+        // Rewrite the packet rather than adding to it: unticking a document
+        // in the modal has to take it back out, or a document removed from
+        // the list keeps turning up in the portal.
+        await supabase
+          .from('file_attachments')
+          .update({ sign_with_estimate: false })
+          .eq('quote_id', estimate.id)
+          .eq('sign_with_estimate', true)
+        if (signDocIds.length) {
+          await supabase
+            .from('file_attachments')
+            .update({ quote_id: estimate.id, sign_with_estimate: true })
+            .in('id', signDocIds)
+        }
+      } catch (err) {
+        console.warn('[handleSendEmail] signing packet update failed', err)
+      }
     }
     if (!estimate.business_unit) {
       toast.error('Please select a Business Unit before sending.')
@@ -6660,6 +6684,37 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
   const [includeTiers, setIncludeTiers] = useState(settings.include_tiers || false)
   const [editPanel, setEditPanel] = useState(null) // index of section being edited
 
+  // Documents that could be signed along with this proposal — anything on
+  // this estimate, its lead or its job. Loaded here rather than by the page
+  // because it is only ever looked at while this modal is open.
+  const [signCandidates, setSignCandidates] = useState([])
+  const [signDocIds, setSignDocIds] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    const estimateId = estimate?.id
+    const leadId = estimate?.lead_id
+    const jobId = estimate?.job_id
+    const companyId = estimate?.company_id
+    if (!estimateId || !companyId) return
+    ;(async () => {
+      const filters = [`quote_id.eq.${estimateId}`]
+      if (leadId) filters.push(`lead_id.eq.${leadId}`)
+      if (jobId) filters.push(`job_id.eq.${jobId}`)
+      const { data } = await supabase
+        .from('file_attachments')
+        .select('id, file_name, sign_with_estimate, photo_context, created_at')
+        .eq('company_id', companyId)
+        .or(filters.join(','))
+        .order('created_at', { ascending: false })
+      // The signed proposal itself is not a document to be signed again.
+      const pdfs = (data || []).filter(a => /\.pdf$/i.test(a.file_name || '') && a.photo_context !== 'signed_proposal')
+      if (cancelled) return
+      setSignCandidates(pdfs)
+      setSignDocIds(pdfs.filter(a => a.sign_with_estimate).map(a => a.id))
+    })()
+    return () => { cancelled = true }
+  }, [estimate?.id, estimate?.lead_id, estimate?.job_id, estimate?.company_id])
+
   const formatCurrency = (v) => {
     if (!v && v !== 0) return '$0.00'
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v)
@@ -7385,6 +7440,40 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               </label>
             </div>
 
+            {signCandidates.length > 0 && (
+              <div>
+                {/* Signed together, in one sitting. The utility application
+                    and the W-9 are worked out after the customer signs, and
+                    chasing a second signature for them is the whole problem
+                    this removes. */}
+                <label style={labelStyle}>
+                  Sign with the proposal <span style={{ color: theme.textMuted, fontWeight: '400' }}>(one signature covers all of them)</span>
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {signCandidates.map(doc => (
+                    <label key={doc.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                      padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '6px',
+                      border: `1px solid ${signDocIds.includes(doc.id) ? theme.accent : theme.border}`,
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={signDocIds.includes(doc.id)}
+                        onChange={(e) => setSignDocIds(prev => e.target.checked
+                          ? [...prev, doc.id]
+                          : prev.filter(x => x !== doc.id))}
+                        style={{ width: '16px', height: '16px', accentColor: theme.accent }}
+                      />
+                      <FileText size={14} style={{ color: theme.textMuted }} />
+                      <span style={{ fontSize: '13px', color: theme.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {doc.file_name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               {/* Named "Additional files", not "Attachments (spec sheets…)" —
                   the spec sheets have their own section directly above and two
@@ -7459,7 +7548,7 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
                 style={{ flex: 1, padding: '10px 16px', border: `1px solid ${theme.border}`, backgroundColor: 'transparent', color: theme.text, borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                 Back
               </button>
-              <button onClick={onSend} disabled={sendingEmail}
+              <button onClick={() => onSend(signDocIds)} disabled={sendingEmail}
                 style={{
                   flex: 1, padding: '10px 16px', backgroundColor: theme.accent, color: '#fff',
                   border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500',

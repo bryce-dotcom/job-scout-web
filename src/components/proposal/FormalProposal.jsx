@@ -395,6 +395,42 @@ export default function FormalProposal({
           </div>
         </section>
 
+        {/* Documents included in this signing.
+            Above the signature, not below it: a document nobody could read
+            before signing has not been agreed to, whatever the certificate
+            says afterwards. Each opens in its own tab from a signed URL. */}
+        {Array.isArray(data?.signing_packet) && data.signing_packet.length > 0 && (
+          <section style={{ marginBottom: 24 }}>
+            <h2 style={styles.sectionHeading}>Also included</h2>
+            <p style={{ fontSize: 14, color: '#4d5a52', margin: '0 0 12px' }}>
+              Your signature below also applies to {data.signing_packet.length === 1 ? 'this document' : `these ${data.signing_packet.length} documents`}.
+              Please review {data.signing_packet.length === 1 ? 'it' : 'them'} first.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {data.signing_packet.map(docItem => (
+                <a
+                  key={docItem.id}
+                  href={docItem.url || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 14px', borderRadius: 8,
+                    border: '1px solid #d6cdb8', background: '#fff',
+                    textDecoration: 'none', color: '#2c3530', fontSize: 14, fontWeight: 600,
+                    cursor: docItem.url ? 'pointer' : 'default', opacity: docItem.url ? 1 : 0.6,
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 0 }}>{docItem.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: '#5a6349' }}>
+                    {docItem.signed_at ? 'Signed' : 'Review'}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Signature block */}
         <section style={{ marginBottom: 24 }}>
           <h2 style={styles.sectionHeading}>Signature</h2>

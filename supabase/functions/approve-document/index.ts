@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 import { convertEstimate } from "../_shared/estimateConvert.ts";
+import { signatureRects, drawSignatureAt } from "../_shared/signatureTargets.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -216,9 +217,14 @@ serve(async (req) => {
 
     // --- Formal proposal: upload the drawn-signature image (if provided) ---
     let signatureImagePath: string | null = null
+    // Kept in hand as well as in storage: the signing packet below stamps the
+    // same image onto every attached document, and re-downloading what we
+    // just uploaded would be a round trip per document for no reason.
+    let signatureImageBytes: Uint8Array | null = null
     if (signature_method === 'drawn' && signature_image_base64) {
       try {
         const bytes = base64ToBytes(signature_image_base64)
+        signatureImageBytes = bytes
         const path = `signatures/${estimate.id}/${Date.now()}.png`
         const { error: upErr } = await supabase.storage
           .from('project-documents')
@@ -342,6 +348,76 @@ serve(async (req) => {
           .update(signaturePatch)
           .eq('id', estimate.job_id)
         if (sigJobErr) console.error('[approve-document] job signature update error', sigJobErr)
+      }
+    }
+
+    // ---- the rest of the packet --------------------------------------
+    //
+    // Documents the rep attached to this estimate for signing. One signature
+    // covers all of them: the customer saw each one in the portal before
+    // signing, and the consent text names them. Stamping happens here rather
+    // than in the browser because the portal holds no credentials that may
+    // write to project-documents, and a 2.4MB application round-tripped
+    // through base64 is not a payload worth sending twice.
+    if (wroteSignature) {
+      try {
+        const { data: packet } = await supabase
+          .from('file_attachments')
+          .select('id, file_name, file_path, storage_bucket')
+          .eq('quote_id', estimate.id)
+          .eq('sign_with_estimate', true)
+          .is('signed_at', null)
+
+        for (const doc of packet || []) {
+          try {
+            const bucket = doc.storage_bucket || 'project-documents'
+            const { data: blob, error: dlErr } = await supabase.storage.from(bucket).download(doc.file_path)
+            if (dlErr || !blob) { console.error('[approve-document] packet download', doc.file_name, dlErr); continue }
+
+            const bytes = new Uint8Array(await blob.arrayBuffer())
+            const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
+            const { rects } = signatureRects(pdf, null)
+            if (!rects.length) {
+              // Nowhere to sign on this one. Left unsigned and unstamped
+              // rather than guessing a position — a signature in the wrong
+              // place is worse than none, and this is recoverable from the
+              // job page once a box is placed on the template.
+              console.warn('[approve-document] no signature field on', doc.file_name)
+              continue
+            }
+
+            let embeddedImg: any = null
+            if (signatureImageBytes) {
+              try { embeddedImg = await pdf.embedPng(signatureImageBytes) } catch (e) { console.warn('[approve-document] embedPng', e) }
+            }
+            const italicFont = embeddedImg ? null : await pdf.embedFont(StandardFonts.TimesRomanItalic)
+            const drawn = drawSignatureAt(pdf, {
+              rects,
+              embeddedImg,
+              italicFont,
+              typedText: signature_typed_text || approver_name || null,
+            })
+            if (!drawn) continue
+
+            const stamped = await pdf.save()
+            const signedPath = `${doc.file_path.replace(/\.pdf$/i, '')}_signed_${Date.now()}.pdf`
+            const { error: upErr } = await supabase.storage
+              .from(bucket)
+              .upload(signedPath, new Blob([stamped], { type: 'application/pdf' }))
+            if (upErr) { console.error('[approve-document] packet upload', doc.file_name, upErr); continue }
+
+            await supabase
+              .from('file_attachments')
+              .update({ file_path: signedPath, file_size: stamped.byteLength, signed_at: new Date().toISOString() })
+              .eq('id', doc.id)
+          } catch (docErr) {
+            // One bad document must not cost the customer their approval:
+            // the estimate is already signed by this point.
+            console.error('[approve-document] packet stamp failed', doc.file_name, docErr)
+          }
+        }
+      } catch (packetErr) {
+        console.error('[approve-document] packet handling error', packetErr)
       }
     }
 
