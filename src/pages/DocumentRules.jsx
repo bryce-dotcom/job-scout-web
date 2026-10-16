@@ -6,6 +6,7 @@ import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
 import { toast } from '../lib/toast'
+import SignatureBoxPlacer from '../components/SignatureBoxPlacer'
 import { extractFormFields } from '../lib/pdfFormFiller'
 import { extractExcelTags, validateExcelTag, extractExcelCellLabels } from '../lib/excelTemplateFiller'
 import {
@@ -24,7 +25,8 @@ import {
   Map,
   Loader,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  PenLine,
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -246,6 +248,8 @@ export default function DocumentRules() {
 
   // Field mapping modal state
   const [mappingTemplate, setMappingTemplate] = useState(null)
+  // The template whose signature box is being drawn (SignatureBoxPlacer).
+  const [placingTemplate, setPlacingTemplate] = useState(null)
   const [mappingFields, setMappingFields] = useState([])
   const [fieldMapping, setFieldMapping] = useState({})
   const [fieldLabels, setFieldLabels] = useState({})
@@ -302,6 +306,10 @@ export default function DocumentRules() {
         field_mapping: mapping,
         status: mappedCount >= fieldCount && fieldCount > 0 ? 'Ready' : (fieldCount === 0 ? 'Ready' : 'Pending'),
         is_custom: false,
+        // The placer needs the real file and whatever boxes are already on
+        // it; without these a utility form opens blank and saves over nothing.
+        form_file: uf.form_file || '',
+        signature_fields: Array.isArray(uf.signature_fields) ? uf.signature_fields : [],
         created_at: uf.created_at,
         updated_at: uf.updated_at
       }
@@ -1147,6 +1155,29 @@ export default function DocumentRules() {
                           <Map size={16} />
                         </button>
                       )}
+                      {/* Where the customer signs. Most forms name their own
+                          signature line and need nothing; the IRS W-9 signs
+                          on a printed rule with no field behind it, so it has
+                          to be drawn once. Green when a box has been placed. */}
+                      {!excel && (
+                        <button
+                          onClick={() => setPlacingTemplate(template)}
+                          title="Set where the customer signs"
+                          style={{
+                            padding: '6px',
+                            backgroundColor: 'transparent',
+                            border: 'none',
+                            color: Array.isArray(template.signature_fields) && template.signature_fields.length ? '#16a34a' : theme.accent,
+                            cursor: 'pointer',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <PenLine size={16} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDeleteTemplate(template)}
                         title={template._source === 'utility_forms' ? 'Managed in Data Console' : 'Delete template'}
@@ -1445,6 +1476,15 @@ export default function DocumentRules() {
       )}
 
       {/* Field Mapping Modal */}
+      {placingTemplate && (
+        <SignatureBoxPlacer
+          template={placingTemplate}
+          theme={theme}
+          onClose={() => setPlacingTemplate(null)}
+          onSaved={loadData}
+        />
+      )}
+
       {mappingTemplate && (
         <>
           <div
