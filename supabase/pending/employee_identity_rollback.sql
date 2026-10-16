@@ -1,7 +1,7 @@
 -- EMPLOYEE IDENTITY ROLLBACK: put the fields back on employees.
 --
 -- Use only to roll the APP back to a build that reads identity off employees,
--- after employee_identity_finish.sql has emptied those columns. It copies
+-- after 20261016180000_employee_identity_finish.sql has emptied those columns. It copies
 -- every value from employee_identity back onto employees and swaps the
 -- redirect for the mirror again, so employee_identity stays in step.
 -- employee_identity itself is left in place. The audit_log scrub and the

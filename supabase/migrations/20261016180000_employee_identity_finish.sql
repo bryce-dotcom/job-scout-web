@@ -1,8 +1,9 @@
--- EMPLOYEE IDENTITY, STEP 2: EMPTY THE LEGACY COLUMNS (held back for Bryce's OK)
+-- EMPLOYEE IDENTITY, STEP 2: EMPTY THE LEGACY COLUMNS
 --
--- NOT in supabase/migrations on purpose: `db push` from any worktree would run
--- it. Move it there (with a fresh timestamp) only after Bryce approves, and
--- only once the app + edge functions that read employee_identity are LIVE.
+-- APPLIED to production 2026-10-16 with Bryce's approval (run by hand with
+-- `supabase db query -f`, then `migration repair`), after the app and edge
+-- functions reading employee_identity were live and verified. Kept in
+-- supabase/pending/ until then so no db push could run it early.
 --
 -- Before: 20261015120000_employee_private_access.sql (rule, RLS on onboarding
 -- tables, audit strip) and 20261015121000_employee_identity.sql (table, copy,
@@ -21,7 +22,6 @@
 --      onboarding packets' draft_data (finalize now does this itself).
 -- The columns themselves are dropped one release later.
 
-begin;
 
 do $$
 declare missing int;
@@ -138,4 +138,3 @@ where p.status = 'completed'
        or coalesce(p.draft_data->'direct_deposit'->>'account_number','') <> ''
        or coalesce(p.draft_data->'direct_deposit'->>'routing_number','') <> '');
 
-commit;
