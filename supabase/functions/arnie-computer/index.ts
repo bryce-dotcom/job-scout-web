@@ -83,6 +83,37 @@ Deno.serve(async (req) => {
     return json({ error: 'This browser is signed in to the JobScout demo, which cannot have a computer. Sign in as yourself, then press Connect.', repair: true }, 403)
   }
 
+  /**
+   * A NEW sign-in session for this caller, for a computer to keep. Only ever
+   * for the person whose token reached this route (the gateway verifies it —
+   * verify_jwt stays on for this function), and checked against them again.
+   */
+  const mintSessionFor = async (email: string): Promise<{ ok: true; refresh: string } | { ok: false; why: string }> => {
+    if (!email) return { ok: false, why: 'no email on this sign-in' }
+    try {
+      const g = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+        method: 'POST',
+        headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'magiclink', email }),
+      })
+      const gj = await g.json().catch(() => ({}))
+      const hashed = gj?.properties?.hashed_token || gj?.hashed_token
+      if (!g.ok || !hashed) return { ok: false, why: `link ${g.status}` }
+      // Redeemed as `email` — `magiclink` is refused by this auth version.
+      const v = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+        method: 'POST',
+        headers: { apikey: Deno.env.get('SUPABASE_ANON_KEY') || SERVICE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'email', token_hash: hashed }),
+      })
+      const vj = await v.json().catch(() => ({}))
+      if (!v.ok || !vj?.refresh_token) return { ok: false, why: `verify ${v.status}` }
+      if (String(vj?.user?.email || '').toLowerCase() !== email.toLowerCase()) return { ok: false, why: 'the session came back for somebody else' }
+      return { ok: true, refresh: String(vj.refresh_token) }
+    } catch (e) {
+      return { ok: false, why: String((e as Error)?.message || e).slice(0, 80) }
+    }
+  }
+
   const H = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json' }
   const rest = async (path: string, init: RequestInit = {}) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -525,14 +556,28 @@ Deno.serve(async (req) => {
     // forged token naming anybody.
     if (action === 'pair_claim') {
       const code = String(body.code || '')
-      const refresh = String(body.refresh_token || '')
-      if (!code || !refresh) return json({ error: 'code and refresh_token are required' }, 400)
+      if (!code) return json({ error: 'code is required' }, 400)
 
       const rows = await rest(`arnie_pairings?select=code,expires_at,claimed_at&code=eq.${encodeURIComponent(code)}&limit=1`)
       const row = rows?.[0]
       if (!row) return json({ error: 'Nothing is waiting on that code — start the agent again.' }, 404)
       if (new Date(row.expires_at) <= new Date()) return json({ error: 'That request timed out. Start the agent again.' }, 410)
       if (row.claimed_at) return json({ error: 'That computer is already connected.' }, 409)
+
+      // THE AGENT GETS ITS OWN SIGN-IN, never a copy of the browser's.
+      //
+      // It used to be handed the browser's refresh token — so the computer and
+      // the browser shared ONE session, each rotating it about once an hour.
+      // Whichever refreshed second presented a token the other had already
+      // replaced; Supabase treats that as a stolen token and kills the whole
+      // session. Bryce's agent died at exactly 59 minutes, twice, with its
+      // saved token deleted (2026-10-15). A fresh session is minted here for
+      // the person who pressed Connect: a one-time sign-in link, generated and
+      // redeemed server-side — no email is sent, nobody sees a link, and the
+      // agent's session rotates on its own, apart from every browser.
+      const minted = await mintSessionFor(String(caller.email || ''))
+      if (!minted.ok) return json({ error: `Could not set up this computer's sign-in (${minted.why}). Try Connect again.` }, 502)
+      const refresh = minted.refresh
 
       // claimed_at in the filter as well as the check: two taps on a slow
       // phone must not both attach a token.

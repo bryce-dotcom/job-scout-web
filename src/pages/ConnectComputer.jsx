@@ -66,16 +66,17 @@ export default function ConnectComputer() {
   const connect = async () => {
     setBusy(true); setErr('')
     try {
-      // The agent gets THIS session's refresh token, which is what lets it
-      // keep working tomorrow without asking again. It never sees a password.
+      // The browser's own sign-in is NOT handed over any more: sharing one
+      // session between this tab and the computer had them rotate the token
+      // out from under each other, and the agent died after an hour. The
+      // server mints the computer a sign-in of its own (pair_claim).
       const { data: s } = await supabase.auth.getSession()
-      const refresh = s?.session?.refresh_token
-      if (!refresh) throw new Error('Your session has expired — sign in again and reconnect.')
+      if (!s?.session) throw new Error('Your session has expired — sign in again and reconnect.')
 
       // Claimed on the AUTHENTICATED rail, not the public pairing function:
       // that one cannot prove who you are.
       const { data, error } = await supabase.functions.invoke('arnie-computer', {
-        body: { action: 'pair_claim', code, refresh_token: refresh },
+        body: { action: 'pair_claim', code },
       })
       if (error) {
         let detail = ''

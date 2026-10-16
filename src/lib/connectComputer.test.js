@@ -82,6 +82,26 @@ describe('on a scaled screen the picture and the click agree (Bryce, 150%, 2026-
   })
 })
 
+describe('the computer gets its OWN sign-in, never the browser\'s (Bryce, died at 59 min twice, 2026-10-15)', () => {
+  const server = read('../../supabase/functions/arnie-computer/index.ts')
+  const page = read('../pages/ConnectComputer.jsx')
+  const claim = server.slice(server.indexOf("if (action === 'pair_claim') {"), server.indexOf("if (action === 'observe')"))
+  it('pair_claim mints a session for the caller and ignores any token the browser sends', () => {
+    expect(claim).toMatch(/const minted = await mintSessionFor\(String\(caller\.email \|\| ''\)\)/)
+    expect(claim).toMatch(/const refresh = minted\.refresh/)
+    expect(claim).not.toMatch(/body\.refresh_token/)
+  })
+  it('the mint is one-time link → redeemed server-side as `email`, and must come back for the same person', () => {
+    expect(server).toMatch(/auth\/v1\/admin\/generate_link[\s\S]{0,200}type: 'magiclink', email/)
+    expect(server).toMatch(/JSON\.stringify\(\{ type: 'email', token_hash: hashed \}\)/)
+    expect(server).toMatch(/String\(vj\?\.user\?\.email \|\| ''\)\.toLowerCase\(\) !== email\.toLowerCase\(\)/)
+  })
+  it('the Connect page no longer sends the browser\'s refresh token at all', () => {
+    expect(page).toMatch(/body: \{ action: 'pair_claim', code \}/)
+    expect(page).not.toMatch(/refresh_token: refresh/)
+  })
+})
+
 describe('the agent keeps its connection through a blip (Bryce, 2026-10-15)', () => {
   const agent = read('../../scripts/jobscout-agent.mjs')
   const fa = agent.slice(agent.indexOf('const freshAccess = async'), agent.indexOf('const call = async'))
