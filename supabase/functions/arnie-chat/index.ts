@@ -13,6 +13,7 @@ import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { playbookFor } from '../_shared/lightingPlaybook.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
+import { setGoals, scoreboard, localDay } from '../_shared/repGoals.ts'
 
 // Where the device says it is. Threaded explicitly from the request through
 // to the one tool that uses it, exactly as the bearer token is — agentSetup
@@ -158,6 +159,28 @@ const TOOLS = [
         group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'] },
       },
     },
+  },
+  {
+    name: 'set_rep_goals',
+    description: 'Save TODAY\'s goals for the reps this person tracks (their morning huddle): estimates created, meetings attended, estimates won, per rep. Use when they give the numbers, or say "same as yesterday" (same_as_last: copies the last day that had goals — Friday\'s on a Monday). One call can mix them: same_as_last plus a change for one rep. Saved straight away — no card. Read back what was saved, one line per rep. If a name is unclear (there are two Noahs), ask which.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        same_as_last: { type: 'boolean', description: 'Copy the last day\'s goals first.' },
+        all: { type: 'object', description: 'The same numbers for every rep: { estimates_created, meetings_attended, estimates_won } — any of them.' },
+        goals: {
+          type: 'array',
+          description: 'Per-rep numbers. rep is a name as they said it ("Noah F", "Doug").',
+          items: { type: 'object', properties: { rep: { type: 'string' }, estimates_created: { type: 'integer' }, meetings_attended: { type: 'integer' }, estimates_won: { type: 'integer' } }, required: ['rep'] },
+        },
+        date: { type: 'string', description: 'YYYY-MM-DD; leave out for today.' },
+      },
+    },
+  },
+  {
+    name: 'query_rep_goals',
+    description: 'The day\'s scoreboard for the reps this person tracks: each rep\'s goal and what JobScout shows they actually did — estimates created, meetings attended, estimates won. Use for the afternoon follow-up, or "how are my reps doing today". Say plainly who is short. The `means` field says how each number is counted; mention that meetings are counted from the calendar (JobScout does not record attendance) when it matters.',
+    input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD; leave out for today.' } } },
   },
   {
     name: 'query_my_pay',
@@ -798,6 +821,20 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
   const isManager = isAdmin || role === 'manager'
 
   try {
+    // ── a lead's daily goals for his reps (Cole, 2026-10-15) ────────────
+    if (name === 'set_rep_goals' || name === 'query_rep_goals') {
+      // Goals for OTHER people: a manager's job, not everyone's. Activity
+      // counts only — no money comes back from either.
+      if (!isManager) return { restricted: 'Setting and reviewing reps\' goals is for managers and admins.' }
+      if (employeeId == null) return { error: 'No employee record on this sign-in.' }
+      const rr = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
+      const co = await fetch(sb(`companies?select=timezone&id=eq.${companyId}&limit=1`), { headers: hdr }).then((x) => x.ok ? x.json() : []).catch(() => [])
+      const tz = String(co?.[0]?.timezone || 'America/Denver')
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(String(input?.date || '')) ? String(input.date) : localDay(new Date(), tz)
+      if (name === 'set_rep_goals') return await setGoals(rr, companyId, employeeId, day, { same_as_last: input?.same_as_last === true, all: input?.all, goals: input?.goals })
+      return await scoreboard(rr, companyId, employeeId, day, tz)
+    }
+
     // ── to their own inbox, and only theirs ─────────────────────────────
     if (name === 'email_me') {
       // The address comes from who is signed in, never from the model.

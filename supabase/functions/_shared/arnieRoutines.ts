@@ -20,6 +20,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { runArnieTurn, plainText } from './arnieHeadless.ts'
 import { forSms } from './arnieSms.ts'
+import { offDayReason } from './repGoals.ts'
 
 type Any = any
 const str = (v: unknown) => (v == null ? '' : String(v)).trim()
@@ -145,6 +146,18 @@ export async function runRoutine(r: RoutineRest, routine: Any, now = new Date())
   if (!employee) {
     await stamp(r, routine.id, { last_run_on: day, last_error: 'the employee is no longer active', enabled: false })
     return { ok: false, error: 'employee not active' }
+  }
+
+  // "Every work day — not holidays or time off" (Cole, 2026-10-15). A weekday
+  // routine is a WORKDAY routine: it stays quiet on a US holiday, on a day the
+  // company has marked, and on the person's own approved time off — and is
+  // stamped as run, so it does not try again all morning.
+  if (routine.weekdays_only) {
+    const off = await offDayReason(r, Number(routine.company_id), Number(routine.employee_id), day).catch(() => null)
+    if (off && off !== 'the weekend') {
+      await stamp(r, routine.id, { last_run_on: day, last_result: `Skipped — ${off}.`, last_error: null })
+      return { ok: true, answer: `skipped: ${off}` }
+    }
   }
 
   const turn = await runArnieTurn(r, { employee, messages: [{ role: 'user', content: str(routine.prompt) }] })
