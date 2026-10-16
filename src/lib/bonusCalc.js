@@ -427,8 +427,9 @@ export function computeJobBonusRows({
 //   (period ENDS on an anchor payday; the 14 days prior are the period)
 // semi-monthly: 1st–15th / 16th–end-of-month
 // monthly: 1st–end-of-month
-export function getCurrentPayPeriod(payrollConfig = {}, offset = 0) {
-  const today = new Date()
+// `today` is the as-of day. Pages leave it to the clock; anything that must be
+// a pure function of its inputs (the cash forecast) passes its own.
+export function getCurrentPayPeriod(payrollConfig = {}, offset = 0, today = new Date()) {
   const frequency = payrollConfig.pay_frequency || 'bi-weekly'
   let periodStart, periodEnd
 

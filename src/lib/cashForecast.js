@@ -147,7 +147,7 @@ export function buildForecast({
   if (payrollConfig && recentRuns.length > 0) {
     const avgCost = recentRuns.reduce((s, r) => s + runCost(r), 0) / recentRuns.length
     for (let k = 0; k < 8; k++) {
-      const period = getCurrentPayPeriod(payrollConfig, k)
+      const period = getCurrentPayPeriod(payrollConfig, k, start)
       const pay = payDateForPeriod(period.periodEnd, payrollConfig)
       if (!pay || seen.has(pay)) continue
       seen.add(pay)

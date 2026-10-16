@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { buildForecast, weeklyBuckets } from './cashForecast'
 
 const today = new Date('2026-09-17T12:00:00')
@@ -58,6 +58,22 @@ describe('buildForecast', () => {
     expect(made[0].date).toBe('2026-09-18')   // Sep 20 is a Sunday: paid the Friday before
     expect(pay.filter(e => e.date === '2026-09-18' || e.date === '2026-09-20')).toHaveLength(1)
     expect(pay.some(e => e.amount === -55555)).toBe(false)
+  })
+
+  it('projects payroll from the today it is given, not the wall clock', () => {
+    const payroll = () => buildForecast({
+      today, openingCash: 50000,
+      payrollConfig: { pay_frequency: 'semi-monthly', pay_day_1: 20, pay_day_2: 5 },
+      payrollRuns: [{ id: 1, pay_date: '2026-09-05', total_gross: 8000 }],
+    }).events.filter(e => e.kind === 'payroll').map(e => `${e.date} ${e.amount}`)
+    const asOfToday = payroll()
+    try {
+      for (const clock of ['2026-01-03T09:00:00', '2026-10-16T09:00:00', '2027-06-30T09:00:00']) {
+        vi.useFakeTimers(); vi.setSystemTime(new Date(clock))
+        expect(payroll()).toEqual(asOfToday)
+        vi.useRealTimers()
+      }
+    } finally { vi.useRealTimers() }
   })
 
   it('uses trailing bank spend as a daily baseline, ignoring transfers, payroll and bill-sized rows', () => {
