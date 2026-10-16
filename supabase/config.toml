@@ -440,6 +440,22 @@ verify_jwt = true
 [functions.parse-utility-pdf]
 verify_jwt = true
 
+# The crash path. report-crash is posted by src/lib/crashReport.js from the
+# error screen itself — including /portal/:token, where the customer reading a
+# proposal has no session at all — and crash-alert is called server-side with
+# no JWT when a new crash is recorded. Neither was pinned, so the next plain
+# `functions deploy` of either would have 401d it: crash reports would stop
+# arriving and the only signal that anything was wrong would be someone
+# photographing their screen again, which is the exact failure crash-alert was
+# built to end. Both are safe to expose: report-crash validates and clamps its
+# payload server-side and the table keeps no public grant, and crash-alert only
+# alerts on crashes already in the log.
+[functions.report-crash]
+verify_jwt = false
+
+[functions.crash-alert]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

@@ -166,6 +166,9 @@ export async function deployFunctions(slugs, opts = {}) {
   const git = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   const ref = projectRef(root)
   const toml = readFileSync(join(root, 'supabase', 'config.toml'), 'utf8')
+  // What main thinks the gateway should be, for the stale-config check below.
+  let mainToml = toml
+  try { mainToml = git(['show', 'origin/main:supabase/config.toml']) } catch { /* no origin/main yet */ }
 
   log(`worktree    ${root}`)
   log(`branch      ${git(['rev-parse', '--abbrev-ref', 'HEAD'])} @ ${git(['rev-parse', '--short', 'HEAD'])}`)
@@ -225,6 +228,22 @@ export async function deployFunctions(slugs, opts = {}) {
     }
     if (pin === true && live?.verify_jwt === false) {
       log(`  note: config pins verify_jwt=true but production has it false — this deploy CLOSES the gateway.`)
+    }
+
+    // config.toml is not bundled, so Gate 1 does not cover it — but a stale
+    // copy of it sets the gateway from out-of-date knowledge. Only this slug's
+    // pin matters, so compare that rather than the whole file, which other
+    // functions' pins would otherwise make noisy.
+    const mainPin = pinnedVerifyJwt(mainToml, slug)
+    if (mainPin !== pin) {
+      const show = (v) => (v === null ? 'not pinned' : String(v))
+      const detail = `\n  your config.toml: ${show(pin)}\n  origin/main's:    ${show(mainPin)}`
+      if (!force) {
+        refuse(`${slug}'s verify_jwt pin disagrees with origin/main.${detail}\n\n` +
+               `  The deploy sets the gateway from YOUR copy, so this would apply the\n` +
+               `  wrong one. Bring config.toml up to date, or ship your pin first.`)
+      }
+      log(`  FORCED past a config.toml pin that disagrees with main.${detail}`)
     }
 
     plan.push({ slug, pin, liveVersion: live?.version ?? null })
