@@ -51,7 +51,9 @@ import {
   Zap,
   Sparkles,
   Bell,
-  PartyPopper
+  PartyPopper,
+  Mail,
+  Copy
 } from 'lucide-react'
 import { seedSampleData, clearAllData } from '../lib/seedData'
 import BillingTab from '../components/BillingTab'
@@ -4871,6 +4873,15 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
   // For the SMS terms URL below — A2P 10DLC registration asks for it, and it
   // is per company because each tenant registers its own brand.
   const company = useStore((state) => state.company)
+  const isMobile = useIsMobile()
+
+  // ─── Forwarding addresses state ───
+  // Two addresses this company can be mailed at. Both are signed with
+  // REPLY_TOKEN_SECRET, which only the server has, so the browser asks the
+  // sal-inbox-address function rather than building them here.
+  const [inboxAddresses, setInboxAddresses] = useState(null)
+  const [inboxError, setInboxError] = useState(null)
+  const [copiedAddress, setCopiedAddress] = useState(null)
 
   // ─── Google Calendar state ───
   const [gcalConnected, setGcalConnected] = useState(false)
@@ -4929,6 +4940,48 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
   const [plaidSyncing, setPlaidSyncing] = useState(false)
   const [plaidLinkReady, setPlaidLinkReady] = useState(false)
   const [plaidLinkToken, setPlaidLinkToken] = useState(null)
+
+  // ─── Load this company's forwarding addresses ───
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    const load = async () => {
+      try {
+        const { data: sess } = await supabase.auth.getSession()
+        const token = sess?.session?.access_token
+        const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sal-inbox-address`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || anon}`, apikey: anon },
+          body: JSON.stringify({ company_id: companyId }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!alive) return
+        if (!res.ok || !data.address) {
+          setInboxError(data.error || `Could not get the addresses (${res.status})`)
+          return
+        }
+        setInboxError(null)
+        setInboxAddresses({ bids: data.address, venmo: data.venmo_address })
+      } catch (e) {
+        if (alive) setInboxError(e.message)
+      }
+    }
+    load()
+    return () => { alive = false }
+  }, [companyId])
+
+  const copyAddress = async (which, value) => {
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedAddress(which)
+      toast.success('Copied')
+      setTimeout(() => setCopiedAddress(c => (c === which ? null : c)), 2000)
+    } catch {
+      toast.error('Could not copy — select the address and copy it')
+    }
+  }
 
   // ─── Load Plaid connected accounts ───
   useEffect(() => {
@@ -5295,6 +5348,55 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
     textTransform: 'uppercase'
   })
 
+  // One forwarding address, its one-line reason, and a copy button. Markup
+  // only — two rows that have to look identical, not a component.
+  const addressRow = (key, title, blurb, value) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div>
+        <div style={{ fontSize: '14px', fontWeight: '600', color: theme.text }}>{title}</div>
+        <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.45 }}>{blurb}</div>
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'minmax(0,1fr) auto',
+        gap: '8px',
+        alignItems: 'center'
+      }}>
+        <code style={{
+          display: 'block',
+          padding: '12px',
+          borderRadius: '8px',
+          border: `1px solid ${theme.border}`,
+          backgroundColor: theme.bg,
+          fontSize: '13px',
+          color: theme.text,
+          overflowWrap: 'anywhere',
+          minHeight: '44px',
+          boxSizing: 'border-box'
+        }}>{value || (inboxAddresses ? 'Not available — this server has not been updated yet' : 'Loading…')}</code>
+        <button
+          onClick={() => copyAddress(key, value)}
+          disabled={!value}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            minHeight: '44px', padding: '0 14px',
+            backgroundColor: theme.accent,
+            color: '#fff',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: value ? 'pointer' : 'default',
+            opacity: value ? 1 : 0.6
+          }}
+        >
+          {copiedAddress === key ? <CheckCircle size={15} /> : <Copy size={15} />}
+          {copiedAddress === key ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  )
+
   return (
     <div>
       <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '20px' }}>Integrations</h3>
@@ -5334,6 +5436,55 @@ function IntegrationsTab({ theme, settings, saveSetting, companyId, user, employ
           >
             Go to My Money
           </button>
+        </div>
+
+        {/* ──── FORWARDING ADDRESSES ──── */}
+        {/* Mail you forward here is read by JobScout. Both addresses are
+            signed per company, so they are safe to paste into a portal or an
+            email rule but are not guessable. */}
+        <div style={{
+          backgroundColor: theme.bgCard,
+          borderRadius: '12px',
+          border: `1px solid ${theme.border}`,
+          padding: '18px 20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
+            <div style={{
+              width: '40px', height: '40px', borderRadius: '10px',
+              backgroundColor: theme.accentBg,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+            }}>
+              <Mail size={20} style={{ color: theme.accent }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '15px', fontWeight: '600', color: theme.text }}>Forwarding Addresses</div>
+              <p style={{ fontSize: '13px', color: theme.textMuted, margin: '2px 0 0' }}>
+                Email sent to these lands in JobScout. They are unique to your company — anyone else's forward is ignored.
+              </p>
+            </div>
+          </div>
+
+          {inboxError ? (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start', color: '#c25a5a', fontSize: '13px' }}>
+              <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '1px' }} />
+              {inboxError}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {addressRow(
+                'venmo',
+                'Venmo payments',
+                'A customer paying by Venmo never reaches the bank feed. Forward Venmo\'s "someone paid you" email here — a rule in your mail can do it for you — and it waits under "Venmo payments to match" on the Books overview until you say which invoice it belongs to.',
+                inboxAddresses?.venmo
+              )}
+              {addressRow(
+                'bids',
+                'Sal\'s bid inbox',
+                'Bid invitations and portal alerts. Paste it into each portal\'s notification settings, or forward an invitation to it, and Sal reads it within ten minutes.',
+                inboxAddresses?.bids
+              )}
+            </div>
+          )}
         </div>
 
         {/* ──── GOOGLE CALENDAR ──── */}
