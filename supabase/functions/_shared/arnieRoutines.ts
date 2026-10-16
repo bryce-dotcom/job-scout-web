@@ -21,6 +21,7 @@
 import { runArnieTurn, plainText } from './arnieHeadless.ts'
 import { forSms } from './arnieSms.ts'
 import { offDayReason } from './repGoals.ts'
+import { assistantName, sendArnieEmail } from './arnieSend.ts'
 
 type Any = any
 const str = (v: unknown) => (v == null ? '' : String(v)).trim()
@@ -118,29 +119,28 @@ async function deliver(r: RoutineRest, routine: Any, employee: Any, answer: stri
   // refused with "to and message are required" — and the refusal was thrown
   // away, so nothing anywhere said a text had never gone (found setting up
   // Cole's huddle texts, 2026-10-15). A failed send is now an error on the row.
-  let smsError: string | null = null
+  let sendError: string | null = null
   if (channel === 'sms') {
-    if (!str(employee?.phone)) smsError = 'no phone number on their employee record'
+    if (!str(employee?.phone)) sendError = 'no phone number on their employee record'
     else {
       const res = await fetch(`${r.url}/functions/v1/send-sms`, {
         method: 'POST', headers: FH(r),
         body: JSON.stringify({ to: employee.phone, message: forSms(`${title}\n\n${answer}`), company_id: routine.company_id, trigger: 'arnie_routine', employee_id: routine.employee_id }),
       }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }) as any)
-      if (!res.ok) smsError = `the text did not send (${res.status}: ${String(await res.text()).slice(0, 160)})`
+      if (!res.ok) sendError = `the text did not send (${res.status}: ${String(await res.text()).slice(0, 160)})`
     }
   }
 
+  // From the assistant's own address, so a reply reaches the conversation.
+  // Through send-email it came from a general sender and a reply went nowhere
+  // — and a routine that asks a question ("today's goals?") is one that gets
+  // answered by replying (Cole's huddle email, 2026-10-16).
   if (channel === 'email' && str(employee?.email)) {
-    await fetch(`${r.url}/functions/v1/send-email`, {
-      method: 'POST', headers: FH(r),
-      body: JSON.stringify({
-        to: employee.email,
-        subject: title,
-        html: `<div style="font:14px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#2c3530;max-width:640px"><h2 style="font-size:16px;margin:0 0 10px">${title}</h2><pre style="white-space:pre-wrap;font:13px/1.6 -apple-system,Segoe UI,Arial,sans-serif;margin:0">${plainText(answer).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre></div>`,
-      }),
-    }).catch(() => {})
+    const who = await assistantName({ url: r.url, key: r.key }, routine.employee_id).catch(() => undefined)
+    const sent = await sendArnieEmail(employee.email, title, title, plainText(answer), who).catch((e) => ({ sent: false, error: String(e) }))
+    if (!sent.sent) sendError = `the email did not send (${sent.error || 'unknown'})`
   }
-  return { smsError }
+  return { sendError }
 }
 
 /** Run one routine and record what happened, success or not. */
@@ -178,8 +178,8 @@ export async function runRoutine(r: RoutineRest, routine: Any, now = new Date())
 
   const sent = await deliver(r, routine, employee, turn.text, day)
   // Still stamped as run (the app copy landed); the error says the text did not.
-  await stamp(r, routine.id, { last_run_on: day, last_result: plainText(turn.text).slice(0, 2000), last_error: sent.smsError })
-  return { ok: !sent.smsError, answer: turn.text, ...(sent.smsError ? { error: sent.smsError } : {}) }
+  await stamp(r, routine.id, { last_run_on: day, last_result: plainText(turn.text).slice(0, 2000), last_error: sent.sendError })
+  return { ok: !sent.sendError, answer: turn.text, ...(sent.sendError ? { error: sent.sendError } : {}) }
 }
 
 async function stamp(r: RoutineRest, id: number, patch: Record<string, unknown>) {

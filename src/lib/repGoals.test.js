@@ -71,8 +71,12 @@ describe('a routine that texts actually sends the text', () => {
     expect(sms).toMatch(/const \{ company_id, to, message,/)
     expect(routines).toMatch(/JSON\.stringify\(\{ to: employee\.phone, message: forSms\(/)
     expect(routines).not.toMatch(/body: forSms\(/)
-    expect(routines).toMatch(/if \(!res\.ok\) smsError = `the text did not send/)
-    expect(routines).toMatch(/last_error: sent\.smsError/)
+    expect(routines).toMatch(/if \(!res\.ok\) sendError = `the text did not send/)
+    expect(routines).toMatch(/last_error: sent\.sendError/)
+  })
+  it('a routine email comes from the assistant\'s own address, so replying reaches her', () => {
+    expect(routines).toMatch(/await sendArnieEmail\(employee\.email, title, title, plainText\(answer\), who\)/)
+    expect(routines).not.toMatch(/functions\/v1\/send-email/)
   })
 })
 

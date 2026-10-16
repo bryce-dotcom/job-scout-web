@@ -10,6 +10,7 @@
 // estimates went unchased. Here a non-2xx is visible.
 
 import { dueRoutines, runRoutine } from '../_shared/arnieRoutines.ts'
+import { isServiceRole } from '../_shared/arnieSend.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -27,9 +28,18 @@ Deno.serve(async (req) => {
   const INTERNAL = Deno.env.get('ARNIE_INTERNAL_KEY') || undefined
 
   // Only our own scheduler may run other people's routines.
+  //
+  // By the JWT's ROLE, not by comparing keys. The project has two valid
+  // service credentials — the legacy JWT the Vercel cron holds and the
+  // sb_secret_ Supabase injects here — and an equality check between them
+  // never matches. So unless ARNIE_INTERNAL_KEY happened to be set on Vercel,
+  // the cron was refused "not for callers" every five minutes and NO routine
+  // ever ran on its own (found 2026-10-16: Cole's 8:00 huddle text never
+  // went). The gateway verifies the signature (verify_jwt stays on for this
+  // function), so a role claim of service_role here is the real thing.
   const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
   const presented = (req.headers.get('x-arnie-internal') || '').trim()
-  const ours = (token && token === SERVICE_KEY) || (INTERNAL && presented === INTERNAL)
+  const ours = isServiceRole(req) || (token && token === SERVICE_KEY) || (INTERNAL && presented === INTERNAL)
   if (!ours) return json({ error: 'not for callers' }, 403)
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
