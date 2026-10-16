@@ -37,7 +37,7 @@ import { readFile, unlink } from 'node:fs/promises'
 
 import {
   frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp, pngSize, checkPermissions, permissionNotes,
-  capabilities, platformName,
+  capabilities, platformName, browserKind, frontWindowTitle, isBrowserWindowTitle, focusBrowserWindow,
 } from './agent/hands.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -759,6 +759,25 @@ while (!stopping) {
       show('no', `${describe(a)} — refused here: ${why}`)
       await report({ session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
       continue
+    }
+  }
+
+  // 2b. A BROWSER means a browser window — not an installed web app, which is
+  // the same program with no address bar. The JobScout app itself is one: on
+  // Bryce's PC Jenny typed his Gmail address into it (2026-10-16). Bring a real
+  // browser window forward first, or open one; never act inside an app window.
+  if (a.app && browserKind(a.app) && a.kind !== 'launch') {
+    const title = await frontWindowTitle()
+    if (title != null && !isBrowserWindowTitle(a.app, title)) {
+      const f = await focusBrowserWindow(a.app)
+      if (f.ok) {
+        show('..', `"${title.slice(0, 40)}" is an app window, not a ${a.app} tab — ${f.opened ? 'opened' : 'brought forward'} a ${a.app} window`)
+      } else {
+        const why = `the ${a.app} window in front is "${title.slice(0, 40)}", an app window with no address bar, and no browser window could be brought forward`
+        show('no', `${describe(a)} — refused here: ${why}`)
+        await report({ session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
+        continue
+      }
     }
   }
 

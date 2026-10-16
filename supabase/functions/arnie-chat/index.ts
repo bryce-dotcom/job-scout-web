@@ -1036,7 +1036,9 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
                 __image: { media_type: 'image/png', data: btoa(binary) },
                 saw: true,
                 device: session.device_label,
-                say: 'Describe only what is actually on this screen. If what you need is not visible, say so and look again rather than assuming. To click something here, give its x and y in THIS picture\'s pixels from the top-left.',
+                // "Gmail is loading in the background" — said over a picture of
+                // the JobScout dashboard, with nothing loading (2026-10-16).
+                say: 'Describe only what is actually on this screen. If what you need is not visible, say so and look again rather than assuming. If this picture does not show what your last step was meant to do, that step did NOT work — say so plainly; never say something is "loading", "opening" or "in the background" unless this picture shows it. To click something here, give its x and y in THIS picture\'s pixels from the top-left.',
               }
             }
           }

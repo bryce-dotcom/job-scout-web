@@ -82,6 +82,29 @@ describe('on a scaled screen the picture and the click agree (Bryce, 150%, 2026-
   })
 })
 
+describe('a browser step happens in a browser window, never in the JobScout app (Bryce, 2026-10-16)', () => {
+  const hands = read('../../scripts/agent/hands.mjs')
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const chat = read('../../supabase/functions/arnie-chat/index.ts')
+  it('a browser window is told from an app window by its title', async () => {
+    const { isBrowserWindowTitle } = await import('../../scripts/agent/hands.mjs')
+    expect(isBrowserWindowTitle('chrome', 'Inbox (12) - bryce@hhh.services - HHH Services Mail - Google Chrome')).toBe(true)
+    expect(isBrowserWindowTitle('chrome', 'Job Scout')).toBe(false)          // the installed JobScout app
+    expect(isBrowserWindowTitle('edge', 'Gmail - Work - Microsoft​ Edge')).toBe(true)
+    expect(isBrowserWindowTitle('excel', 'Book1 - Excel')).toBe(false)
+  })
+  it('before acting, the agent brings a real browser window forward — or refuses — never types into an app window', () => {
+    expect(agent).toMatch(/if \(a\.app && browserKind\(a\.app\) && a\.kind !== 'launch'\) \{/)
+    expect(agent).toMatch(/if \(title != null && !isBrowserWindowTitle\(a\.app, title\)\) \{\n\s+const f = await focusBrowserWindow\(a\.app\)/)
+    expect(agent.indexOf('2b. A BROWSER means a browser window')).toBeLessThan(agent.indexOf('// 3. Do it, and say so.'))
+    expect(hands).toMatch(/\[void\]\$w\.AppActivate\(/)
+    expect(hands).toMatch(/'start', '', kind\.exe, '--new-window'/)
+  })
+  it('Jenny is told a step the picture does not show did not happen', () => {
+    expect(chat).toMatch(/never say something is "loading", "opening" or "in the background" unless this picture shows it/)
+  })
+})
+
 describe('the computer gets its OWN sign-in, never the browser\'s (Bryce, died at 59 min twice, 2026-10-15)', () => {
   const server = read('../../supabase/functions/arnie-computer/index.ts')
   const page = read('../pages/ConnectComputer.jsx')
@@ -120,7 +143,8 @@ describe('the agent keeps its connection through a blip (Bryce, 2026-10-15)', ()
     expect(agent.match(/await call\('hello', handshake\)/g).length).toBe(1)   // only inside helloOnce
     expect(agent).toMatch(/async function helloOnce\(\) \{\n\s+for \(let i = 0; ; i\+\+\) \{\n\s+try \{ return await call\('hello', handshake\) \}/)
     expect(agent).not.toMatch(/await call\('report', \{/)
-    expect(agent.match(/await report\(\{/g).length).toBe(4)
+    expect(agent.match(/await report\(\{/g).length).toBe(5)   // incl. the browser-window refusal
+    expect(agent).not.toMatch(/await call\('report', \{/)
     expect(agent).toMatch(/if \(r\.ok \|\| r\.status === 409\) return r/)
   })
   it('an upload that cannot sign in fails soft', () => {

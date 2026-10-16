@@ -408,6 +408,87 @@ const LAUNCHABLE = {
   google: ['chrome', 'Google Chrome'],
 }
 
+// ── a real browser window, not an app window ────────────────────────────
+// An installed web app — the JobScout app itself — is a window of chrome.exe
+// with NO address bar. To "is chrome in front?" it answers yes. On Bryce's PC
+// (2026-10-16) Jenny pressed ctrl+l, typed his business Gmail address and
+// Enter straight into the JobScout window he had just typed his request in.
+// A browser window's title ends with the browser's own name; an app window's
+// does not. Windows only: on a Mac an installed web app is its own program.
+const BROWSER_WINDOW = {
+  chrome: { exe: 'chrome', title: /-\s*Google Chrome$/i },
+  google: { exe: 'chrome', title: /-\s*Google Chrome$/i },
+  edge: { exe: 'msedge', title: /Microsoft[\s​]*Edge$/i },
+  firefox: { exe: 'firefox', title: /Mozilla Firefox$/i },
+}
+export const browserKind = (app) => BROWSER_WINDOW[String(app || '').toLowerCase()] || null
+export const isBrowserWindowTitle = (app, title) => !!browserKind(app)?.title.test(String(title || '').trim())
+
+/** The title of the window in front (Windows), or null if it cannot be read. */
+export async function frontWindowTitle() {
+  if (!WIN) return null
+  const r = await ps(`
+    Add-Type -TypeDefinition @"
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class JsTitle {
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  public static string Get() { var s = new StringBuilder(512); GetWindowText(GetForegroundWindow(), s, 512); return s.ToString(); }
+}
+"@
+    [JsTitle]::Get()`)
+  return r.ok ? String(r.out || '').trim() : null
+}
+
+/**
+ * Put a real browser window in front — the first one of this browser whose
+ * title says it is a browser — or open a new one if there is none.
+ */
+export async function focusBrowserWindow(app) {
+  const kind = browserKind(app)
+  if (!WIN || !kind) return { error: 'not a browser this can find windows of' }
+  const r = await ps(`
+    Add-Type -TypeDefinition @"
+using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+public static class JsWins {
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
+  public static List<string> All() {
+    var list = new List<string>();
+    EnumWindows(delegate(IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h)) return true;
+      var s = new StringBuilder(512); GetWindowText(h, s, 512);
+      int pid; GetWindowThreadProcessId(h, out pid);
+      if (s.Length > 0) list.Add(pid + "|" + s.ToString());
+      return true;
+    }, IntPtr.Zero);
+    return list;
+  }
+}
+"@
+    $names = @{}; Get-Process -Name '${kind.exe}' -ErrorAction SilentlyContinue | ForEach-Object { $names[$_.Id] = 1 }
+    [JsWins]::All() | ForEach-Object { $p = $_.Split('|', 2); if ($names.ContainsKey([int]$p[0])) { $p[1] } }`)
+  const titles = String(r.out || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+  const target = titles.find((t) => kind.title.test(t))
+  if (target) {
+    // AppActivate by exact title: Windows lets it take the foreground where a
+    // bare SetForegroundWindow from a background process is refused.
+    const esc = target.replace(/'/g, "''")
+    await ps(`$w = New-Object -ComObject WScript.Shell; [void]$w.AppActivate('${esc}')`)
+  } else {
+    await run('cmd.exe', ['/c', 'start', '', kind.exe, '--new-window'])
+  }
+  for (let i = 0; i < 16; i++) {
+    await new Promise((res) => setTimeout(res, 250))
+    const now = await frontWindowTitle()
+    if (isBrowserWindowTitle(app, now)) return { ok: true, title: now, opened: !target }
+  }
+  return { error: 'could not bring a browser window to the front' }
+}
+
 export async function launchApp(name) {
   const key = String(name || '').toLowerCase().trim()
   const known = LAUNCHABLE[key]
