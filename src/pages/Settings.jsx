@@ -105,6 +105,15 @@ const baseTabs = [
   { id: 'integrations', label: 'Integrations', icon: Link2 }
 ]
 
+// Tabs that put a credential on screen. payment_config (Stripe secret key,
+// PayPal secret, the finance partners' API keys), twilio_config (auth token)
+// and plaid_config (access token) are admin-only in the database since
+// 2026-10-16 — before that any employee could read all three with one REST
+// call. The database is what actually protects them; this only stops a
+// non-admin opening a tab whose inputs would come back empty and whose
+// saves would be refused.
+const ADMIN_ONLY_TABS = new Set(['my_money', 'integrations', 'developer_tools'])
+
 const jobStatuses = ['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
 
 // ListEditor component - defined outside Settings to prevent re-creation on every render
@@ -215,13 +224,15 @@ export default function Settings() {
   const withAgents = hasChris
     ? [...baseTabs.slice(0, baseTabs.findIndex(t => t.id === 'estimate_packages') + 1), { id: 'christmas_lighting', label: 'Christmas Lighting', icon: Sparkles }, ...baseTabs.slice(baseTabs.findIndex(t => t.id === 'estimate_packages') + 1)]
     : baseTabs
-  const tabs = isAdmin
+  const tabs = (isAdmin
     ? [...withAgents, { id: 'developer_tools', label: 'Developer Tools', icon: Code }]
     : withAgents
+  ).filter(t => isAdmin || !ADMIN_ONLY_TABS.has(t.id))
 
   // Check URL for tab param (used by QuickBooks OAuth callback)
   const urlTab = new URLSearchParams(window.location.search).get('tab')
-  const [activeTab, setActiveTab] = useState(urlTab && (baseTabs.some(t => t.id === urlTab) || urlTab === 'christmas_lighting') ? urlTab : 'company')
+  const tabAllowed = (id) => !!id && (baseTabs.some(t => t.id === id) || id === 'christmas_lighting') && (isAdmin || !ADMIN_ONLY_TABS.has(id))
+  const [activeTab, setActiveTab] = useState(tabAllowed(urlTab) ? urlTab : 'company')
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -568,6 +579,16 @@ export default function Settings() {
   }
 
   const renderContent = () => {
+    // Belt and braces: the tab list already hides these, but a stale
+    // activeTab (a saved URL, a setActiveTab from elsewhere) must not render
+    // a credential form to someone the database will refuse anyway.
+    if (!isAdmin && ADMIN_ONLY_TABS.has(activeTab)) {
+      return (
+        <div style={{ padding: '24px', color: theme.textMuted, fontSize: '14px' }}>
+          This section is for admins. Ask an admin at your company if you need something changed here.
+        </div>
+      )
+    }
     switch (activeTab) {
       case 'company':
         return <CompanyProfileTab

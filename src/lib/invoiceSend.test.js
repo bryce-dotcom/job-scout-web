@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildInvoiceSendPayload, paymentMethodsFrom, businessUnitFor, logoUrlFrom, portalUrlFor, invoiceDeductionRows } from './invoiceSend'
+import { buildInvoiceSendPayload, paymentMethodsFrom, paymentMethodNames, businessUnitFor, logoUrlFrom, portalUrlFor, invoiceDeductionRows } from './invoiceSend'
 
 const settings = [
   { key: 'business_units', value: JSON.stringify([{ name: 'HHH Building Services', phone: '801-555-0100', email: 'info@hhh.services', address: '6395 W 10400 N, Highland, UT', logo_url: 'https://x/bu.png' }]) },
@@ -132,5 +132,48 @@ describe('the email rows with a company default utility', () => {
   })
   it('does not name a plain discount after the default', () => {
     expect(invoiceDeductionRows({ invoice: { amount: 595, discount_applied: 54.59 }, utilityProviders: [{ id: 116, provider_name: 'Rocky Mountain Power' }], defaultUtilityProviderId: 116 })).toEqual([{ label: 'Discount', amount: 54.59 }])
+  })
+})
+
+describe('the server works out the same payment methods as the browser', () => {
+  // payment_config became admin-only on 2026-10-16, so a field tech sending
+  // from FieldScout posts no list and send-invoice builds one itself. If the
+  // two ever disagree, the customer's email depends on who pressed Send.
+  const cases = [
+    { stripe_enabled: true, bank_transfer_enabled: true, paypal_enabled: false },
+    { stripe_enabled: false, venmo_enabled: true, venmo_handle: '@HHHServices' },
+    { venmo_enabled: true, venmo_handle: 'https://venmo.com/u/HHHServices' },
+    { venmo_enabled: true, venmo_handle: '@' },            // enabled, no real handle
+    { cashapp_enabled: true, cashapp_handle: '$hhh' },
+    { cashapp_enabled: true, cashapp_handle: 'cash.app/$hhh/25' },
+    { zelle_enabled: true, zelle_handle: ' pay@hhh.services ' },
+    { zelle_enabled: true, zelle_handle: '   ' },          // whitespace only
+    { stripe_enabled: true, paypal_enabled: true, venmo_enabled: true, venmo_handle: 'hhh', cashapp_enabled: true, cashapp_handle: 'hhh', zelle_enabled: true, zelle_handle: 'a@b.c' },
+    {},
+  ]
+
+  it('agrees on every shape, in the same order', async () => {
+    const deno = await import('../../supabase/functions/_shared/paymentMethods.ts')
+    for (const c of cases) {
+      expect(deno.paymentMethodNames(c), JSON.stringify(c)).toEqual(paymentMethodNames(c))
+    }
+  })
+
+  it('agrees that nothing at all advertises nothing', async () => {
+    const deno = await import('../../supabase/functions/_shared/paymentMethods.ts')
+    for (const empty of [null, undefined, 'not an object', 42]) {
+      expect(deno.paymentMethodNames(empty)).toEqual(paymentMethodNames(empty))
+      expect(paymentMethodNames(empty)).toEqual([])
+    }
+  })
+
+  it('reads the stored string the same way the browser does', async () => {
+    const deno = await import('../../supabase/functions/_shared/paymentMethods.ts')
+    const raw = JSON.stringify({ stripe_enabled: true, venmo_enabled: true, venmo_handle: '@HHHServices' })
+    expect(deno.paymentMethodNames(deno.parsePaymentConfig(raw)))
+      .toEqual(paymentMethodsFrom([{ key: 'payment_config', value: raw }]))
+    // Unreadable config advertises nothing rather than throwing into a send.
+    expect(deno.parsePaymentConfig('{broken')).toBe(null)
+    expect(deno.paymentMethodNames(deno.parsePaymentConfig('{broken'))).toEqual([])
   })
 })

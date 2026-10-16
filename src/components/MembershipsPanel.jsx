@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useStore } from '../lib/store'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
 import { Plus, Check, CreditCard, Users, Repeat, X, AlertCircle } from 'lucide-react'
 
 // MembershipsPanel — plan builder + members + enrollment. Rendered inside the
@@ -27,7 +29,14 @@ export default function MembershipsPanel({ theme, companyId }) {
   const [members, setMembers] = useState([])
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [configured, setConfigured] = useState(false)
+  // true / false / null, where null means "cannot tell". payment_config is
+  // admin-only since 2026-10-16, so a manager reading it gets nothing back
+  // and must not be told memberships are switched off — that banner would
+  // hide the enroll form from someone who was using it yesterday. The edge
+  // function is the real gate either way.
+  const [configured, setConfigured] = useState(null)
+  const user = useStore((s) => s.user)
+  const canSeePaymentConfig = checkAdmin(user)
   const [showPlanForm, setShowPlanForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [enrollError, setEnrollError] = useState(null)
@@ -46,9 +55,9 @@ export default function MembershipsPanel({ theme, companyId }) {
       supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'payment_config').maybeSingle(),
     ])
     let pc = null; if (cfg?.value) { try { pc = JSON.parse(cfg.value) } catch { /* ignore */ } }
-    setConfigured(!!(pc?.stripe_subscription_webhook_secret && pc?.stripe_secret_key))
+    setConfigured(canSeePaymentConfig ? !!(pc?.stripe_subscription_webhook_secret && pc?.stripe_secret_key) : null)
     setPlans(p || []); setMembers(m || []); setCustomers(c || []); setLoading(false)
-  }, [companyId])
+  }, [companyId, canSeePaymentConfig])
   useEffect(() => { (async () => { await load() })() }, [load])
 
   const activeMembers = useMemo(() => members.filter(m => ['active', 'trialing', 'past_due'].includes(m.status)), [members])
@@ -181,13 +190,13 @@ export default function MembershipsPanel({ theme, companyId }) {
 
       {/* Enroll — gated on the tenant configuring the subscription webhook, so
           nobody can charge a real card before memberships are deliberately set up. */}
-      {!configured && (
+      {configured === false && (
         <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 12, padding: '12px 14px', marginBottom: 22, fontSize: 13, color: theme.textSecondary }}>
           <AlertCircle size={16} style={{ color: '#a16207', marginTop: 1, flex: 'none' }} />
           <div><b>Memberships aren't turned on yet.</b> Add your <b>Subscription Webhook Secret</b> in Settings → Payments to enable enrollment. You can still build plans below.</div>
         </div>
       )}
-      {configured && plans.filter(p => p.active).length > 0 && (
+      {configured !== false && plans.filter(p => p.active).length > 0 && (
         <form onSubmit={doEnroll} style={{ background: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 22 }}>
           <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 800, color: theme.text }}>Enroll a customer</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%,200px), 1fr))', gap: 12, alignItems: 'end' }}>

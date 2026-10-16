@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { parseEmailList } from "../_shared/emailList.ts";
+import { paymentMethodNames, parsePaymentConfig } from "../_shared/paymentMethods.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -117,8 +118,28 @@ serve(async (req) => {
       </div>
     ` : '';
 
-    // Build payment methods section
-    const methods = payment_methods || [];
+    // Build payment methods section.
+    //
+    // The browser only has payment_config when the sender is an admin, so an
+    // empty list may mean "none are switched on" OR "the sender is a field
+    // tech and RLS hid the row". Those must not produce different emails, so
+    // when the caller sends nothing we read it here with the service role.
+    // A caller that did send a list still wins, byte for byte as before.
+    let methods: string[] = Array.isArray(payment_methods) ? payment_methods : [];
+    if (methods.length === 0 && company_id) {
+      try {
+        const { data: pcRow } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('company_id', company_id)
+          .eq('key', 'payment_config')
+          .maybeSingle();
+        methods = paymentMethodNames(parsePaymentConfig(pcRow?.value));
+      } catch (e) {
+        // Never fail a send over the "accepted here" strip.
+        console.error('[send-invoice] payment_config read failed', e);
+      }
+    }
     let paymentMethodsHtml = '';
     if (portal_url && methods.length > 0) {
       const methodButtons = methods.map((m: string) => {

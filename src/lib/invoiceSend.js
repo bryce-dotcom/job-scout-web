@@ -29,19 +29,33 @@ export function businessUnitFor(settings, invoice) {
   } catch { return null }
 }
 
-/** Payment methods the email may advertise, from payment_config. */
+/**
+ * Payment methods the email may advertise, from a parsed payment_config.
+ *
+ * TWIN: supabase/functions/_shared/paymentMethods.ts. send-invoice works the
+ * same list out server-side, because payment_config became admin-only on
+ * 2026-10-16 and a field tech sending from FieldScout can no longer read it.
+ * Pinned against the twin in invoiceSend.test.js.
+ */
+export function paymentMethodNames(pc) {
+  const out = []
+  if (!pc || typeof pc !== 'object') return out
+  if (pc.stripe_enabled) out.push('Credit Card')
+  if (pc.bank_transfer_enabled) out.push('ACH / Bank Transfer')
+  if (pc.paypal_enabled) out.push('PayPal')
+  for (const w of enabledWalletsFrom(pc)) out.push(w.method)
+  return out
+}
+
+/** The same list, from the settings array the app keeps in the store. */
 export function paymentMethodsFrom(settings) {
   const cfg = (settings || []).find(s => s.key === 'payment_config')
-  const out = []
-  if (!cfg?.value) return out
+  if (!cfg?.value) return []
   try {
-    const pc = JSON.parse(cfg.value)
-    if (pc.stripe_enabled) out.push('Credit Card')
-    if (pc.bank_transfer_enabled) out.push('ACH / Bank Transfer')
-    if (pc.paypal_enabled) out.push('PayPal')
-    for (const w of enabledWalletsFrom(pc)) out.push(w.method)
-  } catch { /* unreadable config advertises nothing */ }
-  return out
+    return paymentMethodNames(JSON.parse(cfg.value))
+  } catch {
+    return [] /* unreadable config advertises nothing */
+  }
 }
 
 /**
