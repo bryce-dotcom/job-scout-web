@@ -141,9 +141,11 @@ async function collectW2Ytd({ supabase, company_id, company, year, ssnFor }: any
   const { data: employeeRows } = await supabase
     .from('employees')
     .select('id, name, email, tax_classification')
-    .eq('company_id', company_id)
-    .or('tax_classification.eq.W2,tax_classification.is.null');
-  const list = await withIdentity(supabase, employeeRows);
+    .eq('company_id', company_id);
+  // Everyone, then keep W-2 people plus anyone with a taxed paycheck this year
+  // (W-2 when paid, contractor on the card now).
+  const taxedIds = await taxedEmployeeIds(supabase, company_id, year);
+  const list = await withIdentity(supabase, (employeeRows || []).filter((e: any) => e.tax_classification !== '1099' || taxedIds.has(Number(e.id))));
   if (!list.length) return { employees: [], ytd: {}, problems: [] };
   const { data: paystubs } = await supabase
     .from('paystubs')
@@ -155,7 +157,7 @@ async function collectW2Ytd({ supabase, company_id, company, year, ssnFor }: any
   const base = SS_WAGE_BASE[year] || SS_WAGE_BASE[2026];
   const ytd: Record<number, any> = {};
   for (const e of list) ytd[e.id] = { wages: 0, gross: 0, fit: 0, sit: 0, ss_emp: 0, med_emp: 0, addl_med: 0, famli: 0, pretax: 0, ss_wages: 0, med_wages: 0, state: '' };
-  for (const ps of paystubs || []) {
+  for (const ps of onlyW2Stubs(paystubs, list)) {
     const t = ytd[ps.employee_id];
     if (!t) continue;
     t.gross    += Number(ps.gross_pay) || 0;
@@ -470,7 +472,7 @@ async function generate941({ supabase, company_id, company, year, quarter }: any
     .from('employees')
     .select('id, tax_classification')
     .eq('company_id', company_id);
-  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  const w2Ids = await w2IdsFor(supabase, company_id, emps, year);
   if (w2Ids.length === 0) return { ok: true, generated: 0, note: 'No W-2 employees' };
 
   const { data: paystubs } = await supabase
@@ -491,7 +493,7 @@ async function generate941({ supabase, company_id, company, year, quarter }: any
   // Tax liability by pay date: Schedule B for a semiweekly depositor, Part 2
   // line 16 for a monthly one. The IRS matches these to the deposits.
   const byDate: Record<string, number> = {};
-  for (const ps of paystubs || []) {
+  for (const ps of onlyW2Stubs(paystubs, emps)) {
     const wages = Number(ps.taxable_wages || ps.gross_pay) || 0;
     const d = String(ps.pay_date || '').slice(0, 10);
     byDate[d] = (byDate[d] || 0) + (Number(ps.federal_income_tax) || 0) + (Number(ps.social_security_employee) || 0) + (Number(ps.social_security_employer) || 0)
@@ -505,16 +507,21 @@ async function generate941({ supabase, company_id, company, year, quarter }: any
     totals.addl_med += Number(ps.additional_medicare) || 0;
   }
 
-  // Pull deposits actually paid in this quarter from the liability ledger
+  // Deposits made for this quarter's PAY DATES. A quarter on the 941 is the
+  // pay date, never the period: HHH's May and June periods paid on Aug 5 are
+  // third-quarter wages, and March periods paid in April are second-quarter.
+  // Counting by period put $4,745 of August deposits on the Q2 return. FUTA
+  // is Form 940's, not the 941's.
   const { data: paidLiabs } = await supabase
     .from('payroll_tax_liabilities')
-    .select('amount_total, kind, paid_at')
+    .select('amount_total, kind, paid_at, period_end, payroll_run_id, payroll_runs(pay_date)')
     .eq('company_id', company_id)
     .eq('jurisdiction', 'federal')
-    .gte('period_start', periodStart)
-    .lte('period_end', periodEnd)
+    .neq('kind', 'futa')
     .not('paid_at', 'is', null);
-  const totalDeposits = (paidLiabs || []).reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0);
+  const totalDeposits = round2((paidLiabs || [])
+    .filter((l: any) => { const d = String(l.payroll_runs?.pay_date || l.period_end || '').slice(0, 10); return d >= periodStart && d <= periodEnd; })
+    .reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0));
 
   const totalTaxLiability = round2(totals.fit + totals.ss_tax + totals.med_tax + totals.addl_med);
   const balanceDue = round2(totalTaxLiability - totalDeposits);
@@ -557,12 +564,12 @@ async function generate940({ supabase, company_id, company, year }: any) {
     .from('employees')
     .select('id, name, tax_classification')
     .eq('company_id', company_id);
-  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  const w2Ids = await w2IdsFor(supabase, company_id, emps, year);
   if (w2Ids.length === 0) return { ok: true, generated: 0, note: 'No W-2 employees' };
 
   const { data: paystubs } = await supabase
     .from('paystubs')
-    .select('employee_id, gross_pay, taxable_wages, futa')
+    .select('employee_id, gross_pay, taxable_wages, futa, social_security_employee')
     .eq('company_id', company_id)
     .in('employee_id', w2Ids)
     .gte('pay_date', yearStart)
@@ -573,7 +580,7 @@ async function generate940({ supabase, company_id, company, year }: any) {
   const empWages: Record<number, number> = {};
   let totalPayments = 0;
   let futaPaid = 0;
-  for (const ps of paystubs || []) {
+  for (const ps of onlyW2Stubs(paystubs, emps)) {
     const w = Number(ps.taxable_wages || ps.gross_pay) || 0;
     empWages[ps.employee_id] = (empWages[ps.employee_id] || 0) + w;
     totalPayments += w;
@@ -615,6 +622,28 @@ async function generate940({ supabase, company_id, company, year }: any) {
   return { ok: true, filing_id: filing?.id, path, totalPayments, taxableFutaWages, futaRatePct, totalFutaDue, futaPaid, balanceDue };
 }
 
+// Who is W-2 for a year: anyone not marked 1099 on the card, plus anyone
+// whose paychecks that year had Social Security withheld. Christopher Lyman
+// was paid as an employee by Gusto in January and is a contractor on the
+// card now; his January wages are still W-2 wages, on the 941 and a W-2.
+// A paycheck is W-2 wages when its earner is W-2 on the card, or when Social
+// Security was withheld from it (a person who was W-2 when paid and is a
+// contractor now). A contractor-card person's untaxed checks are 1099 money.
+function onlyW2Stubs(rows: any[], emps: any[]): any[] {
+  const cls: Record<number, string> = {};
+  for (const e of emps || []) cls[Number(e.id)] = e.tax_classification;
+  return (rows || []).filter((ps: any) => cls[Number(ps.employee_id)] !== '1099' || Number(ps.social_security_employee) > 0);
+}
+async function taxedEmployeeIds(supabase: any, company_id: number, year: number): Promise<Set<number>> {
+  const { data } = await supabase.from('paystubs').select('employee_id')
+    .eq('company_id', company_id).gt('social_security_employee', 0)
+    .gte('pay_date', `${year}-01-01`).lte('pay_date', `${year}-12-31`);
+  return new Set((data || []).map((r: any) => Number(r.employee_id)));
+}
+async function w2IdsFor(supabase: any, company_id: number, emps: any[], year: number): Promise<number[]> {
+  const taxed = await taxedEmployeeIds(supabase, company_id, year);
+  return (emps || []).filter((e: any) => e.tax_classification !== '1099' || taxed.has(Number(e.id))).map((e: any) => e.id);
+}
 function round2(n: number) { return Math.round(n * 100) / 100; }
 
 // =====================================================================
@@ -637,11 +666,11 @@ async function generateTC941({ supabase, company_id, company, year, quarter }: a
     .from('employees')
     .select('id, tax_classification')
     .eq('company_id', company_id);
-  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  const w2Ids = await w2IdsFor(supabase, company_id, emps, year);
 
   const { data: paystubs } = await supabase
     .from('paystubs')
-    .select('employee_id, gross_pay, taxable_wages, state_income_tax')
+    .select('employee_id, gross_pay, taxable_wages, state_income_tax, social_security_employee')
     .eq('company_id', company_id)
     .in('employee_id', w2Ids.length ? w2Ids : [-1])
     .gte('pay_date', periodStart)
@@ -652,21 +681,23 @@ async function generateTC941({ supabase, company_id, company, year, quarter }: a
     wages: 0,
     state_tax_withheld: 0,
   };
-  for (const ps of paystubs || []) {
+  for (const ps of onlyW2Stubs(paystubs, emps)) {
     totals.wages += Number(ps.taxable_wages || ps.gross_pay) || 0;
     totals.state_tax_withheld += Number(ps.state_income_tax) || 0;
   }
 
+  // Deposits for this quarter's PAY DATES (the wages above are by pay date
+  // too); a period paid in the next quarter belongs to that quarter.
   const { data: paidLiabs } = await supabase
     .from('payroll_tax_liabilities')
-    .select('amount_total, kind')
+    .select('amount_total, kind, period_end, payroll_runs(pay_date)')
     .eq('company_id', company_id)
     .eq('jurisdiction', 'state')
     .eq('kind', 'state_income_tax')
-    .gte('period_start', periodStart)
-    .lte('period_end', periodEnd)
     .not('paid_at', 'is', null);
-  const totalDeposits = (paidLiabs || []).reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0);
+  const totalDeposits = round2((paidLiabs || [])
+    .filter((l: any) => { const d = String(l.payroll_runs?.pay_date || l.period_end || '').slice(0, 10); return d >= periodStart && d <= periodEnd; })
+    .reduce((s: number, l: any) => s + (Number(l.amount_total) || 0), 0));
   const balanceDue = round2(totals.state_tax_withheld - totalDeposits);
 
   const pdfBytes = await renderTC941Pdf({ company, year, quarter, totals, totalDeposits, balanceDue });
@@ -743,13 +774,13 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
     .select('id, name, tax_classification')
     .eq('company_id', company_id);
   const emps = await withIdentity(supabase, empRows);
-  const w2Ids = (emps || []).filter((e: any) => e.tax_classification !== '1099').map((e: any) => e.id);
+  const w2Ids = await w2IdsFor(supabase, company_id, emps, year);
 
   // Pull both this quarter's paystubs (for reportable wages) and YTD
   // through end-of-quarter (for the per-employee SUI base cap math).
   const { data: psQuarter } = await supabase
     .from('paystubs')
-    .select('employee_id, gross_pay, taxable_wages')
+    .select('employee_id, gross_pay, taxable_wages, social_security_employee')
     .eq('company_id', company_id)
     .in('employee_id', w2Ids.length ? w2Ids : [-1])
     .gte('pay_date', periodStart)
@@ -757,7 +788,7 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
 
   const { data: psYTD } = await supabase
     .from('paystubs')
-    .select('employee_id, gross_pay, taxable_wages, pay_date')
+    .select('employee_id, gross_pay, taxable_wages, pay_date, social_security_employee')
     .eq('company_id', company_id)
     .in('employee_id', w2Ids.length ? w2Ids : [-1])
     .gte('pay_date', yearStart)
@@ -773,11 +804,11 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
   // Per-employee: total wages this quarter + ytd-through-quarter (for cap)
   const empTotals: Record<number, { wages_q: number; wages_ytd: number; ytd_before_q: number }> = {};
   for (const id of w2Ids) empTotals[id] = { wages_q: 0, wages_ytd: 0, ytd_before_q: 0 };
-  for (const ps of psQuarter || []) {
+  for (const ps of onlyW2Stubs(psQuarter, emps)) {
     const t = empTotals[ps.employee_id]; if (!t) continue;
     t.wages_q += Number(ps.taxable_wages || ps.gross_pay) || 0;
   }
-  for (const ps of psYTD || []) {
+  for (const ps of onlyW2Stubs(psYTD, emps)) {
     const t = empTotals[ps.employee_id]; if (!t) continue;
     const w = Number(ps.taxable_wages || ps.gross_pay) || 0;
     t.wages_ytd += w;
@@ -1369,7 +1400,7 @@ async function generateDwsWageList({ supabase, company_id, company, year, quarte
     .select('id, name, tax_classification').eq('company_id', company_id);
   const emps = await withIdentity(supabase, empRows);
   const w2 = (emps || []).filter((e: any) => e.tax_classification !== '1099');
-  const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay, taxable_wages')
+  const { data: stubs } = await supabase.from('paystubs').select('employee_id, gross_pay, taxable_wages, social_security_employee')
     .eq('company_id', company_id).in('employee_id', w2.length ? w2.map((e: any) => e.id) : [-1])
     .gte('pay_date', periodStart).lte('pay_date', periodEnd);
   const wages: Record<number, number> = {};
