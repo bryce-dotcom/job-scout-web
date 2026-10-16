@@ -16,8 +16,31 @@ import { supabase } from './supabase'
 import { resolveCustomerSignature } from './customerSignature'
 import { stampSignatureOnPdf } from './attachmentSignatureFiller'
 import { signatureRects, describeSignability } from './signatureTargets'
+import { matchTemplateForFile } from './signatureBox'
 
 const BUCKET = 'project-documents'
+
+/**
+ * The boxes someone placed on the template this document came from.
+ *
+ * A generated document keeps no pointer back to its template, so the box
+ * drawn on the W-9 template would otherwise do nothing for the W-9 already
+ * sitting on a job. Matched by name (lib/signatureBox), scoped to the
+ * company, and only against templates that actually carry boxes.
+ */
+async function placedBoxesFor(att, companyId) {
+  if (!companyId) return null
+  try {
+    const { data } = await supabase
+      .from('document_templates')
+      .select('id, form_name, signature_fields')
+      .eq('company_id', companyId)
+    const match = matchTemplateForFile(att?.file_name, data || [])
+    return match ? match.signature_fields : null
+  } catch {
+    return null
+  }
+}
 
 /** Is this attachment something we could sign at all? */
 export function isSignablePdf(att) {
@@ -44,7 +67,8 @@ export async function inspectDocumentForSigning(att, { jobId = null, leadId = nu
 
     const bytes = new Uint8Array(await blob.arrayBuffer())
     const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
-    const verdict = describeSignability(pdf, null)
+    const placed = await placedBoxesFor(att, att?.company_id)
+    const verdict = describeSignability(pdf, placed)
     const sig = await resolveCustomerSignature({ jobId: jobId || att.job_id || null, leadId: leadId || att.lead_id || null })
 
     return {
@@ -59,7 +83,7 @@ export async function inspectDocumentForSigning(att, { jobId = null, leadId = nu
         : !sig.found
           ? 'This customer has not signed anything yet, so there is no signature to apply.'
           : verdict.reason,
-      rects: signatureRects(pdf, null).rects,
+      rects: signatureRects(pdf, placed).rects,
     }
   } catch (err) {
     return { ok: false, signable: false, hasSignature: false, reason: err?.message || 'Could not read the document.', rects: [] }
@@ -91,9 +115,12 @@ export async function applySignatureToAttachment(att, { jobId = null, leadId = n
     const bytes = new Uint8Array(await blob.arrayBuffer())
 
     const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true })
-    const { rects, source } = signatureRects(pdf, signatureFields)
+    // Placed boxes beat detection; where the caller passed none, look up
+    // whatever was drawn on the template this document came from.
+    const placed = signatureFields || await placedBoxesFor(att, att?.company_id)
+    const { rects, source } = signatureRects(pdf, placed)
     if (!rects.length) {
-      return { success: false, error: describeSignability(pdf, signatureFields).reason }
+      return { success: false, error: describeSignability(pdf, placed).reason }
     }
 
     const sig = await resolveCustomerSignature({ jobId: jobId || att.job_id || null, leadId: leadId || att.lead_id || null })

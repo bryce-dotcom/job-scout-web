@@ -99,3 +99,37 @@ export function placementAdvice({ detectedCount = 0, placedCount = 0 } = {}) {
     text: 'This form has no signature field. Drag a box where the customer signs — every copy generated after that signs itself.',
   }
 }
+
+/** Strip a form name to the letters and digits that identify it. */
+export function normalizeFormName(name) {
+  return String(name || '')
+    .replace(/\.[a-z0-9]+$/i, '')      // extension
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
+/**
+ * Which template produced this document?
+ *
+ * A generated document keeps no pointer back to its template, so a box
+ * placed on the W-9 template would do nothing for the W-9 already sitting
+ * on Robert Anderson's job — the file has no signature field of its own and
+ * nothing to look the box up by. Matching on the name recovers the link:
+ * "IRS_Form_W-9.pdf" normalizes to "irsformw9", which contains the template
+ * "w9".
+ *
+ * Only templates that actually carry boxes are considered — matching one
+ * that has none would replace a useful "this form has no signature field"
+ * with silence. The longest match wins, so "w9" does not beat "w9sp" on a
+ * file that is really the Spanish form.
+ */
+export function matchTemplateForFile(fileName, templates) {
+  const file = normalizeFormName(fileName)
+  if (!file) return null
+  const candidates = (Array.isArray(templates) ? templates : [])
+    .filter(t => Array.isArray(t?.signature_fields) && t.signature_fields.length)
+    .map(t => ({ t, key: normalizeFormName(t.form_name) }))
+    .filter(({ key }) => key.length >= 2 && (file.includes(key) || key.includes(file)))
+    .sort((a, b) => b.key.length - a.key.length)
+  return candidates.length ? candidates[0].t : null
+}

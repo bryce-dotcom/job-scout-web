@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeRect, isUsableBox, boxForStorage, boxesOnPage, placementAdvice, MIN_BOX_POINTS } from './signatureBox'
+import { normalizeRect, isUsableBox, boxForStorage, boxesOnPage, placementAdvice, MIN_BOX_POINTS, matchTemplateForFile, normalizeFormName } from './signatureBox'
 
 // The IRS W-9 signs on a printed rule with no AcroForm field behind it, so
 // somebody has to say where. Everything that can go wrong here goes wrong
@@ -101,5 +101,40 @@ describe('what to tell the person who opened the form', () => {
     const a = placementAdvice({ detectedCount: 2, placedCount: 1 })
     expect(a.tone).toBe('placed')
     expect(a.text).toMatch(/instead of/)
+  })
+})
+
+// A generated document keeps no pointer back to its template, so a box
+// placed on the W-9 template does nothing for the W-9 already on the job
+// unless the link can be recovered from the name.
+describe('finding the template a document came from', () => {
+  const w9 = { id: 1, form_name: 'w9', signature_fields: [{ page: 0, x: 125, y: 193, width: 250, height: 20 }] }
+  const esga = { id: 4, form_name: 'ES-GA', signature_fields: [] }
+
+  it('matches the W-9 on the job to the w9 template', () => {
+    expect(matchTemplateForFile('IRS_Form_W-9.pdf', [w9, esga])).toBe(w9)
+    expect(matchTemplateForFile('w9.pdf', [w9])).toBe(w9)
+  })
+
+  it('ignores a template carrying no boxes, so the honest refusal survives', () => {
+    // ES-GA has none: matching it would replace "this form has no signature
+    // field, place one" with silence.
+    expect(matchTemplateForFile('ES-GA_General_Application.pdf', [esga])).toBeNull()
+  })
+
+  it('prefers the most specific name', () => {
+    const w9sp = { id: 2, form_name: 'w9sp', signature_fields: [{ page: 0, x: 1, y: 1, width: 20, height: 20 }] }
+    expect(matchTemplateForFile('IRS_Form_W9SP.pdf', [w9, w9sp])).toBe(w9sp)
+  })
+
+  it('does not match on nothing', () => {
+    expect(matchTemplateForFile('', [w9])).toBeNull()
+    expect(matchTemplateForFile('Permit.pdf', [w9])).toBeNull()
+    expect(matchTemplateForFile('a.pdf', [{ form_name: 'a', signature_fields: [{ width: 9, height: 9 }] }])).toBeNull()
+  })
+
+  it('normalizes the punctuation these names are full of', () => {
+    expect(normalizeFormName('IRS_Form_W-9.pdf')).toBe('irsformw9')
+    expect(normalizeFormName('  RMP UT Express Tool v071125.2 ')).toBe('rmputexpresstoolv0711252')
   })
 })
