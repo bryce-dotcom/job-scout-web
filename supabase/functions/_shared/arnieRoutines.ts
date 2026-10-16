@@ -114,11 +114,20 @@ async function deliver(r: RoutineRest, routine: Any, employee: Any, answer: stri
     }).catch(() => {})
   }
 
-  if (channel === 'sms' && str(employee?.phone)) {
-    await fetch(`${r.url}/functions/v1/send-sms`, {
-      method: 'POST', headers: FH(r),
-      body: JSON.stringify({ to: employee.phone, body: forSms(`${title}\n\n${answer}`), company_id: routine.company_id }),
-    }).catch(() => {})
+  // send-sms reads `message`. This sent `body`, so every text routine was
+  // refused with "to and message are required" — and the refusal was thrown
+  // away, so nothing anywhere said a text had never gone (found setting up
+  // Cole's huddle texts, 2026-10-15). A failed send is now an error on the row.
+  let smsError: string | null = null
+  if (channel === 'sms') {
+    if (!str(employee?.phone)) smsError = 'no phone number on their employee record'
+    else {
+      const res = await fetch(`${r.url}/functions/v1/send-sms`, {
+        method: 'POST', headers: FH(r),
+        body: JSON.stringify({ to: employee.phone, message: forSms(`${title}\n\n${answer}`), company_id: routine.company_id, trigger: 'arnie_routine', employee_id: routine.employee_id }),
+      }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }) as any)
+      if (!res.ok) smsError = `the text did not send (${res.status}: ${String(await res.text()).slice(0, 160)})`
+    }
   }
 
   if (channel === 'email' && str(employee?.email)) {
@@ -131,6 +140,7 @@ async function deliver(r: RoutineRest, routine: Any, employee: Any, answer: stri
       }),
     }).catch(() => {})
   }
+  return { smsError }
 }
 
 /** Run one routine and record what happened, success or not. */
@@ -166,9 +176,10 @@ export async function runRoutine(r: RoutineRest, routine: Any, now = new Date())
     return { ok: false, error: turn.error || 'no answer' }
   }
 
-  await deliver(r, routine, employee, turn.text, day)
-  await stamp(r, routine.id, { last_run_on: day, last_result: plainText(turn.text).slice(0, 2000), last_error: null })
-  return { ok: true, answer: turn.text }
+  const sent = await deliver(r, routine, employee, turn.text, day)
+  // Still stamped as run (the app copy landed); the error says the text did not.
+  await stamp(r, routine.id, { last_run_on: day, last_result: plainText(turn.text).slice(0, 2000), last_error: sent.smsError })
+  return { ok: !sent.smsError, answer: turn.text, ...(sent.smsError ? { error: sent.smsError } : {}) }
 }
 
 async function stamp(r: RoutineRest, id: number, patch: Record<string, unknown>) {

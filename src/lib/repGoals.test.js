@@ -65,6 +65,17 @@ describe('names as Cole says them', () => {
   })
 })
 
+describe('a routine that texts actually sends the text', () => {
+  it('send-sms is given `message` (what it reads), not `body` — and a refusal is recorded, not thrown away', () => {
+    const sms = read('../../supabase/functions/send-sms/index.ts')
+    expect(sms).toMatch(/const \{ company_id, to, message,/)
+    expect(routines).toMatch(/JSON\.stringify\(\{ to: employee\.phone, message: forSms\(/)
+    expect(routines).not.toMatch(/body: forSms\(/)
+    expect(routines).toMatch(/if \(!res\.ok\) smsError = `the text did not send/)
+    expect(routines).toMatch(/last_error: sent\.smsError/)
+  })
+})
+
 describe('wired into Jenny — managers only, no money', () => {
   it('both tools are offered and gated to managers', () => {
     expect(chat).toMatch(/name: 'set_rep_goals'/)
