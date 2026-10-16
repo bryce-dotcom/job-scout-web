@@ -70,7 +70,7 @@ export default function LeadSetter() {
   const [loading, setLoading] = useState(true)
 
   // Prospect research drawer (AI-powered web research → leads)
-  const [showResearch, setShowResearch] = useState(false)
+  const [showResearch, setShowResearch] = useState(() => { try { return new URLSearchParams(window.location.search).get('scout') === '1' } catch { return false } })
 
   // Settings modal
   const [showSettingsModal, setShowSettingsModal] = useState(false)
