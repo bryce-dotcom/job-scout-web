@@ -65,6 +65,8 @@ export interface CreateTarget {
   labelOf: (fields: Record<string, string>) => string
   /** The approve button. "Create" unless the action is really something else — "Send". */
   verb?: string
+  /** The approve button's whole label, when "<verb> <label>" reads badly. */
+  button?: string
   /** What the card says once applied, when "Created" would be wrong. */
   done?: string
   /** Resolve anything that is not a plain column — e.g. "the Drinkle job" → job_id. */
@@ -509,6 +511,7 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     table: 'arnie_memories',
     minLevel: 0,
     verb: 'Remember',
+    button: 'Remember it',
     done: 'Remembered. It rides into every conversation from now on; forget it from Settings, on your assistant’s page.',
     fields: {
       text: { column: 'text', label: 'Remember', required: true, max: 240 },
@@ -530,7 +533,9 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
       return {
         ok: true,
         columns: { employee_id: caller.employeeId, created_by: caller.email, source: 'arnie' },
-        display: [{ label: 'Remember', value: text }, { label: 'For', value: 'you — nobody else sees it' }],
+        // The text is already on the card as the `text` field; showing it again
+        // here put "Remember" on the card twice (Bryce's card 1731).
+        display: [{ label: 'For', value: 'you — nobody else sees it' }],
       }
     },
   },
@@ -697,6 +702,9 @@ export async function proposeCreate(
         ...prepared.display,
       ],
       ...(target.verb ? { verb: target.verb } : {}),
+      // The button's own words when "<verb> <label>" reads badly
+      // ("Remember memory").
+      ...(target.button ? { button: target.button } : {}),
       ...(target.done ? { done: target.done } : {}),
       ...(despite ? { despite } : {}),
     },

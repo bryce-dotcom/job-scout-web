@@ -688,7 +688,11 @@ const USE_COMPUTER_TOOL = {
     'One action per call. LOOK FIRST with kind=screenshot: that one comes straight back to you as a picture of their screen, so you act on what is actually there. Never guess at a screen you have not seen, and look again after anything that would change it. ' +
     'You may be told you have no permission for that program — that is normal and is not an error. Say what you were trying to do and that they can allow it; an offer appears for them to accept. ' +
     'You will NEVER be allowed to type a password, a card number or a code, and you will never be allowed to click Submit, Send, Pay or Delete: those come back for the person to do themselves. Say so plainly and wait rather than trying another way round. ' +
-    'Nothing here reads anybody else\'s machine: it is this person\'s computer, their login, their session.',
+    'Nothing here reads anybody else\'s machine: it is this person\'s computer, their login, their session. ' +
+    // Bryce told her his business inbox and how to reach it; asked "what's the
+    // newest email in my inbox" she opened whatever Chrome showed and read it
+    // out, never checking whose account it was (2026-10-16).
+    'If what you remember about them says WHERE something is — an address to open, which profile or account — go exactly there (ctrl+l, type it, enter) rather than wherever the browser happens to be. And before you report anything from an inbox or an account, check on the screenshot which account it is (the address in the tab title or the account corner) and say it: "In bryce@hhh.services, the newest is…". If it is the wrong account, go to the right one before answering.',
   input_schema: {
     type: 'object',
     properties: {

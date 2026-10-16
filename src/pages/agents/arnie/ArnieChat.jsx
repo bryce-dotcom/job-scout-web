@@ -1418,7 +1418,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                           flex: 1, background: '#c9812f', color: '#fff', border: 0, borderRadius: 8,
                           padding: '9px 12px', fontWeight: 650, fontSize: 13,
                           cursor: msg.proposalBusy ? 'default' : 'pointer', opacity: msg.proposalBusy ? 0.6 : 1,
-                        }}>{msg.proposalBusy ? 'Working…' : `${pv.verb || 'Create'} ${pv.label}`}</button>
+                        }}>{msg.proposalBusy ? 'Working…' : (pv.button || `${pv.verb || 'Create'} ${pv.label}`)}</button>
                         <button disabled={msg.proposalBusy} onClick={() => decideProposal('reject', msg.proposal.proposal.id, msg.id)} style={{
                           background: 'transparent', color: dark.textSecondary, border: `1px solid ${dark.border}`,
                           borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer',
