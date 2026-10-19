@@ -100,9 +100,10 @@ describe('the card says Send, and a send cannot be undone', () => {
 describe('deploying only what bundles', () => {
   it('npm run arnie:deploy bundles each function before any deploy', () => {
     expect(pkg.scripts['arnie:deploy']).toBe('node scripts/arnie-deploy.mjs')
-    expect(deploy).toMatch(/await build\(\{ entryPoints: \[entry\], bundle: true, write: false/)
-    // both loops exist, and the bundle loop comes first
-    expect(deploy.indexOf('bundles  ${fn}')).toBeLessThan(deploy.indexOf('deploying ${fn}'))
-    expect(deploy).toMatch(/Nothing was deployed/)
+    // arnie:deploy is only the list now; the bundle-everything-first gate lives
+    // in deploy-fn.mjs and is exercised for real in deployFn.test.js. This pins
+    // that arnie:deploy cannot go around it.
+    expect(deploy).toMatch(/import \{ deployFunctions \} from '\.\/deploy-fn\.mjs'/)
+    expect(deploy).not.toMatch(/functions deploy|child_process/)
   })
 })

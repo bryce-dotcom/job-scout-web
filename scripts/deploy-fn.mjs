@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // npm run deploy:fn -- <slug> — the one way to deploy an edge function.
 //
 // Why this exists.
@@ -134,9 +133,10 @@ function deployedState(root, ref) {
 }
 
 // Bundle check. esbuild arrives as a vite transitive dependency rather than a
-// declared one, so a worktree without node_modules simply skips this rather
-// than blocking a deploy over a missing dev tool.
-async function bundles(root, slugs) {
+// declared one, so a worktree without node_modules has none — that reports
+// { skipped }, and deployFunctions refuses a real deploy on it (an unchecked
+// deploy is exactly how the 2026-09-14 empty-reply build went out).
+export async function bundles(root, slugs) {
   let build
   try { ({ build } = await import('esbuild')) } catch { return { skipped: true } }
   for (const slug of slugs) {
@@ -254,6 +254,12 @@ export async function deployFunctions(slugs, opts = {}) {
   const bundle = await bundles(root, slugs)
   if (bundle.failed) {
     refuse(`${bundle.failed} does not build. Nothing was deployed.\n\n${indent(bundle.errs.join('\n'))}`)
+  }
+  // No esbuild = nothing was checked. A preflight may say so and stop; a real
+  // deploy may not go ahead unbundled unless --force says so out loud.
+  if (bundle.skipped && !dry && !force) {
+    refuse(`cannot bundle-check (no esbuild in this worktree). Nothing was deployed.\n\n` +
+           `  Run npm install here, or pass --force to deploy without the check.`)
   }
   log(`\nbundle check: ${bundle.skipped ? 'SKIPPED (no esbuild — run npm install for it)' : 'all ' + slugs.length + ' bundle'}`)
 
