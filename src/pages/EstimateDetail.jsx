@@ -466,6 +466,8 @@ function EstimateDetailInner() {
   const [depositPhotoUploading, setDepositPhotoUploading] = useState(false)
   const [sendEmail, setSendEmail] = useState('')
   const [sendSubject, setSendSubject] = useState('')
+  // The rep's own note at the top of the email (Cole, 2026-10-15).
+  const [sendMessage, setSendMessage] = useState('')
   const [sendAttachments, setSendAttachments] = useState([]) // [{ file, name, base64 }]
   // Specifications go out by default — the customer asking to see them is what
   // started this. The manufacturer's own sheet does NOT: it carries their name,
@@ -2120,6 +2122,7 @@ function EstimateDetailInner() {
           down_payment_label: dpLabel,
           down_payment_amount: dpAmount,
           custom_subject: sendSubject || undefined,
+          custom_message: sendMessage.trim() || undefined,
           extra_attachments: (() => {
             const atts = sendAttachments.map(a => ({ filename: a.name, content: a.base64 }))
             if (specAttachments.length) atts.push(...specAttachments)
@@ -2157,6 +2160,8 @@ function EstimateDetailInner() {
         const senderName = currentEmployee?.name || company?.company_name || 'JobScout'
         const senderEmail = currentEmployee?.email || buObject?.email || company?.owner_email || null
         const bodyLines = [
+          // What the rep wrote leads the record, as it leads the email.
+          ...(sendMessage.trim() ? [sendMessage.trim(), ''] : []),
           `Sent to: ${sendEmail}`,
           portalUrl ? `Portal link: ${portalUrl}` : null,
           presMode ? `Presentation mode: ${presMode}` : null,
@@ -2195,6 +2200,7 @@ function EstimateDetailInner() {
       toast.success(`${docLabels.one} sent successfully!`)
       setShowSendModal(false)
       setSendSubject('')
+      setSendMessage('')
       setSendAttachments([])
       await fetchEstimateData()
       await fetchQuotes()
@@ -5240,6 +5246,8 @@ function EstimateDetailInner() {
           generatingLayout={generatingLayout}
           sendSubject={sendSubject}
           setSendSubject={setSendSubject}
+          sendMessage={sendMessage}
+          setSendMessage={setSendMessage}
           sendAttachments={sendAttachments}
           setSendAttachments={setSendAttachments}
           includeSpecSheet={includeSpecSheet}
@@ -6671,7 +6679,7 @@ function EstimatePreview({ estimate, lineItems, company, businessUnit, settings 
 }
 
 // Preview + Send modal with two steps
-function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendAttachments, setSendAttachments, includeSpecSheet, setIncludeSpecSheet, includeManufacturerSheets, setIncludeManufacturerSheets, specCoverage = { products: 0, withSpecs: 0, missing: 0, manufacturerPdfs: 0 } }) {
+function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUnit, settings, sendEmail, setSendEmail, sendingEmail, onSend, onClose, inputStyle, labelStyle, onSettingsUpdate, customer, sendSubject, setSendSubject, sendMessage = '', setSendMessage = () => {}, sendAttachments, setSendAttachments, includeSpecSheet, setIncludeSpecSheet, includeManufacturerSheets, setIncludeManufacturerSheets, specCoverage = { products: 0, withSpecs: 0, missing: 0, manufacturerPdfs: 0 } }) {
   const [step, setStep] = useState('preview') // 'preview' | 'send'
   const [mode, setMode] = useState(settings.presentation_mode || 'pdf')
   const [generating, setGenerating] = useState(false)
@@ -7397,6 +7405,16 @@ function EstimatePreviewModal({ theme, estimate, lineItems, company, businessUni
               <input type="text" value={sendSubject} onChange={(e) => setSendSubject(e.target.value)}
                 placeholder={mode === 'formal' ? `Formal Proposal from ${company?.company_name || 'Company'}` : mode === 'interactive' ? `Your Proposal from ${company?.company_name || 'Company'}` : `Estimate from ${company?.company_name || 'Company'}`}
                 style={inputStyle} />
+            </div>
+
+            {/* Your own note, at the top of the email above the standard copy
+                (Cole, 2026-10-15: "allow us to write an email as well"). */}
+            <div>
+              <label style={labelStyle}>Message <span style={{ color: theme.textMuted, fontWeight: '400' }}>(optional — appears at the top of the email)</span></label>
+              <textarea value={sendMessage} onChange={(e) => setSendMessage(e.target.value)}
+                rows={5} maxLength={4000}
+                placeholder={`Thanks for walking the building with me today. Here's the ${mode === 'formal' || mode === 'interactive' ? 'proposal' : 'estimate'} we talked about — the utility incentive covers most of it. Call me with any questions.`}
+                style={{ ...inputStyle, resize: 'vertical', minHeight: '110px', lineHeight: 1.5, fontFamily: 'inherit' }} />
             </div>
 
             {/* Spec & cut sheets. Ours carries the real specs with the maker

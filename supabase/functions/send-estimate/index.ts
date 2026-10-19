@@ -49,6 +49,11 @@ serve(async (req) => {
       down_payment_label,
       down_payment_amount,
       custom_subject,
+      // The rep's own words, above the standard copy. Cole (2026-10-15): "we
+      // cant add notes or descriptions in the email it will only send the
+      // quote" — a quote with no line from the person who walked the site
+      // reads like a bill.
+      custom_message,
       extra_attachments,
       // What this company calls the document: 'Estimate' | 'Bid' | 'Proposal'
       // (lib/documentVocabulary.documentWord on the client). Absent from older
@@ -237,6 +242,11 @@ serve(async (req) => {
         ? `We've prepared a detailed ${wordLower} for your review. Click below to view your interactive ${wordLower} with project details, cost breakdown, and projected savings.`
         : `Thank you for your interest. Please find your ${wordLower} attached to this email as a PDF document.`;
 
+    // Escaped, line breaks kept (pre-wrap), capped — it is the rep's text going
+    // out under the company's name, never markup.
+    const personalMessage = String(custom_message || '').trim().slice(0, 4000)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
     const htmlBody = `
 <!DOCTYPE html>
 <html>
@@ -267,6 +277,7 @@ serve(async (req) => {
       <!-- Body -->
       <div style="padding:24px 32px 0;">
         <p style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 6px 0;">${greeting}</p>
+        ${personalMessage ? `<div style="color:#2c3530;font-size:15px;line-height:1.7;margin:0 0 16px 0;white-space:pre-wrap;">${personalMessage}</div>` : ''}
         <p style="color:#4d5a52;font-size:14px;line-height:1.7;margin:0 0 20px 0;">${introCopy}</p>
         ${summaryTable}
       </div>
