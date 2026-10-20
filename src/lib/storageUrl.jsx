@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 
 /** Buckets whose files need a signed link to open. */
-export const PRIVATE_BUCKETS = new Set(['audit-photos', 'project-documents'])
+export const PRIVATE_BUCKETS = new Set(['audit-photos', 'project-documents', 'employee-photos'])
 
 const EXPIRES = 3600
 const cache = new Map() // `${bucket}/${path}` → { url, until } | Promise

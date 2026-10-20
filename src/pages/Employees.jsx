@@ -20,7 +20,8 @@ import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
 import { w9Status, contractorsMissingW9 } from '../lib/w9Status'
 import { fetchIdentityMap, mergeIdentity, splitIdentity, identityHasValues, identitySavePlan, saveIdentity } from '../lib/employeeIdentity'
-import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
+import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
+import { SignedImg } from '../lib/storageUrl'
 
 // Role colors (OG DiX style)
 const roleColors = {
@@ -1462,7 +1463,7 @@ export default function Employees() {
                     color: roleColor
                   }}>
                     {employee.headshot_url ? (
-                      <img
+                      <SignedImg
                         src={employee.headshot_url}
                         alt=""
                         style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover' }}
@@ -1839,7 +1840,7 @@ export default function Employees() {
                       position: 'relative'
                     }}>
                       {formData.headshot_url ? (
-                        <img
+                        <SignedImg
                           src={formData.headshot_url}
                           alt=""
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}

@@ -22,7 +22,8 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { loadGoogleMaps, awaitLibraries, hasMapsKey } from '../lib/googleMaps'
+import { loadGoogleMaps, awaitLibraries, hasMapsKey } from '../lib/googleMaps'
+import { SignedImg } from '../lib/storageUrl'
 
 const defaultTheme = {
   bg: '#f7f5ef', bgCard: '#ffffff', bgCardHover: '#eef2eb', border: '#d6cdb8',
@@ -543,7 +544,7 @@ function RosterRow({ item, theme, now, onLocate, onOpen }) {
       borderRadius: 8,
     }}>
       {isPerson && item.headshot ? (
-        <img src={item.headshot} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}`, flexShrink: 0 }} />
+        <SignedImg src={item.headshot} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}`, flexShrink: 0 }} />
       ) : (
         <div style={{
           width: 36, height: 36, borderRadius: isPerson ? '50%' : 8, background: color,

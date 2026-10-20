@@ -48,7 +48,8 @@ import { paycheckDetail, runsWithStubs } from '../lib/payHistory'
 import { needsAttention } from '../lib/openPunches'
 import { localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
-import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
+import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
+import { SignedImg } from '../lib/storageUrl'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
 // jurisdiction with the right due date based on the company's deposit
@@ -2795,7 +2796,7 @@ export default function Payroll() {
             overflow: 'hidden'
           }}>
             {emp.headshot_url ? (
-              <img src={emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <SignedImg src={emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (emp.name || '?').charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -4241,7 +4242,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                         overflow: 'hidden'
                       }}>
                         {r.emp.headshot_url
-                          ? <img src={r.emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ? <SignedImg src={r.emp.headshot_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : (r.emp.name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -4661,7 +4662,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                     overflow: 'hidden'
                   }}>
                     {emp.headshot_url ? (
-                      <img src={emp.headshot_url} alt="" style={{ width: '38px', height: '38px', objectFit: 'cover' }} />
+                      <SignedImg src={emp.headshot_url} alt="" style={{ width: '38px', height: '38px', objectFit: 'cover' }} />
                     ) : (emp.name || '?').charAt(0).toUpperCase()}
                   </div>
                   <div style={{ minWidth: 0 }}>

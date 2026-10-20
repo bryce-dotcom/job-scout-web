@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Users, MapPin, Clock, AlertTriangle, RefreshCw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
-import { loadGoogleMaps, hasMapsKey } from '../lib/googleMaps'
+import { loadGoogleMaps, hasMapsKey } from '../lib/googleMaps'
+import { SignedImg, signedUrlFor } from '../lib/storageUrl'
 
 function formatElapsed(start) {
   if (!start) return ''
@@ -96,7 +97,9 @@ export default function WhosWorking({ theme }) {
           isLive: liveLat != null && liveLng != null,
         }
       })
-      setActive(rows)
+      // Headshots are private (2026-10-20): the map pop-up is plain HTML, so
+      // the signed link is fetched here, once, for every marker.
+      setActive(await Promise.all(rows.map(async (p) => ({ ...p, headshot: p.headshot ? await signedUrlFor(p.headshot) : null }))))
     } catch (e) {
       setError(e.message || String(e))
     } finally {
@@ -309,7 +312,7 @@ function RosterRow({ p, theme, located, mapRef, markersRef }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: isStale ? 'rgba(212,148,10,0.08)' : theme.bg, border: `1px solid ${isStale ? '#d4940a' : theme.border}`, borderRadius: 8 }}>
       {p.headshot
-        ? <img src={p.headshot} alt={p.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}` }} />
+        ? <SignedImg src={p.headshot} alt={p.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${theme.border}` }} />
         : <div style={{ width: 36, height: 36, borderRadius: '50%', background: theme.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>{(p.name || '?').charAt(0).toUpperCase()}</div>
       }
       <div style={{ flex: 1, minWidth: 0 }}>

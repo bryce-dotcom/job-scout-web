@@ -87,3 +87,18 @@ describe('every reader opens a signed link', () => {
     }
   })
 })
+
+describe('staff headshots are private too', () => {
+  it('the bucket is private and the helper signs it', () => {
+    expect(read('supabase/migrations/20261020180000_employee_photos_private.sql')).toMatch(/update storage\.buckets set public = false where id = 'employee-photos';/)
+    expect(needsSigning('https://tz.supabase.co/storage/v1/object/public/employee-photos/3/1773176125475.png')).toBe(true)
+  })
+  it.each([
+    ['src/pages/Employees.jsx', 2], ['src/pages/Payroll.jsx', 3], ['src/pages/CompanyMap.jsx', 1], ['src/components/WhosWorking.jsx', 1],
+  ])('%s shows headshots through SignedImg', (file, n) => {
+    expect((read(file).match(/<SignedImg/g) || []).length).toBe(n)
+  })
+  it('the live map signs its markers when it loads (the pop-up is plain HTML)', () => {
+    expect(read('src/components/WhosWorking.jsx')).toMatch(/headshot: p\.headshot \? await signedUrlFor\(p\.headshot\) : null/)
+  })
+})
