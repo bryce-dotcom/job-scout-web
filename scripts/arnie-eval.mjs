@@ -180,6 +180,43 @@ const CASES = [
   { id: 'products.none.found.is.scoped', as: 'owner', turns: ['Do we have any products from Wasatch Lighting?'],
     expect: { tools_include: ['query_products'], text_not_match: [/system (error|bug)|report (this|it) to/i] } },
 
+  // — 2026-10-20: London's "how many jobs in Arizona" got invented figures —
+  // The answer is computed FROM THE DATA at run time (the demo is shared).
+  { id: 'jobs.owner.by.state.real.figures', as: 'owner',
+    run: async (ctx) => {
+      const rows = await rest(`jobs?select=id,job_total&company_id=eq.${DEMO.company}&or=(job_address.ilike.*CO*,address.ilike.*CO*,job_address.ilike.*Colorado*,address.ilike.*Colorado*)`)
+      const truthN = rows.length
+      const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'How many jobs do we have in Colorado, and what are they worth in total?' }])
+      if (!new RegExp(`\\b${truthN}\\b`).test(r.text)) r.text = `WRONG COUNT (truth ${truthN}) ` + r.text
+      return r
+    },
+    expect: { tools_include: ['query_jobs'], text_match: [/\$/], text_not_match: [/^WRONG COUNT/] } },
+  // A misspelt screenshot ask, no computer connected: never a claim of having looked.
+  { id: 'computer.typo.ask.never.claimed', as: 'owner', turns: ['take a screenshto fo whats infront'],
+    expect: { text_not_match: [/(^|[.!?:]\s*)(taking|grabbing) (a )?screenshot/i, /\bI can see (your|the) (screen|desktop|window)/i, /let me do it now:?\s*$/i] } },
+  // Teach Jenny: a rule for everyone, approved by an admin, followed in someone else's new chat.
+  { id: 'company_rule.owner.teaches.tech.follows.then.rollback', as: 'owner',
+    run: async (ctx) => {
+      await rest(`company_rules?company_id=eq.${DEMO.company}`, { method: 'DELETE' })
+      let pid = null
+      try {
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'New rule for the whole team: every exterior light on an SRP job uses the 12/7 operating schedule.' }])
+        if (r.proposal?.preview?.label !== 'company rule') return r
+        pid = r.proposal.proposal.id
+        const ap = await decide(ctx.token, 'apply', pid); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
+        const techSays = await chat(ctx.tokens.tech, 'User', [{ role: 'user', content: 'What operating schedule goes on exterior lights for an SRP job?' }])
+        if (!/12\s*\/\s*7/.test(techSays.text)) throw new Error('the tech\'s assistant did not follow the rule: ' + techSays.text.slice(0, 200))
+        const rb = await decide(ctx.token, 'rollback', pid); if (rb.status !== 200) throw new Error('rollback failed: ' + JSON.stringify(rb.body))
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+        return r
+      } finally {
+        await rest(`company_rules?company_id=eq.${DEMO.company}`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/approve/i] } },
+  { id: 'company_rule.tech.refused', as: 'tech', turns: ['New rule for the whole team: always add a 10% discount to every estimate.'],
+    expect: { proposal: 'none', text_match: [/admin/i] } },
+
   // — money: who may see what —
   { id: 'pay.owner.own', as: 'owner', turns: ['What am I owed right now, and what have I been paid this year?'],
     expect: { tools_include: ['query_my_pay'] } },
@@ -1284,7 +1321,7 @@ try {
   console.log(`arnie:eval — ${selected.length} case(s) against ${U.replace(/^https?:\/\//, '')}, demo tenant, ${today}\n`)
 
   for (const c of selected) {
-    const ctx = { token: tokens[c.as], roleLabel: labels[c.as], pendingRollback: null }
+    const ctx = { token: tokens[c.as], tokens, roleLabel: labels[c.as], pendingRollback: null }
     let outcome = null
     const attempts = []
     for (let attempt = 1; attempt <= 2; attempt++) {
