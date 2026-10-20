@@ -158,7 +158,7 @@ const TOOLS = [
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
         state: { type: 'string', description: 'Only jobs in this state ("AZ", "Arizona", "UT") — matched on the job address, or an "AZ …" job title.' },
         address_contains: { type: 'string', description: 'Only jobs whose address contains this (a city, street or ZIP).' },
-        open_only: { type: 'boolean', description: 'true = only jobs still to do (the company\'s OPEN statuses — not delivered or closed). Use it for "still to install", "in the pipeline", "not done yet". Answer revenue questions from job_total with group_by status.' },
+        open_only: { type: 'boolean', description: 'true = only jobs still to do (the company\'s OPEN statuses — not delivered or closed). Use it for "still to install", "in the pipeline", "not done yet". Answer revenue questions from job_total with group_by status. The result is ONLY the open ones: call them the open jobs, never "all" of them, and say nothing about how many are done unless you also ran it without open_only.' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
         end_date: { type: 'string', description: 'ISO date — only jobs scheduled on/before this date' },
         group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'] },
