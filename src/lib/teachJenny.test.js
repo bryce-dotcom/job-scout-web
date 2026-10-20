@@ -110,7 +110,7 @@ describe('every assistant in the company reads them', () => {
   it('arnie-chat adds the block to every company prompt and offers the card', () => {
     const chat = read('supabase/functions/arnie-chat/index.ts')
     expect(chat).toMatch(/\+ await playbookBlock\(companyId\)\n\s+\+ await companyRulesBlock\(companyId, caller\.level >= 3\)/)
-    expect(chat).toMatch(/'srp_rebate', 'closing_gaps', 'company_rule'\]/)
+    expect(chat).toMatch(/'srp_rebate', 'closing_gaps', 'company_rule'/)
     expect(chat).toMatch(/'company_rule: rules \(required unless retiring/)
   })
   it('the list is on Arnie → Setup for everyone; only admins retire', () => {

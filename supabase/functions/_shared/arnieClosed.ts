@@ -61,7 +61,7 @@ export async function closedDeals(r: Rest, companyId: number, opts: ClosedOpts =
   const ids = quotes.map((q: any) => q.id)
   const jobs: any[] = []
   for (let i = 0; i < ids.length; i += 200) {
-    jobs.push(...await readRecordList(r, `jobs?select=id,job_id,quote_id,created_at,job_total,status&company_id=eq.${companyId}&quote_id=in.(${ids.slice(i, i + 200).join(',')})&limit=5000`))
+    jobs.push(...await readRecordList(r, `jobs?select=id,job_id,job_title,quote_id,created_at,job_total,status&company_id=eq.${companyId}&quote_id=in.(${ids.slice(i, i + 200).join(',')})&limit=5000`))
   }
   const jobFor = new Map(jobs.map((j: any) => [String(j.quote_id), j]))
 
@@ -101,6 +101,9 @@ export async function closedDeals(r: Rest, companyId: number, opts: ClosedOpts =
     // The funnel's value rule: the job's total once there is one, else the estimate.
     const jobTotal = Number(job?.job_total)
     rows.push({
+      // The JOB's name first: Cole asked "what jobs did I close" four times on
+      // 2026-10-19 and got numbers — "I need the name of the job".
+      job_name: String(job?.job_title || q.estimate_name || '').trim() || null,
       quote: q.quote_id, name: q.estimate_name, closed_on: when, dated_by: src,
       value: r2(Number.isFinite(jobTotal) && jobTotal > 0 ? jobTotal : Number(q.quote_amount) || 0),
       job: job?.job_id || null, rep: nameOf(q.salesperson_id),
@@ -117,6 +120,7 @@ export async function closedDeals(r: Rest, companyId: number, opts: ClosedOpts =
   }
   return {
     means: 'closed = an estimate the customer approved. Not jobs or leads whose status reads "Closed" — that is the work being finished.',
+    how_to_list: 'Name each one by job_name (the title of the job, e.g. "AZ Action Water Sports") with its value — not by estimate or job number, and not by customer name, unless they ask for those.',
     window: start || end ? `${start || 'the beginning'} to ${end || 'today'}` : 'all time',
     closed: rows.length,
     value: usd(value),

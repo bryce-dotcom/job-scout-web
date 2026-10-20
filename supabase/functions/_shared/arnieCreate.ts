@@ -34,6 +34,7 @@ import { applyPriceBook, preparePriceBook, rollbackPriceBook } from './arniePric
 import { applyWon, prepareWon, rollbackWon } from './arnieWon.ts'
 import { applySchedule, prepareSchedule, rollbackSchedule } from './arnieSchedule.ts'
 import { applyCompanyRule, prepareCompanyRule, rollbackCompanyRule } from './arnieCompanyRules.ts'
+import { applyQuoteDelete, prepareQuoteDelete, rollbackQuoteDelete } from './arnieQuoteDelete.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -507,6 +508,24 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     labelOf: (f) => String(f.routine_name || f.prompt || 'routine').slice(0, 120),
     prepare: prepareRoutine,
     rollbackCustom: rollbackRoutine,
+  },
+
+  // "Delete it and let's start again." What the estimate page's Delete does,
+  // on a card, with an undo the page never had (arnieQuoteDelete.ts).
+  quote_delete: {
+    label: 'estimate delete',
+    table: 'quotes',
+    minLevel: 0,
+    verb: 'Delete',
+    button: 'Delete estimate',
+    done: 'Deleted. Undo puts it back exactly as it was.',
+    fields: {
+      quote: { column: null, label: 'Estimate', required: true, max: 160 },
+    },
+    labelOf: (f) => `Delete ${f.quote}`.slice(0, 120),
+    prepare: prepareQuoteDelete,
+    applyCustom: applyQuoteDelete,
+    rollbackCustom: rollbackQuoteDelete,
   },
 
   // "Jenny, new rule: every exterior SRP light is 12/7." A rule for EVERYONE

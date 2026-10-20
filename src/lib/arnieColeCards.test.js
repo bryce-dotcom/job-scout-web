@@ -78,3 +78,33 @@ describe('an app too old to draw a card is said out loud, not covered up', () =>
     expect(chat).toMatch(/\+ \(inTheApp \? oldAppBlock\(cards, caller\) : ''\)/)
   })
 })
+
+describe('Cole #1: "my leads in Negotiation, with names and phone numbers"', () => {
+  const chat = read('supabase/functions/arnie-chat/index.ts')
+  it('a rep reads their own pipeline; the whole pipeline stays admin-only', () => {
+    expect(chat).toMatch(/if \(!isAdmin && !input\.mine\) return \{ restricted:/)
+    expect(chat).toMatch(/if \(input\.mine && caller\.employeeId != null\) params\.append\('salesperson_id', `eq\.\$\{caller\.employeeId\}`\)/)
+  })
+  it('stage names match however they are typed, and the answer is a list with phones', () => {
+    expect(chat).toMatch(/params\.append\('status', `ilike\./)
+    expect(chat).toMatch(/leads: got\.rows\.map\(\(l: any\) => \(\{ name: l\.business_name \|\| l\.customer_name, contact: [^}]*phone: l\.phone, email: l\.email/)
+  })
+})
+
+describe('Cole #2 and #3', () => {
+  it('closed deals carry the job name, and she lists by it', () => {
+    const c = read('supabase/functions/_shared/arnieClosed.ts')
+    expect(c).toMatch(/job_name: String\(job\?\.job_title \|\| q\.estimate_name \|\| ''\)\.trim\(\) \|\| null,/)
+    expect(c).toMatch(/how_to_list: 'Name each one by job_name/)
+  })
+  it('an estimate can be deleted on a card, with undo, never once work came of it', () => {
+    const d = read('supabase/functions/_shared/arnieQuoteDelete.ts')
+    expect(d).toMatch(/if \(q\.job_id \|\| job\) return \{ ok: false, error: `\$\{ref\} became a job/)
+    expect(d).toMatch(/has a payment recorded against it — it cannot be deleted/)
+    expect(d).toMatch(/if \(!mine && caller\.level < 2\)/)
+    expect(d).toMatch(/snapshot: \{ quote, lines, messages, submissions \}/)
+    expect(d).toMatch(/relinks: \{ expenses: /)
+    expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/quote_delete: \{\n\s+label: 'estimate delete',/)
+    expect(read('supabase/functions/arnie-chat/index.ts')).toMatch(/'company_rule', 'quote_delete'\]/)
+  })
+})

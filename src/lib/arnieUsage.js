@@ -9,7 +9,7 @@
 // The audit-trail names → what a person calls them.
 export const TARGET_LABELS = {
   lead: 'lead', diagnosis: 'diagnosis', ticket: 'ticket', appointment: 'appointment', quote: 'quote', followup: 'follow-up',
-  payment: 'payment', memory: 'memory', expense: 'expense', company_setup: 'company setup', employee: 'employee', price_book: 'price book', won: 'estimate won', schedule: 'schedule', meeting_agenda: 'L10 agenda', routine: 'routine', srp_rebate: 'SRP rebate', closing_gaps: 'closing gaps email', company_rule: 'company rule',
+  payment: 'payment', memory: 'memory', expense: 'expense', company_setup: 'company setup', employee: 'employee', price_book: 'price book', won: 'estimate won', schedule: 'schedule', meeting_agenda: 'L10 agenda', routine: 'routine', srp_rebate: 'SRP rebate', closing_gaps: 'closing gaps email', company_rule: 'company rule', quote_delete: 'estimate delete',
   job_status: 'job status', job_note: 'job note', job_schedule: 'job date', lead_status: 'lead status', lead_note: 'lead note',
   shift_close: 'clock-out', shift_open: 'clock-in', lead_merge: 'lead merge', section_assign: 'dispatch',
   job_description: 'job details', estimate_summary: 'estimate scope', estimate_line_description: 'estimate line wording',

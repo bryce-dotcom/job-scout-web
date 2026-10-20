@@ -59,7 +59,7 @@ const QUOTES = [
 const JOBS = [{ id: 52, job_id: 'JOB-52', quote_id: 2, created_at: '2026-08-28T00:00:00Z', job_total: 13200, status: 'Closed' }]
 const answers = {
   'quotes?select=id,quote_id,estimate_name,quote_amount,status,approved_date': QUOTES,
-  'jobs?select=id,job_id,quote_id,created_at,job_total,status': JOBS,
+  'jobs?select=id,job_id,job_title,quote_id,created_at,job_total,status': JOBS,
   'employees?select=id,name': [{ id: 7, name: 'Jordan Lee' }, { id: 8, name: 'Mike Sullivan' }],
 }
 

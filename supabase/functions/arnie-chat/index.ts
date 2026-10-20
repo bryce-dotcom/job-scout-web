@@ -268,12 +268,14 @@ const TOOLS = [
   },
   {
     name: 'query_leads',
-    description: 'Query leads/deals with filtering. Use for pipeline questions, conversion rates, or salesperson performance. ADMIN+ only. A row with `possible_duplicate_of` set was flagged by the database on creation as looking like an existing lead (same or near-same name, same phone or email) — the value is the id of the lead it probably duplicates. Asked about duplicate leads, filter on that, name both leads, and offer to relink any quote to the original so the setter fee follows.',
+    description: 'Query leads/deals with filtering. Use for pipeline questions (the Sales Pipeline page — the deals of a rep live HERE, not on the Job Board), conversion rates, or salesperson performance. Any rep may read their OWN leads with mine=true; the whole pipeline is admin-only. Ungrouped, it returns the list with names, phones and emails. A row with `possible_duplicate_of` set was flagged by the database on creation as looking like an existing lead (same or near-same name, same phone or email) — the value is the id of the lead it probably duplicates. Asked about duplicate leads, filter on that, name both leads, and offer to relink any quote to the original so the setter fee follows.',
     input_schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', description: 'Filter by lead status' },
-        salesperson_id: { type: 'integer', description: 'Filter by salesperson employee ID' },
+        status: { type: 'string', description: 'The pipeline stage as they say it ("negotiation", "quote sent", "appointment set")' },
+        mine: { type: 'boolean', description: 'true = only the leads that are THIS person\'s (they are the rep). "My leads", "my pipeline", "mine in negotiation". Any rep may ask for their own.' },
+        search: { type: 'string', description: 'A name, business or address to find' },
+        salesperson_id: { type: 'integer', description: 'Filter by salesperson employee ID (admin)' },
         start_date: { type: 'string' },
         end_date: { type: 'string' },
         group_by: { type: 'string', enum: ['status', 'salesperson', 'month', 'source', 'none'] },
@@ -589,7 +591,7 @@ const PROPOSE_CREATE_TOOL = {
   input_schema: {
     type: 'object',
     properties: {
-      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book', 'won', 'schedule', 'srp_rebate', 'closing_gaps', 'company_rule'], description: 'company_rule = a rule for EVERYONE in the company that every assistant follows from then on ("Jenny, new rule: …", "from now on everyone…", a pasted list of rules) — admin only; a rule about only this person is a memory instead. lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only. memory = one line about THIS user to carry into every future conversation (a nickname for a job or customer, a preference, a standing fact about them) — kept only when they approve the card. expense = money the company spent — a receipt photo read off the paper (merchant, date, total) or told in words; logged on Expenses as Pending; the photo is attached when they approve. company_setup = the whole company profile from a name, an address, a trade and an entity type — the server derives time zone, state taxes, sales tax, SUI, the first business unit, service types, NAICS and the AI crew, and the card shows every derived item with its source; owner/admin only. employee = a new person on the team (name, title, email, phone, access, pay, start day) — the row the Employees page writes plus the login invite; admin only, and pay lands only when the caller may see pay. price_book = the items read off an attached price list, photo, PDF or spreadsheet, as rows — checked and deduped on the server; manager+. won = an estimate the customer accepted ("Halifax signed", "they went with us", "mark the Halifax estimate won") — on approve the estimate reads Approved, the job is created from it with its lines, the deposit invoice if the proposal has one, and the lead moves to delivery; the rep’s own estimate or a manager’s. schedule = put a job on the calendar ("schedule the Halifax job Thursday at 8 with Jordan and Mike") — the Job Board’s Schedule modal: start and end, the Scheduled status, the crew with a calendar entry each, the lead mirrored; clashes shown on the card; manager+.' },
+      target: { type: 'string', enum: ['lead', 'diagnosis', 'ticket', 'appointment', 'quote', 'followup', 'payment', 'memory', 'expense', 'company_setup', 'employee', 'price_book', 'won', 'schedule', 'srp_rebate', 'closing_gaps', 'company_rule', 'quote_delete'], description: 'quote_delete = DELETE an estimate ("delete it", "get rid of that test estimate") — what Delete on the estimate page does, as a card with undo; refused if a job or payment came from it. company_rule = a rule for EVERYONE in the company that every assistant follows from then on ("Jenny, new rule: …", "from now on everyone…", a pasted list of rules) — admin only; a rule about only this person is a memory instead. lead = a new sales lead. diagnosis = what was wrong and what fixed it, kept on the job for next time. ticket = a bug report, feature request or question for the JobScout team, filed as this person. appointment = book a sales visit on an existing lead (sets the lead to Appointment Set, hands it to the rep, and creates the setter fee — the same as booking from Lead Setter). quote = a Draft estimate for a lead or customer, lines from the price book, nothing sent. followup = a personal note from the rep on a quote that has gone quiet, SENT to the customer when they approve the card — the one draft that cannot be undone. payment = money that arrived on an open invoice (cash, check, ACH, Venmo, Zelle, PayPal, financing) — recorded against the invoice, the status updated, the receipt emailed; admin only. memory = one line about THIS user to carry into every future conversation (a nickname for a job or customer, a preference, a standing fact about them) — kept only when they approve the card. expense = money the company spent — a receipt photo read off the paper (merchant, date, total) or told in words; logged on Expenses as Pending; the photo is attached when they approve. company_setup = the whole company profile from a name, an address, a trade and an entity type — the server derives time zone, state taxes, sales tax, SUI, the first business unit, service types, NAICS and the AI crew, and the card shows every derived item with its source; owner/admin only. employee = a new person on the team (name, title, email, phone, access, pay, start day) — the row the Employees page writes plus the login invite; admin only, and pay lands only when the caller may see pay. price_book = the items read off an attached price list, photo, PDF or spreadsheet, as rows — checked and deduped on the server; manager+. won = an estimate the customer accepted ("Halifax signed", "they went with us", "mark the Halifax estimate won") — on approve the estimate reads Approved, the job is created from it with its lines, the deposit invoice if the proposal has one, and the lead moves to delivery; the rep’s own estimate or a manager’s. schedule = put a job on the calendar ("schedule the Halifax job Thursday at 8 with Jordan and Mike") — the Job Board’s Schedule modal: start and end, the Scheduled status, the crew with a calendar entry each, the lead mirrored; clashes shown on the card; manager+.' },
       fields: {
         type: 'object',
         description:
@@ -599,6 +601,7 @@ const PROPOSE_CREATE_TOOL = {
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
           'quote FROM A LIGHTING TAKEOFF (when the company has an estimating playbook — see that section): instead of lines, takeoff = an ARRAY of { kind (cobra|flood|wall_pack|mini_wall_pack|dome|high_bay|t5_high_bay|t8_4ft|t8_8ft), qty (HEADS, not poles), existing_watts, lamps (T5/T8), no_lift (true only if they said no lift), mount (pole|arm|flush for cobras; trunnion|knuckle for floods), words (their own words for it), area }; business_name (the business it is for — an existing lead is matched by name, otherwise a new lead is made on the same card), address and phone ONLY as found or said, state (AZ|UT), rebate (only a figure they read you from TrakSmart). The server picks the products, prices, notes, GMs and incentive by the playbook — never pass lines with a takeoff. ' +
+          'quote_delete: quote (required — its number like EST-5112 or #4201, or its name). ' +
           'company_rule: rules (required unless retiring — an ARRAY of strings, one rule each, each one or two plain sentences in the words they used; a pasted list from another AI or document is split into one rule per line and sent WHOLE — the server skips duplicates; leave out only anything about one customer or job, and any password or account number), retire (numbers of existing rules to retire, comma-separated — to CHANGE a rule, retire its number and add the new wording in the same card), topic (one word: estimating, srp, closing, scheduling, general…), source (import when the rules were pasted from elsewhere, else omit). Read the card back as the rules it will add — never say it is taught until they approve it. ' +
           'closing_gaps: email the estimate\'s sales rep what the closing check found missing (only the rep — never the customer) — quote (required). Use it when marking an estimate won was refused for missing items. ' +
           'srp_rebate: the REAL SRP rebate from TrakSmart, written back onto an estimate that was built from a takeoff — quote (required — its number or name), rebate (required — the dollar figure exactly as TrakSmart shows it), annual_savings (the annual $ savings TrakSmart shows, if it gave one). The fixture lines stay as they are; the GMs are redone to fit the rebate and the incentive set. ' +
@@ -1512,15 +1515,34 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
     }
 
     if (name === 'query_leads') {
-      if (!isAdmin) return { restricted: 'Admin access required for leads data.' }
+      // A rep's OWN pipeline is theirs to read; everyone's is admin-only.
+      // Cole, 2026-10-20: "what jobs of mine are in negotiation … I need the
+      // names and phone numbers so I can follow up" — he got status counts
+      // for the whole company and no list.
+      if (!isAdmin && !input.mine) return { restricted: 'Admin access required for the whole pipeline. Ask for "my" leads to see your own.' }
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
-      if (input.status) params.append('status', `eq.${input.status}`)
-      if (input.salesperson_id) params.append('salesperson_id', `eq.${input.salesperson_id}`)
+      // "negotiation" is the "Negotiation" stage — the stage names are typed by people.
+      if (input.status) params.append('status', `ilike.${String(input.status).replace(/[*,()]/g, '').trim()}`)
+      if (input.mine && caller.employeeId != null) params.append('salesperson_id', `eq.${caller.employeeId}`)
+      else if (input.salesperson_id) params.append('salesperson_id', `eq.${input.salesperson_id}`)
+      if (input.search) {
+        const t = String(input.search).replace(/[*,()]/g, '').trim()
+        if (t) params.append('or', `(customer_name.ilike.*${t}*,business_name.ilike.*${t}*,address.ilike.*${t}*)`)
+      }
       if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
       if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
-      const got = await fetchRows(sb('leads'), params, hdr)
+      const grouping = input.group_by && input.group_by !== 'none'
+      // A list they can work from: who, how to reach them, where it stands —
+      // all of them (up to 200), not a 30-row sample.
+      if (!grouping) params.set('select', 'id,customer_name,business_name,phone,email,address,status,service_type,lead_source,salesperson_id,quote_id,created_at,updated_at')
+      const got = await fetchRows(sb('leads'), params, hdr, grouping ? undefined : 200)
       if ('error' in got) return { error: `leads query failed: ${got.error}` }
-      return aggregate(got, input.group_by, ['value', 'amount'])
+      if (grouping) return aggregate(got, input.group_by, ['value', 'amount'])
+      return {
+        count: got.total,
+        leads: got.rows.map((l: any) => ({ name: l.business_name || l.customer_name, contact: l.business_name ? l.customer_name : null, phone: l.phone, email: l.email, address: l.address, stage: l.status, service: l.service_type, source: l.lead_source, last_touched: String(l.updated_at || l.created_at || '').slice(0, 10) })),
+        ...(got.truncated ? { note: `Showing ${got.rows.length} of ${got.total}.` } : {}),
+      }
     }
 
     if (name === 'query_customers') {
