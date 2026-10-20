@@ -46,7 +46,7 @@ export async function mayChange(
 export async function proposeRecordChange(
   r: Rest,
   caller: Caller,
-  input: { target: string; record_query?: string; record_id?: number; value: string; timezone?: string; date?: string },
+  input: { target: string; record_query?: string; record_id?: number; value: string; timezone?: string; date?: string; line?: string },
 ): Promise<RecordProposeResult> {
   const companyId = caller.companyId
   if (companyId == null) return { error: 'No company on this login.' }
@@ -56,20 +56,31 @@ export async function proposeRecordChange(
 
   const value = String(input.value ?? '').trim()
   if (!value) return { error: `Nothing to set — tell me the new ${target.label}.` }
+  if (target.checkValue) {
+    const bad = target.checkValue(value)
+    if (bad) return { error: bad }
+  }
 
   // Locate the row FIRST: permission on a note depends on which job it is.
-  const found = await resolveEntity(r, companyId, target, input.record_query || '', input.record_id)
+  const found = target.findRow
+    ? await target.findRow(r, caller, { record_query: input.record_query, record_id: input.record_id, line: input.line })
+    : await resolveEntity(r, companyId, target, input.record_query || '', input.record_id)
   if ('error' in found) return { error: found.error }
   if ('candidates' in found) {
     return {
       needs_choice: found.candidates,
-      message: 'More than one record matches. Ask the user which one, then call again with record_id.',
+      message: ('message' in found && typeof found.message === 'string' && found.message) ||
+        'More than one record matches. Ask the user which one, then call again with record_id.',
     }
   }
   const row = found.row
 
   const allowed = await mayChange(r, caller, input.target, row.id)
   if (!allowed.ok) return { error: allowed.error }
+  if (target.guard) {
+    const refused = await target.guard(r, companyId, row.id)
+    if (refused) return { error: refused }
+  }
 
   if (target.isDate && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return { error: `Give me the date as YYYY-MM-DD — I got "${value}".` }
@@ -151,6 +162,10 @@ export async function applyRecordProposal(
   if (target.applyCustom) return await target.applyCustom(r, companyId, prop)
   const { entity_id: id, field } = prop.payload || {}
   if (!id || !field) return { ok: false, error: 'That proposal is missing its record.' }
+  if (target.guard) {
+    const refused = await target.guard(r, companyId, id)
+    if (refused) return { ok: false, error: refused }
+  }
 
   const rows = await readRecordList(r, `${target.table}?select=id,${field}&company_id=eq.${companyId}&id=eq.${id}&limit=1`)
   if (!rows.length) return { ok: false, error: 'That record no longer exists.' }
@@ -174,6 +189,10 @@ export async function rollbackRecordProposal(
   if (target.rollbackCustom) return await target.rollbackCustom(r, companyId, prop)
   const { entity_id: id, field } = prop.payload || {}
   if (!id || !field) return { ok: false, error: 'That proposal is missing its record.' }
+  if (target.guard) {
+    const refused = await target.guard(r, companyId, id)
+    if (refused) return { ok: false, error: refused }
+  }
   const res = await patchRow(r, target.table, companyId, id, { [field]: prop.before_value })
   if (!res.ok) return { ok: false, error: res.error }
   return { ok: true, restored: prop.before_value }

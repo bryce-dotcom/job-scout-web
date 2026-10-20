@@ -12,6 +12,8 @@ export const TARGET_LABELS = {
   payment: 'payment', memory: 'memory', expense: 'expense', company_setup: 'company setup', employee: 'employee', price_book: 'price book', won: 'estimate won', schedule: 'schedule', meeting_agenda: 'L10 agenda', routine: 'routine', srp_rebate: 'SRP rebate', closing_gaps: 'closing gaps email', company_rule: 'company rule',
   job_status: 'job status', job_note: 'job note', job_schedule: 'job date', lead_status: 'lead status', lead_note: 'lead note',
   shift_close: 'clock-out', shift_open: 'clock-in', lead_merge: 'lead merge', section_assign: 'dispatch',
+  job_description: 'job details', estimate_summary: 'estimate scope', estimate_line_description: 'estimate line wording',
+  invoice_line_description: 'invoice line wording', product_description: 'price book wording',
   business_units: 'business units', lead_sources: 'lead sources', service_types: 'service types', upsells: 'upsells',
 }
 export const targetLabel = (t) => TARGET_LABELS[t] || String(t || '').replace(/_/g, ' ')

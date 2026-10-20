@@ -109,6 +109,7 @@ export default {
       'Money is gated by role, and the gate is on the server: a tech cannot get another person\'s pay out of him by rephrasing.',
       'A follow-up message is the one change that cannot be rolled back. The card says Send, not Create, for that reason.',
       'A merge never decides pay. Two setter fees on one lead is a Lead Setter decision, not Arnie\'s.',
+      'He can reword, never reprice: a job\'s Details, an estimate\'s Summary / Scope, one line\'s description on an estimate or invoice, a price book item\'s description — each on a card with the old wording beside the new. No price, quantity, discount or total is reachable that way; those stay on the page.',
       'The brief is only as good as the schedule: an unstaffed section shows up as unstaffed.',
     ],
 
@@ -136,6 +137,10 @@ export default {
       {
         q: 'Can he create invoices or purchase orders?',
         a: 'Not yet. He can read both, and he can record a payment that arrived on an invoice (admin) — the status updates and the receipt goes out, the same as the invoice page. Creating an invoice or a PO stays on those pages for now.',
+      },
+      {
+        q: 'Can he change what an estimate or invoice says?',
+        a: 'The words, yes; the amounts, never. "Change line 2 on the Halifax estimate to say includes haul-away" drafts a card with the old and new wording. He can reword a job\'s Details, an estimate\'s Summary / Scope, any line\'s description on an estimate (the rep\'s own or a manager) or an invoice (admin, and not once the invoice is locked), and a price book item\'s description. Prices, quantities, discounts and totals are changed on the page, where the totals and the PDF are worked out together.',
       },
     ],
 

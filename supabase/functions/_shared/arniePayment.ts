@@ -74,12 +74,17 @@ const amountOf = (s: string) => { const n = Number(String(s || '').replace(/[$,\
 const custLabel = (c: any) => c?.business_name && c?.name ? `${c.business_name} (${c.name})` : (c?.business_name || c?.name || '')
 const invLabel = (inv: any, cust: any) => `${inv.invoice_id || 'INV-' + inv.id}${cust ? ' — ' + custLabel(cust) : ''}`
 
-async function findInvoice(r: Rest, companyId: number, said: string) {
+/**
+ * The invoice the user means: its number, or the customer or job it is for.
+ * Open invoices only, unless `filter` (a PostgREST condition) says otherwise —
+ * arnieDescriptions rewords lines on any invoice that is not locked.
+ */
+export async function findInvoice(r: Rest, companyId: number, said: string, filter?: string) {
   const term = String(said || '').replace(/[*,()]/g, ' ').trim()
   const NOISE = new Set(['invoice', 'invoices', 'the', 'for', 'from', 'paid', 'payment', 'their', 'that', 'this', 'bill', 'balance', 'job', 'customer'])
   const words = [...new Set(term.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 && !NOISE.has(w)))]
   if (!words.length) return { error: 'Tell me which invoice — the number, or the customer it is for.' }
-  const open = `payment_status=not.in.(${OPEN_NOT.map((s) => `"${s}"`).join(',')})`
+  const open = filter || `payment_status=not.in.(${OPEN_NOT.map((s) => `"${s}"`).join(',')})`
   const hits = new Map<number, { row: any; n: number }>()
   const bump = (rs: any[]) => { for (const x of rs) { const h = hits.get(x.id) || { row: x, n: 0 }; h.n += 1; hits.set(x.id, h) } }
   for (const w of words) {

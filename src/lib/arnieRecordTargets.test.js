@@ -63,8 +63,12 @@ describe('the target registry', () => {
     // rule. It writes clock_out and the adjustment trail, never pay.
     // job_sections was added for section_assign (2026-09-15): who is on a
     // section and which day — the job page's section editor, by voice.
+    // quotes, quote_lines, invoice_lines and products_services were added for
+    // the description targets (2026-10-20) — their WORDING only: each writes
+    // one text column, and arnieDescriptionTargets.test.js pins that no
+    // target reaches a price, quantity or total.
     const tables = new Set(Object.values(RECORD_TARGETS).map(t => t.table))
-    expect([...tables].sort()).toEqual(['job_sections', 'jobs', 'leads', 'time_clock'])
+    expect([...tables].sort()).toEqual(['invoice_lines', 'job_sections', 'jobs', 'leads', 'products_services', 'quote_lines', 'quotes', 'time_clock'])
   })
 
   it('requires a manager for everything by default', () => {

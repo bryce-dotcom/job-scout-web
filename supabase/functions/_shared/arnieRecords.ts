@@ -25,6 +25,10 @@ import type { Caller } from './auth.ts'
 import { applyShiftClose, applyShiftOpen, proposeShiftClose, proposeShiftOpen, rollbackShiftClose, rollbackShiftOpen } from './arnieShift.ts'
 import { applyLeadMerge, proposeLeadMerge, rollbackLeadMerge } from './arnieLeadMerge.ts'
 import { applySectionAssign, proposeSectionAssign, rollbackSectionAssign } from './arnieDispatch.ts'
+import {
+  checkDescription, findEstimateLineRow, findEstimateSummaryRow, findInvoiceLineRow,
+  invoiceLineGuard, quoteLineOwner, quoteOwner,
+} from './arnieDescriptions.ts'
 
 export interface RecordTarget {
   label: string          // "job status" — used in copy
@@ -61,6 +65,18 @@ export interface RecordTarget {
   rollbackCustom?: (r: Rest, companyId: number, prop: any) => Promise<{ ok: true; restored: any } | { ok: false; error: string }>
   /** The employee a row belongs to — a person may always change their own. */
   ownerOf?: (r: Rest, companyId: number, rowId: number) => Promise<number | null>
+  /**
+   * Find the row some other way than searchCols — an estimate by its
+   * customer, a line by "line 3" on it. The generic path still drafts,
+   * applies and rolls back; only the lookup is the target's own. The row may
+   * carry `_label` for the card.
+   */
+  findRow?: (r: Rest, caller: Caller, input: { record_query?: string; record_id?: number; line?: string }) =>
+    Promise<{ row: Record<string, any> } | { candidates: { id: number; label: string }[]; message?: string } | { error: string }>
+  /** A reason to refuse this row, checked at draft, apply AND rollback (e.g. the invoice was locked meanwhile). */
+  guard?: (r: Rest, companyId: number, rowId: number) => Promise<string | null>
+  /** A reason to refuse the value itself, or null. */
+  checkValue?: (value: string) => string | null
 }
 
 // Title AND customer. "Parking Lot Wall Packs" alone told a tech nothing
@@ -136,6 +152,34 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
     label: 'lead merge', table: 'leads', field: 'merge', mode: 'set', minLevel: 2,
     searchCols: LEAD_SEARCH, selectCols: LEAD_SELECT, labelOf: leadLabel,
     proposeCustom: proposeLeadMerge, applyCustom: applyLeadMerge, rollbackCustom: rollbackLeadMerge,
+  },
+  // Descriptions, never amounts (Bryce, 2026-10-20). Each writes ONE text
+  // column the target names — the model cannot reach a price, quantity or
+  // total from here. See arnieDescriptions.ts.
+  job_description: {
+    label: 'job details', table: 'jobs', field: 'details', mode: 'set', minLevel: 2,
+    searchCols: JOB_SEARCH, selectCols: `${JOB_SELECT},details`, labelOf: jobLabel, checkValue: checkDescription,
+  },
+  estimate_summary: {
+    label: 'estimate summary / scope', table: 'quotes', field: 'summary', mode: 'set', minLevel: 2,
+    searchCols: [], selectCols: 'id,quote_id,estimate_name,summary', labelOf: (r) => r._label || r.quote_id || `Estimate #${r.id}`,
+    findRow: findEstimateSummaryRow, ownerOf: quoteOwner, checkValue: checkDescription,
+  },
+  estimate_line_description: {
+    label: 'estimate line description', table: 'quote_lines', field: 'description', mode: 'set', minLevel: 2,
+    searchCols: [], selectCols: 'id,quote_id,item_name,description', labelOf: (r) => r._label || `estimate line #${r.id}`,
+    findRow: findEstimateLineRow, ownerOf: quoteLineOwner, checkValue: checkDescription,
+  },
+  // Admin, and never on a locked invoice — InvoiceDetail's own rule for editing.
+  invoice_line_description: {
+    label: 'invoice line description', table: 'invoice_lines', field: 'description', mode: 'set', minLevel: 3,
+    searchCols: [], selectCols: 'id,invoice_id,description', labelOf: (r) => r._label || `invoice line #${r.id}`,
+    findRow: findInvoiceLineRow, guard: invoiceLineGuard, checkValue: checkDescription,
+  },
+  product_description: {
+    label: 'price book description', table: 'products_services', field: 'description', mode: 'set', minLevel: 2,
+    searchCols: ['name'], selectCols: 'id,name,description,unit_price', labelOf: (r) => r.name || `product #${r.id}`,
+    checkValue: checkDescription,
   },
 }
 
