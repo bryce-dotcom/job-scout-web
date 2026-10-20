@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { computeRepRows, earnedRepInPeriod, liveInvoiceAvailable, syncRepCommissions, missingBasisColumns } from './repCommissions'
+import { readFileSync } from 'node:fs'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sales commission. Untested until now, and the source comments call the
@@ -481,5 +482,56 @@ describe('override commission', () => {
     const rows = computeRepRows(tenK(), 9)
     expect(rows).toHaveLength(1)
     expect(rows[0].kind).toBe('override')
+  })
+})
+
+describe('a hand-made commission is not the engine to delete', () => {
+  // 20 Oct 2026, mid payroll run. Dubois (job 23438) was invoiced $14,149 and
+  // the customer had paid nothing; HHH's commission_trigger is
+  // payment_received, so Noah had no row and Alayda could not see it on his
+  // cheque. It was written by hand rather than by falsifying a payment date.
+  //
+  // The sweep would have deleted it on her next page load — not paid, invoice
+  // in view (an unpaid invoice always is), and the engine expects no
+  // commission on an invoice nobody paid. All three, every time.
+  const deletedIdsFrom = async (existingRows) => {
+    const deleted = []
+    const fake = {
+      from() { return this },
+      select() { return this },
+      eq() { return this },
+      in(_col, ids) { deleted.push(...ids); return Promise.resolve({ error: null }) },
+      insert() { return Promise.resolve({ error: null }) },
+      delete() { return this },
+      then(res) { return Promise.resolve({ data: existingRows, error: null }).then(res) },
+    }
+    // discount_applied/tax_amount present, or the sync refuses to write at
+    // all (the basis-columns guard above) and nothing would ever be swept.
+    await syncRepCommissions(fake, 3, base({ invoices: [{ id: 100, job_id: 1, amount: 1000, discount_applied: 0, tax_amount: 0 }] }))
+    return deleted
+  }
+
+  // employee 999 no longer owns the job, so the engine does not expect
+  // this row: in view, not expected — the exact shape the sweep removes.
+  const manual = { id: 77, employee_id: 999, invoice_id: 100, payment_id: null, utility_invoice_id: null, kind: 'services', payment_status: 'earned', source: 'manual' }
+
+  it('leaves it alone even though nothing earns it', async () => {
+    expect(await deletedIdsFrom([manual])).not.toContain(77)
+  })
+
+  it('still sweeps the identical row when the engine made it', async () => {
+    // Same row in every respect but its source — so the test cannot pass by
+    // the sweep having stopped working altogether.
+    const engineMade = { ...manual, id: 78, source: 'live_synthetic' }
+    expect(await deletedIdsFrom([engineMade])).toContain(78)
+  })
+
+  it('reads source, or every row looks engine-made', () => {
+    // The sweep can only tell them apart if the query asks for the column.
+    // It did not, which is how this was nearly missed.
+    const src = readFileSync(new URL('./repCommissions.js', import.meta.url), 'utf8')
+    const sel = src.match(/from\('rep_commissions'\)\s*\.select\('([^']+)'\)/)
+    expect(sel, 'the existing-rows select').toBeTruthy()
+    expect(sel[1]).toContain('source')
   })
 })

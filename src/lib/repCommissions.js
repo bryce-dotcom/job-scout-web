@@ -190,7 +190,9 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     // that used to be synthetic; a payment/invoice deleted). PAID rows are
     // frozen and never touched. This is what keeps Payroll and My Pay correct
     // without freezing a stale attribution. (Insert-only would double-count.)
-    let q = supabase.from('rep_commissions').select('id, payment_id, invoice_id, utility_invoice_id, employee_id, kind, payment_status, override_for_employee_id').eq('company_id', companyId)
+    // `source` is read so the sweep below can tell a row the engine minted
+    // from one a person typed in. Without it every row looks engine-made.
+    let q = supabase.from('rep_commissions').select('id, payment_id, invoice_id, utility_invoice_id, employee_id, kind, payment_status, override_for_employee_id, source').eq('company_id', companyId)
     if (onlyEmployeeId != null) q = q.eq('employee_id', onlyEmployeeId)
     const { data: existing, error } = await q
     if (error) { console.warn('[syncRepCommissions] read failed:', error.message); return { inserted: 0, deleted: 0 } }
@@ -245,7 +247,25 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
       if (r.utility_invoice_id != null) return loadedUtilityIds.has(r.utility_invoice_id)
       return r.invoice_id != null && loadedInvoiceIds.has(r.invoice_id)
     }
-    const stale = (existing || []).filter(r => r.payment_status !== 'paid' && inView(r) && !expectedKeys.has(keyOf(r)))
+    // A HAND-MADE ROW IS NOT THE ENGINE'S TO DELETE.
+    //
+    // 20 Oct 2026, mid payroll run. Dubois (job 23438) is invoiced $14,149 and
+    // the customer has not paid a cent, and HHH's commission_trigger is
+    // payment_received — so Noah had no commission row and Alayda could not
+    // see it on his cheque. Bryce: pay it now, and do NOT go and falsify a
+    // date on the invoice to force it. So the row was written by hand.
+    //
+    // This sweep would have deleted it on her very next page load: the row is
+    // not paid, its invoice IS in view (an unpaid invoice always is), and the
+    // engine does not expect a commission on an invoice nobody has paid — all
+    // three conditions, every time. The row would have vanished silently with
+    // the run half set up.
+    //
+    // The sweep exists to clear what the ENGINE minted and no longer earns.
+    // A person who typed a number in has made a decision, and a recompute does
+    // not get to overrule it. Only a person removes it.
+    const stale = (existing || []).filter(r =>
+      r.payment_status !== 'paid' && r.source !== 'manual' && inView(r) && !expectedKeys.has(keyOf(r)))
 
     // The duplicates already in the ledger. This one needs no window: a
     // synthetic row whose invoice ALSO carries a payment-backed row is the
@@ -255,7 +275,7 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     // where the synthetic lumps them into one. Paid rows stay frozen: an
     // overpayment already out the door is a decision, not a cleanup.
     const duplicated = (existing || []).filter(r =>
-      r.payment_status !== 'paid' && isSynthetic(r) && payBackedInvoices.has(invoiceKey(r)),
+      r.payment_status !== 'paid' && r.source !== 'manual' && isSynthetic(r) && payBackedInvoices.has(invoiceKey(r)),
     )
     for (const r of duplicated) if (!stale.some(x => x.id === r.id)) stale.push(r)
     let inserted = 0, deleted = 0
