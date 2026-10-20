@@ -18,6 +18,7 @@
 // audit_log.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { sendBlockedBy } from '../_shared/suppression.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller } from '../_shared/auth.ts'
 import { submitReadiness, approvalSentence } from '../_shared/bidPacket.ts'
@@ -134,6 +135,8 @@ serve(async (req) => {
       const payload: Any = { from: `${displayName} <bids@appsannex.com>`, to: [to], subject, html, reply_to: replyTo }
       if (cc.length) payload.cc = cc
       if (attachments.length) payload.attachments = attachments
+      const blocked = await sendBlockedBy({ url: SUPABASE_URL, key: SERVICE_KEY }, companyId, to, 'transactional')
+      if (blocked) return json({ ok: false, error: blocked }, 400)
       const plan = { to, cc, reply_to: replyTo, subject, attached: attachments.map((a) => a.filename), linked: links.map((l) => l.file_name), bytes: total }
       if (body.dry_run) return json({ ok: true, dry_run: true, plan })
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })

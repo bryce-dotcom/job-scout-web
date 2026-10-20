@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { sendBlockedBy } from "../_shared/suppression.ts";
 import { parseEmailList } from "../_shared/emailList.ts";
 import { paymentMethodNames, parsePaymentConfig } from "../_shared/paymentMethods.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -380,6 +381,11 @@ serve(async (req) => {
     // directly, and Resend rejects the whole send if one address is malformed,
     // so one bad entry must not stop the invoice reaching anybody. Anyone who is
     // already the recipient is dropped rather than sent two copies.
+    // An address that bounced or reported us as spam gets nothing more, invoice
+    // or not: sending again only hurts delivery for everyone on the domain.
+    const blocked = await sendBlockedBy({ url: SUPABASE_URL, key: SERVICE_ROLE_KEY }, companyId, cleanedRecipient, 'transactional');
+    if (blocked) return new Response(JSON.stringify({ success: false, error: blocked }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
     const { valid: ccClean } = parseEmailList(cc_emails, { exclude: cleanedRecipient });
 
     const emailPayload: Record<string, unknown> = {

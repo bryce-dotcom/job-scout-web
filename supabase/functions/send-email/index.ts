@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { sendBlockedBy } from '../_shared/suppression.ts'
 import { authorizeEmailCaller, companySenderNames, restrictFrom } from '../_shared/emailSender.ts'
 
 const corsHeaders = {
@@ -111,6 +112,13 @@ Deno.serve(async (req) => {
           content: a.content,
           ...(a.content_type ? { content_type: a.content_type } : {}),
         }))
+    }
+
+    // A bounced or complaining address gets nothing more from this company.
+    const blockCompany = auth.kind === 'employee' ? Number(auth.caller.companyId) : (Number(payload.company_id) || null)
+    for (const addr of requestBody.to as string[]) {
+      const blocked = await sendBlockedBy({ url: SUPABASE_URL, key: SERVICE_KEY }, blockCompany, addr, 'transactional')
+      if (blocked) return json({ success: false, error: blocked }, 400)
     }
 
     console.log('[send-email] sending', { by: auth.kind === 'employee' ? auth.caller.email : 'service', to: requestBody.to, from: requestBody.from, subjectLen: subject.length, htmlLen: (html || '').length })

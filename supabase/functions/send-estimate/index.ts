@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { sendBlockedBy } from "../_shared/suppression.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveQuoteEmailLinks, renderQuoteEmailLinks } from "../_shared/quoteEmailLinks.ts";
 import { replyAddress } from "../_shared/replyToken.ts";
@@ -348,6 +349,10 @@ serve(async (req) => {
   </div>
 </body>
 </html>`;
+
+    // A bounced or complaining address gets nothing more, estimate or not.
+    const blocked = await sendBlockedBy({ url: SUPABASE_URL, key: SERVICE_ROLE_KEY }, companyId, cleanedRecipient, 'transactional');
+    if (blocked) return new Response(JSON.stringify({ success: false, error: blocked }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     // Send via Resend API
     const emailPayload: Record<string, unknown> = {

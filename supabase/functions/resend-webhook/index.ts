@@ -96,17 +96,33 @@ Deno.serve(async (req) => {
         // Update both invoices and quotes — whichever table actually has a
         // row with this email_id. email_id values are Resend-side UUIDs so
         // there's zero risk of collision between the two tables.
-        const { error: invErr } = await supabase
+        const { data: invRows, error: invErr } = await supabase
           .from('invoices')
           .update(update)
           .eq('email_id', emailId)
+          .select('company_id')
         if (invErr) console.error('[resend-webhook] invoices update error', invErr)
 
-        const { error: quoteErr } = await supabase
+        const { data: quoteRows, error: quoteErr } = await supabase
           .from('quotes')
           .update(update)
           .eq('email_id', emailId)
+          .select('company_id')
         if (quoteErr) console.error('[resend-webhook] quotes update error', quoteErr)
+
+        // A bounce or a complaint on an invoice or estimate email puts the
+        // address on that company's suppression list, so no sender — not a
+        // campaign, not the next invoice — writes to it again until someone
+        // fixes it. The same thing the campaign path has done since 10-15.
+        if ((simpleStatus === 'bounced' || simpleStatus === 'complained') && recipient) {
+          const companies = new Set([...(invRows || []), ...(quoteRows || [])].map((r: any) => r.company_id).filter(Boolean))
+          for (const companyId of companies) {
+            await supabase.from('email_suppressions').upsert(
+              { company_id: companyId, email: String(recipient).toLowerCase(), reason: simpleStatus, source: 'resend-webhook' },
+              { onConflict: 'company_id,email', ignoreDuplicates: true },
+            )
+          }
+        }
 
         // A bid sent by email (bid-submit): delivered / bounced land on the
         // submission, and a bounce raises a notification at once — the

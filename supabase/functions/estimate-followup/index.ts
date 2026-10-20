@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { sendBlockedBy } from "../_shared/suppression.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { replyAddress } from "../_shared/replyToken.ts";
 import { APP_URL } from "../_shared/notifyRep.ts";
@@ -367,6 +368,10 @@ serve(async (req) => {
       const REPLY_SECRET = Deno.env.get('REPLY_TOKEN_SECRET') || '';
       const INBOUND_DOMAIN = Deno.env.get('INBOUND_EMAIL_DOMAIN') || 'appsannex.com';
       const replyTo = REPLY_SECRET ? await replyAddress(est.id, REPLY_SECRET, INBOUND_DOMAIN) : (contactEmail || null);
+
+      // Someone who unsubscribed, bounced or complained is not chased.
+      const blocked = await sendBlockedBy({ url: SUPABASE_URL, key: SERVICE_ROLE_KEY }, est.company_id, est.sent_to_email, 'marketing');
+      if (blocked) { console.log('[estimate-followup] skipped', est.id, blocked); skipped.suppressed++; continue; }
 
       // Send via Resend
       const resendRes = await fetch('https://api.resend.com/emails', {
