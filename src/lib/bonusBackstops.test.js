@@ -277,3 +277,84 @@ describe('nobody releases their own bonus', () => {
     expect(payroll).toMatch(/b\.employee_id !== signedInEmployeeId/)
   })
 })
+
+describe('a bonus on a job nobody clocked in on', () => {
+  // Intercon, 2026-10-20. The project exists twice — "Intercon Furniture
+  // Final" (16 lines, $129,002, 540.3 product hours) and the SAME 16 lines
+  // split across "Phase 1" and "Phase 2". The crew clocked 248.94 hours, all
+  // of it to Final. Phase 2 had not one punch; its 10.61 "actual" hours were
+  // typed onto the job page, so it read 260 hours saved and minted $6,240.
+  // Across Energy Scout, five jobs with essentially no recorded labour
+  // carried $12,735 — 29% of its entire pool.
+  //
+  // mergeJobHourSources tags a typed row `_source: 'time_log'`; a punch has
+  // no _source. That is the only thing telling them apart downstream.
+  // Four 10-hour days = 40 worked against 100 allotted (2.5x), clear of the
+  // 3x guard, so the only thing that can hold these rows is the new one.
+  const TYPED = DAYS.map((date, i) => ({ id: 'legacy-' + i, employee_id: 1, job_id: 7, total_hours: 10, clock_in: date, _source: 'time_log' }))
+  const TYPED_ENTRIES = DAYS.map(date => ({ employee_id: 1, job_id: 7, hours: 10, date }))
+
+  const typedOnly = (over = {}) => calculateEfficiencyBonus({
+    employeeId: 1, timeLogEntries: TYPED_ENTRIES, timeClockRows: TYPED, jobs: [JOB],
+    employees: EMPLOYEES, skillLevels: [], payrollConfig: CFG,
+    deliveredStatusIds: DELIVERED, ...over,
+  })
+
+  it('is HELD when every hour on the job was typed in', () => {
+    const { bonus, details } = typedOnly()
+    expect(bonus).toBe(0)
+    expect(details[0].blockedReason).toBe('no_clocked_time')
+  })
+
+  it('still shows the full amount, so an admin can release it', () => {
+    // The punches may genuinely have gone to a sibling job — somebody who
+    // knows that can pay it. 60 saved x $30 x 80%.
+    const { details } = typedOnly()
+    expect(details[0].wouldHaveEarned).toBeCloseTo(1440, 2)
+  })
+
+  it('pays normally as soon as ONE real punch exists on the job', () => {
+    const mixed = [...TYPED.slice(0, 3), { employee_id: 1, job_id: 7, total_hours: 10, clock_in: '2026-09-24T14:00:00Z', clock_out: '2026-09-24T23:59:00Z' }]
+    const { bonus, details } = calculateEfficiencyBonus({
+      employeeId: 1, timeLogEntries: TYPED_ENTRIES,
+      timeClockRows: mixed, jobs: [JOB], employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: CFG, deliveredStatusIds: DELIVERED,
+    })
+    expect(details[0].blockedReason).toBeUndefined()
+    expect(bonus).toBeGreaterThan(0)
+  })
+
+  it('a punch on a DIFFERENT job does not count as clocking in on this one', () => {
+    const elsewhere = [...TYPED, { employee_id: 1, job_id: 999, total_hours: 10, clock_in: '2026-09-25T14:00:00Z' }]
+    const { details } = calculateEfficiencyBonus({
+      employeeId: 1, timeLogEntries: TYPED_ENTRIES, timeClockRows: elsewhere, jobs: [JOB],
+      employees: EMPLOYEES, skillLevels: [], payrollConfig: CFG, deliveredStatusIds: DELIVERED,
+    })
+    expect(details[0].blockedReason).toBe('no_clocked_time')
+  })
+
+  it('an open shift with no hours yet is not evidence the job was worked', () => {
+    const open = [...TYPED, { employee_id: 1, job_id: 7, total_hours: null, clock_in: '2026-09-25T14:00:00Z', clock_out: null }]
+    const { details } = calculateEfficiencyBonus({
+      employeeId: 1, timeLogEntries: TYPED_ENTRIES, timeClockRows: open, jobs: [JOB],
+      employees: EMPLOYEES, skillLevels: [], payrollConfig: CFG, deliveredStatusIds: DELIVERED,
+    })
+    expect(details[0].blockedReason).toBe('no_clocked_time')
+  })
+
+  it('a caller that passes no punch rows at all is not judged', () => {
+    // Absence of evidence again: an older caller that never passes
+    // timeClockRows must behave exactly as it did before this guard.
+    const { bonus, details } = calculateEfficiencyBonus({
+      employeeId: 1, timeLogEntries: TYPED_ENTRIES, jobs: [JOB],
+      employees: EMPLOYEES, skillLevels: [], payrollConfig: CFG, deliveredStatusIds: DELIVERED,
+    })
+    expect(details[0].blockedReason).toBeUndefined()
+    expect(bonus).toBeGreaterThan(0)
+  })
+
+  it('an admin override still releases it', () => {
+    const { bonus } = typedOnly({ bonusOverrides: [{ job_id: 7, employee_id: 1 }] })
+    expect(bonus).toBeGreaterThan(0)
+  })
+})

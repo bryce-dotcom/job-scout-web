@@ -305,6 +305,7 @@ export async function syncJobBonuses({
 export function heldReasonLabel(row) {
   if (!row?.needs_verification || row.status === 'paid') return null
   switch (row.release_reason) {
+    case 'no_clocked_time': return 'Held - nobody clocked in on this job'
     case 'job_not_finished': return 'Held - job still open, hours not all in'
     case 'unassigned_crew_hours': return 'Held - crew time not on the job that day'
     case 'allotted_over_actual': return 'Held - allotted hours far over hours worked'

@@ -735,6 +735,37 @@ export function calculateEfficiencyBonus({
     const unassignedRatio = totalActualHours > 0 ? unassignedHours / totalActualHours : 0
     const unassignedCrewHours = unassignedRatio >= UNASSIGNED_HOURS_FLAG_RATIO
 
+    // NOBODY PUNCHED A CLOCK ON THIS JOB.
+    //
+    // Intercon, 2026-10-20. The project exists twice: "Intercon Furniture
+    // Final" (16 lines, $129,002, 540.3 product hours) and the same 16 lines
+    // split across "Phase 1" (8 lines, $68,236, 278.0h) and "Phase 2" (8
+    // lines, $62,780, 270.6h). The crew clocked 248.94 hours, all of it to
+    // Final. Phase 2 had NOT ONE PUNCH — its 10.61 "actual" hours were typed
+    // onto the job page — so it read 260 hours saved and minted $6,240.
+    // Redman is the same shape: 277.6 allotted hours on a job with zero
+    // punches, 181.2 on one with 2.25, and the real work on a third job that
+    // carries no allotment at all. Across Energy Scout, five jobs with
+    // essentially no recorded labour carried $12,735 — 29% of its whole pool.
+    //
+    // Typed hours still COUNT (they are real work somebody did, and leaving
+    // them out would overstate the saving). They just cannot be the only
+    // evidence that the job was worked: a saving measured entirely against
+    // hours somebody typed after the fact is not a measurement.
+    //
+    // Held, not wiped, like every other backstop — an admin who knows the
+    // punches went to a sibling job can release it. A caller that passes no
+    // punch rows cannot be judged, so it is not held.
+    // Read through timeClockToJobHours rather than the raw column: a punch
+    // states its time as total_hours OR as clock_in/clock_out, and only the
+    // normalizer knows both (and subtracts lunch). One definition of "hours
+    // a punch put on a job", used here and everywhere else.
+    const clockedOnJob = Array.isArray(timeClockRows)
+      ? timeClockToJobHours(timeClockRows.filter(r => r?._source !== 'time_log'))
+        .some(e => String(e.job_id) === String(jobId) && e.hours > 0)
+      : true
+    const noClockedTime = !clockedOnJob
+
     // Cap: no job's crew pool may exceed this share of what the job sold for.
     // The bonus is saved-hours x rate, and on flat-priced work the allotment
     // is the price over the default hourly rate — so without a ceiling a
@@ -771,7 +802,7 @@ export function calculateEfficiencyBonus({
     // Otherwise the bonus must clear the >3x allotted guard, both hours
     // backstops AND the verification gate before it can pay.
     const passes = hasAdminOverride || (
-      !suspiciousAllotted && jobFinished && !unassignedCrewHours && !overPercentOfJob &&
+      !noClockedTime && !suspiciousAllotted && jobFinished && !unassignedCrewHours && !overPercentOfJob &&
       (gateOff || passesVictor || paidOverrideApplies)
     )
 
@@ -805,7 +836,11 @@ export function calculateEfficiencyBonus({
         crewSize: crew.length,
         employeeShare: 0,
         wouldHaveEarned: +myRawShare.toFixed(2),
-        blockedReason: suspiciousAllotted ? 'allotted_over_actual'
+        // Ordered by what a person should fix first. "Nobody clocked here"
+        // comes before everything: until the job has real time on it, every
+        // other number on the row is measured against nothing.
+        blockedReason: noClockedTime ? 'no_clocked_time'
+          : suspiciousAllotted ? 'allotted_over_actual'
           : !jobFinished ? 'job_not_finished'
           : unassignedCrewHours ? 'unassigned_crew_hours'
           : overPercentOfJob ? 'over_percent_of_job'
