@@ -83,7 +83,7 @@ export default function CampaignsTab({ theme, isMobile, companyId, brands = [], 
         <div style={{ textAlign: 'center', padding: '40px 16px', background: theme.bgCard, border: `1px dashed ${theme.border}`, borderRadius: 12 }}>
           <Send size={32} color={theme.textMuted} />
           <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, marginTop: 10 }}>No campaigns yet</div>
-          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4, maxWidth: 420, margin: '4px auto 0' }}>Find people on the Find tab and press Add to a campaign, or start one here from your leads or past customers.</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4, maxWidth: 420, margin: '4px auto 0' }}>Press Find people above, tick the matches and Add to a campaign — or start one here from your leads or past customers.</div>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>

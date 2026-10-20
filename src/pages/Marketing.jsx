@@ -423,7 +423,7 @@ export default function Marketing() {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 24, color: theme.text, fontWeight: 700 }}>Marketing</h1>
-          <div style={{ fontSize: 13, color: theme.textMuted }}>Photos from the field become posts in your voice. Approve, then publish everywhere.</div>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Photos from the field become posts in your voice. Publish everywhere at once.</div>
         </div>
         <button type="button" onClick={() => setComposer({ captureIds: [] })} style={primaryBtn(MKT)}>
           <Sparkles size={16} /> New post
@@ -728,7 +728,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
   const hints = {
     brand: 'Pulled from your EOS core values, focus and marketing strategy. Fix anything that sounds wrong; the AI writes in this voice.',
     channels: isManager ? 'Tap Connect on each network you use and sign in. Two minutes, no other accounts to create.' : 'A Manager or above connects the accounts. Ask them to open this page.',
-    first_post: 'Pick a photo from the inbox, or start blank. The AI drafts it, you approve it, it goes everywhere at once.',
+    first_post: 'Pick a photo from the inbox, or start blank. The AI drafts it, you publish it, it goes everywhere at once.',
   }
   const next = progress.steps.find((s) => !s.done)
   return (
