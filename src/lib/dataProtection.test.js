@@ -122,3 +122,14 @@ describe('3. new-sign-in alerts', () => {
     expect(m).toMatch(/grant execute on function public\.new_sign_ins\(\) to service_role;/)
   })
 })
+
+describe('the Export button is not there for non-admins', () => {
+  it('the gate renders children only for someone who may export', () => {
+    expect(read('src/lib/exportGuard.js')).toMatch(/export function ExportGate\(\{ children \}\) \{\n\s+const user = useStore\(\(s\) => s\.user\)\n\s+return canExport\(user\) \? children : null/)
+  })
+  it.each(['Customers', 'Leads', 'Jobs', 'Estimates', 'ProductsServices', 'Inventory', 'Fleet', 'Appointments'])('%s wraps its Export button', (p) => {
+    const s = read(`src/pages/${p}.jsx`)
+    expect(s).toMatch(/<ExportGate>\n\s+(<Tooltip text="Export to CSV">\n\s+)?<button onClick=\{\(\) => exportTo(CSV|XLSX)\(/)
+    expect(s).toMatch(/import \{ ExportGate \} from '\.\.\/lib\/exportGuard'/)
+  })
+})

@@ -15,7 +15,8 @@ import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { isManager as checkManager, isAdmin as checkAdmin, canAccessDevTools } from '../lib/accessControl'
 import { productsServicesFields } from '../lib/importExportFields'
-import { datasheetRows } from '../lib/specScrub'
+import { datasheetRows } from '../lib/specScrub'
+import { ExportGate } from '../lib/exportGuard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -1824,12 +1825,14 @@ Click OK only if you're sure this is a label correction and not a different prod
                   </button>
                 </Tooltip>
               )}
+              <ExportGate>
               <Tooltip text="Export to CSV">
                 <button onClick={() => exportToCSV(filteredProducts, productsServicesFields, 'products_services_export')} style={{ ...buttonStyle, backgroundColor: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                   <Download size={18} />
                   {!isMobile && 'Export'}
                 </button>
               </Tooltip>
+              </ExportGate>
             </>
           )}
           {isDeveloper && activeSection && (

@@ -11,7 +11,8 @@ import {
 import Tooltip from '../components/Tooltip'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { inventoryFields } from '../lib/importExportFields'
-import { groupProductsForPicker } from '../lib/variants'
+import { groupProductsForPicker } from '../lib/variants'
+import { ExportGate } from '../lib/exportGuard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -789,9 +790,11 @@ export default function Inventory() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
               <Upload size={18} /> {!isMobile && 'Import'}
             </button>
+            <ExportGate>
             <button onClick={() => exportToCSV(filteredInventory, inventoryFields, 'inventory_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '12px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
               <Download size={18} /> {!isMobile && 'Export'}
             </button>
+            </ExportGate>
           <button
             onClick={() => openForm()}
             style={{ ...buttonStyle, backgroundColor: theme.accent, color: '#fff' }}

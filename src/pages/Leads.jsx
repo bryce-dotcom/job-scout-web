@@ -14,7 +14,8 @@ import { fromZonedInput, DEFAULT_TZ } from '../lib/dateTz'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
-import { findSimilarLeads } from '../lib/leadDuplicates'
+import { findSimilarLeads } from '../lib/leadDuplicates'
+import { ExportGate } from '../lib/exportGuard'
 
 const LEAD_STATUSES = ['New', 'Contacted', 'Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won', 'Lost']
 const STATUS_LABELS = { 'Quote Sent': 'Estimate Sent' }
@@ -551,10 +552,12 @@ export default function Leads() {
             <Upload size={18} />
             {!isMobile && 'Import'}
           </button>
+          <ExportGate>
           <button onClick={() => exportToCSV(filteredLeads, leadsFields, 'leads_export')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} />
             {!isMobile && 'Export'}
           </button>
+          </ExportGate>
           <button onClick={openAddModal} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: isMobile ? '10px 14px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: theme.accent, color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Plus size={20} />
             {isMobile ? 'Add' : 'Add Lead'}

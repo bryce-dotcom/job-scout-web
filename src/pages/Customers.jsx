@@ -12,7 +12,8 @@ import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
 import { recordConsent, consentDisclosure, smsTermsPath } from '../lib/smsConsent'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { matchPhoneOrTokens, buildBlob, tokenize } from '../lib/searchUtils'
+import { matchPhoneOrTokens, buildBlob, tokenize } from '../lib/searchUtils'
+import { ExportGate } from '../lib/exportGuard'
 
 const emptyCustomer = {
   name: '',
@@ -301,9 +302,11 @@ export default function Customers() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
+          <ExportGate>
           <button onClick={() => exportToCSV(filteredCustomers, customersFields, 'customers_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', minHeight: '44px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
+          </ExportGate>
           <button
             onClick={openAddModal}
             style={{

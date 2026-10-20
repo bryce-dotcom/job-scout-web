@@ -16,7 +16,8 @@ import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import SearchableSelect from '../components/SearchableSelect'
 import { appointmentsFields } from '../lib/importExportFields'
 import { fromZonedInput, toZonedInput, DEFAULT_TZ } from '../lib/dateTz'
-import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { isAdmin as checkAdmin } from '../lib/accessControl'
+import { ExportGate } from '../lib/exportGuard'
 
 // Appointments are scheduled in the crew's timezone, not the browser's — a rep
 // on a laptop still set to Pacific must not book an hour off.
@@ -760,9 +761,11 @@ export default function Appointments() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
+          <ExportGate>
           <button onClick={() => exportToCSV(storeAppointments || [], appointmentsFields, 'appointments_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
+          </ExportGate>
           <button
             onClick={() => openBlockTimeModal()}
             style={{

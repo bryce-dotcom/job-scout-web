@@ -31,7 +31,8 @@ import { countsByCustomer, customerIdsOf, batchIds, repeatChip } from '../lib/cu
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import PageHeader from '../components/PageHeader'
 import SearchableSelect from '../components/SearchableSelect'
-import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
+import { salespersonOptions, hasHiddenSalespeople } from '../lib/salespeople'
+import { ExportGate } from '../lib/exportGuard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -1167,9 +1168,11 @@ export default function Jobs() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={16} /> {!isMobile && 'Import'}
           </button>
+          <ExportGate>
           <button onClick={() => exportToXLSX(filteredJobs, jobsFields, 'jobs_export', { relatedTables: jobRelatedTables, parentRefField: 'job_id', mainSheetName: 'Jobs', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={16} /> {!isMobile && 'Export'}
           </button>
+          </ExportGate>
           <button
             onClick={() => navigate('/jobs/calendar')}
             style={{

@@ -13,7 +13,8 @@ import PageHeader from '../components/PageHeader'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 import { configFromSettings, labelsFor, documentType } from '../lib/documentVocabulary'
 import { describeToArnie } from '../lib/arnieEstimate'
-import { findSimilarLeads } from '../lib/leadDuplicates'
+import { findSimilarLeads } from '../lib/leadDuplicates'
+import { ExportGate } from '../lib/exportGuard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -324,9 +325,11 @@ export default function Estimates() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} />{!isMobile && ' Import'}
           </button>
+          <ExportGate>
           <button onClick={() => exportToXLSX(filteredEstimates, estimatesFields, 'estimates_export', { relatedTables: estimateRelatedTables, parentRefField: 'quote_id', mainSheetName: 'Estimates', companyId })} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: isMobile ? '10px' : '10px 16px', minHeight: isMobile ? '44px' : 'auto', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} />{!isMobile && ' Export'}
           </button>
+          </ExportGate>
           {/* Describe it to Arnie: say or type the project; Arnie drafts the
 
               lines from the price book and the card creates the estimate. */}

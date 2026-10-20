@@ -54,3 +54,13 @@ export function guardExport(what, { rows = null, fileName = null, user = null } 
   logExport({ what, rows, fileName, allowed: true })
   return true
 }
+
+/**
+ * Renders its children only for someone who may export — so the Export
+ * button is not there at all for everyone else, instead of answering a click
+ * with "admin-only".
+ */
+export function ExportGate({ children }) {
+  const user = useStore((s) => s.user)
+  return canExport(user) ? children : null
+}

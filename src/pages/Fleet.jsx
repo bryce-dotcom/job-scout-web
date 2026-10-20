@@ -11,7 +11,8 @@ import { supabase } from '../lib/supabase'
 import { Truck, Search, Plus, AlertTriangle, Calendar, Wrench, Settings, Upload, Download, ShieldAlert } from 'lucide-react'
 import ImportExportModal, { exportToCSV } from '../components/ImportExportModal'
 import { fleetFields } from '../lib/importExportFields'
-import { parseLocalDate } from '../lib/localDate'
+import { parseLocalDate } from '../lib/localDate'
+import { ExportGate } from '../lib/exportGuard'
 
 // Light theme fallback
 const defaultTheme = {
@@ -223,9 +224,11 @@ export default function Fleet() {
           <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Upload size={18} /> Import
           </button>
+          <ExportGate>
           <button onClick={() => exportToCSV(filteredFleet, fleetFields, 'fleet_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
             <Download size={18} /> Export
           </button>
+          </ExportGate>
           <button
             onClick={() => navigate('/fleet/calendar')}
             style={{
