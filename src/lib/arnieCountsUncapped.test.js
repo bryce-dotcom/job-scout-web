@@ -69,3 +69,10 @@ describe('a reply that calls a tool mid-way reads as two paragraphs', () => {
     expect(chat).toMatch(/send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)/)
   })
 })
+
+describe('fixture identification', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('an existing LED fixture is not swapped for another LED (Cole photo test, 2026-10-19)', () => {
+    expect(chat).toMatch(/A fixture that is already LED has nothing to retrofit and no rebate/)
+  })
+})
