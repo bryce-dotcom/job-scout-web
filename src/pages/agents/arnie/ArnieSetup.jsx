@@ -10,6 +10,7 @@ import { useStore } from '../../../lib/store'
 import { Wrench, Check, X, RotateCcw, Send, Sparkles, ShieldAlert, MessageCircle } from 'lucide-react'
 import MorningBriefSettings from './MorningBriefSettings'
 import ArnieMemories from './ArnieMemories'
+import ArnieTeamRules from './ArnieTeamRules'
 import ArnieAtWork from './ArnieAtWork'
 import ArnieRules from './ArnieRules'
 import ArniePersona from './ArniePersona'
@@ -108,6 +109,7 @@ export default function ArnieSetup() {
         <ArniePersona onChanged={refreshPersona} />
         <MorningBriefSettings />
         <ArnieRules isAdmin={false} />
+        <ArnieTeamRules isAdmin={false} name={who} />
         <ArnieMemories />
         <div style={{ textAlign: 'center', marginTop: 24 }}>
         <ShieldAlert size={28} color={t.muted} />
@@ -138,6 +140,7 @@ export default function ArnieSetup() {
       <ArniePersona onChanged={refreshPersona} />
       <MorningBriefSettings />
       <ArnieRules isAdmin={isAdmin} />
+      <ArnieTeamRules isAdmin={isAdmin} name={who} />
       <ArnieMemories />
 
       {/* The assistant lives in the corner launcher too. */}

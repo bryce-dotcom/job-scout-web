@@ -33,6 +33,7 @@ import { applyEmployee, prepareEmployee, rollbackEmployee } from './arnieEmploye
 import { applyPriceBook, preparePriceBook, rollbackPriceBook } from './arniePriceBook.ts'
 import { applyWon, prepareWon, rollbackWon } from './arnieWon.ts'
 import { applySchedule, prepareSchedule, rollbackSchedule } from './arnieSchedule.ts'
+import { applyCompanyRule, prepareCompanyRule, rollbackCompanyRule } from './arnieCompanyRules.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -506,6 +507,28 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     rollbackCustom: rollbackRoutine,
   },
 
+  // "Jenny, new rule: every exterior SRP light is 12/7." A rule for EVERYONE
+  // in the company, not a memory about one person: an admin approves it and
+  // every assistant follows it from the next message (arnieCompanyRules.ts).
+  // Teach Jenny — Bryce, 2026-10-20, so nobody trains her in an outside AI.
+  company_rule: {
+    label: 'company rule',
+    table: 'company_rules',
+    minLevel: 3,
+    verb: 'Teach',
+    button: 'Teach everyone',
+    done: 'Taught. Every assistant in the company follows it from the next message; the list is on Arnie → Setup.',
+    fields: {
+      rules:  { column: null, label: 'Rules',  max: 20000, raw: true },
+      retire: { column: null, label: 'Retire', max: 200 },
+      topic:  { column: null, label: 'Topic',  max: 40 },
+      source: { column: null, label: 'Source', max: 12, oneOf: ['chat', 'import'] },
+    },
+    labelOf: (f) => { try { const v = JSON.parse(f.rules || '[]'); return Array.isArray(v) && v.length ? (v.length === 1 ? String(v[0]) : `${v.length} company rules`).slice(0, 120) : 'retire a company rule' } catch { return String(f.rules || 'company rule').slice(0, 120) } },
+    prepare: prepareCompanyRule,
+    applyCustom: applyCompanyRule,
+    rollbackCustom: rollbackCompanyRule,
+  },
   memory: {
     label: 'memory',
     table: 'arnie_memories',
@@ -626,7 +649,7 @@ export async function proposeCreate(
   if (companyId == null) return { error: 'No company on this login.' }
   const target = CREATE_TARGETS[input.target]
   if (!target) return { error: `"${input.target}" isn't something Arnie can create. It can create: ${createTargetsSentence()}.` }
-  if (caller.level < target.minLevel) return { error: `Creating a ${target.label} is above your access level. Ask a manager.` }
+  if (caller.level < target.minLevel) return { error: `Creating a ${target.label} is above your access level. Ask ${target.minLevel >= 3 ? 'an admin' : 'a manager'}.` }
 
   const cleaned = cleanFields(target, input.fields)
   if (!cleaned.ok) return { error: cleaned.error }
