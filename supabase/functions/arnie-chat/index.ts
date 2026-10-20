@@ -2119,6 +2119,9 @@ const LAST_STEP_NOTE = '\n\n## You are out of steps for this reply\nYou have use
 
 /** Is this message asking for work on their computer? Broad on purpose: a
  *  false yes costs a second of streaming, a false no shows an invented step. */
+/** "Let me do it now:", "I'll take a screenshot now" — a promise to act, at the END of a reply. */
+const PROMISE_TO_ACT = /\b(let me|i'll|i will|going to|about to)\s+(do it|do that|take|grab|try|open|click|type|go|check|look|get)\b[^.!?]{0,80}([:…]|\.{3}|\bnow\b[.!]?)\s*$/i
+
 // Typed fast on a phone, too: London's "take a screenshto fo whats infront"
 // (2026-10-20) missed "screenshot", so the reply streamed unchecked.
 const COMPUTER_ASK = /\b(my (computer|pc|mac|laptop|desktop|screen|machine)|on (the|my|this) (computer|pc|mac|laptop|machine)|chrome|safari|firefox|microsoft edge|excel|outlook|teams|notepad|file explorer|finder|traksmart|screenshot|my (texts|messages|email|inbox|gmail)|gmail|ctrl\+|address bar)\b|\bscre+n ?sh?o?t?\w*|\bscrn ?sh?o?t\w*|\bwhat'?s? ?(is )?in ?front\b|\bin ?front of (me|you|my)\b/i
@@ -2765,6 +2768,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         // "Taking a screenshot now… I said I was taking a screenshot, but I didn't
         // actually send anything. Let me do it now:" — and the turn ended there.
         let forceComputer = false
+        let promisedOnce = false
         // ON THEIR COMPUTER, WORDS WAIT FOR THE WORK. A streamed claim cannot
         // be unsaid: on 2026-10-15 Jenny wrote out a whole Gmail visit — "Clicking
         // the Bryce profile… 9 unread, top one from Bryce" — in a round with no
@@ -2929,6 +2933,21 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 forceComputer = claim === 'computer' && computerAsk
                 continue
               }
+            }
+            // A PROMISE with nothing behind it. London, 2026-10-20, after "please
+            // don't lie to me, I know you didn't take a screenshot": "…Let me do
+            // it now:" — and the reply ended, twice, with no action sent. Not a
+            // claim of having done it, so the truth check let it through. When
+            // they asked for computer work, she said she would, and no computer
+            // tool ran this turn, she gets ONE more round that must use it.
+            if (computerAsk && !promisedOnce && !used.has('use_my_computer') && PROMISE_TO_ACT.test(text)) {
+              promisedOnce = true
+              flush()
+              send('text', { delta: '\n\n' })
+              convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
+              convo.push({ role: 'user', content: '(From the system, not the person.) You said you would do it on their computer but did not call use_my_computer. Call it now. If it is refused or cannot be done, say exactly what it said.' })
+              forceComputer = true
+              continue
             }
             flush()
             send('done', {})

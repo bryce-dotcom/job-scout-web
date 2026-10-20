@@ -119,3 +119,17 @@ describe('job counts and dollars come totalled from the tool', () => {
     expect(chat).toMatch(/out\.total_job_total = Math\.round\(got\.rows\.reduce/)
   })
 })
+
+describe('a promise to act on their computer is kept, once', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const re = new Function(`return ${chat.match(/const PROMISE_TO_ACT = (\/.*\/i)\n/)[1]}`)()
+  it('"Let me do it now:" at the end of a reply is a promise; an ordinary sign-off is not', () => {
+    expect(re.test("I didn't actually send anything to your machine yet. Let me do it now:")).toBe(true)
+    expect(re.test("I'll grab that screenshot now")).toBe(true)
+    expect(re.test('Let me know if you want more.')).toBe(false)
+    expect(re.test('Want me to check another state?')).toBe(false)
+  })
+  it('a promise with no computer tool used forces one more round that must use it', () => {
+    expect(chat).toMatch(/if \(computerAsk && !promisedOnce && !used\.has\('use_my_computer'\) && PROMISE_TO_ACT\.test\(text\)\) \{\n\s+promisedOnce = true[\s\S]{0,900}forceComputer = true\n\s+continue/)
+  })
+})
