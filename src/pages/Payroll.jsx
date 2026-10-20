@@ -2395,6 +2395,54 @@ export default function Payroll() {
   // commission toggle so a business that runs payroll through an outside
   // provider can still mark bonuses paid (they drop off the owed list). In-app
   // Run Payroll marks them automatically; this is the manual equivalent.
+  // Take a bonus OFF the books.
+  //
+  // 20 Oct 2026. Alayda went to delete a bonus, and the only control that
+  // asks for an explanation is Release — so she typed her reason into the
+  // prompt and the system verified it instead, the opposite of what she
+  // wanted. A held bonus had no way out except to be paid.
+  //
+  // Void is the other door. Same reason discipline as a release, because the
+  // same thing is true of both: in six months somebody will want to know why.
+  // The row STAYS, carrying the amount and the sentence — a deleted row tells
+  // nobody anything, and syncJobBonuses would mint it again on the next page
+  // load regardless. 'void' is frozen alongside 'paid' (lib/bonusLedger
+  // FROZEN_STATUSES), which is the part that makes it stick.
+  const handleVoidBonus = async (bonusRow) => {
+    const adminEmp = employees.find(e => e.email === user?.email)
+    const jobLabel = bonusRow.jobs?.job_title || `Job ${bonusRow.job_id}`
+    const crew = employees.find(e => String(e.id) === String(bonusRow.employee_id))
+    const forWho = crew?.name ? ` for ${crew.name}` : ''
+    const reason = window.prompt(
+      `Void this bonus?\n\n${jobLabel} — ${fmt(parseFloat(bonusRow.amount) || 0)}${forWho}\n\n` +
+      'It comes off the books and stops showing as owed. It is not deleted — the amount and this reason stay on the record.\n\n' +
+      'Say why.',
+      ''
+    )
+    if (reason === null) return   // cancelled
+    if (!isUsableOverrideReason(reason)) {
+      alert('That reason is too short to be useful later.\n\nWrite a sentence a person could read in six months — why this bonus should not exist.')
+      return
+    }
+    try {
+      const { error } = await supabase.from('job_bonuses')
+        .update({
+          status: 'void',
+          queued_for_payroll: false,
+          override_reason: reason.trim(),
+          verification_overridden_by: adminEmp?.id || null,
+          verification_overridden_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bonusRow.id)
+      if (error) throw error
+      setLedgerBonuses(prev => prev.map(b => b.id === bonusRow.id
+        ? { ...b, status: 'void', queued_for_payroll: false, override_reason: reason.trim() }
+        : b))
+      toast.success('Bonus voided.')
+    } catch (err) { toast.error('Could not void it: ' + err.message) }
+  }
+
   const handleBonusesPaid = async (bonusRows, paid = true) => {
     const ids = (bonusRows || []).map(b => b.id).filter(Boolean)
     if (!ids.length) return
@@ -3318,6 +3366,9 @@ export default function Payroll() {
                     )}
                     {isAdmin && b.needs_verification && b.status !== 'paid' && b.employee_id === signedInEmployeeId && (
                       <span style={{ fontSize: 10, color: theme.textMuted, fontStyle: 'italic' }}>yours — another admin releases it</span>
+                    )}
+                    {isAdmin && b.status !== 'paid' && b.status !== 'void' && (
+                      <button onClick={() => handleVoidBonus(b)} title="Take this bonus off the books" style={{ padding: '4px 10px', background: 'none', border: `1px solid ${theme.border}`, color: '#b4442e', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Void</button>
                     )}
                     {isAdmin && b.status === 'accrued' && !b.needs_verification && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

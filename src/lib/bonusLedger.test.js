@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { syncJobBonuses, bonusStatusLabel } from './bonusLedger'
+import { syncJobBonuses, bonusStatusLabel, heldReasonLabel, FROZEN_STATUSES, isFrozen } from './bonusLedger'
 
 // ─────────────────────────────────────────────────────────────────────────
 // The ledger is what actually gets paid — bonusCalc only computes. Its whole
@@ -251,7 +251,14 @@ describe('a bonus that is no longer earned', () => {
       upsert: (rows) => { log.upserted.push(...rows); return Promise.resolve({ error: null }) },
       delete: () => {
         const f = {}
-        const chain = { eq: (col, val) => { f[col] = val; return chain }, neq: () => { log.deleted.push(f); return Promise.resolve({ error: null }) } }
+        // neq chains: the delete guards against BOTH frozen statuses, so the
+        // fake has to be chainable and awaitable at the same time.
+        let logged = false
+        const chain = {
+          eq: (col, val) => { f[col] = val; return chain },
+          neq: (col, val) => { f['neq:' + col] = [...(f['neq:' + col] || []), val]; if (!logged) { logged = true; log.deleted.push(f) } return chain },
+          then: (res) => Promise.resolve({ error: null }).then(res),
+        }
         return chain
       },
     }),
@@ -503,5 +510,70 @@ describe('a paid bonus names the cheque that paid it', () => {
     // paystub, which is the other half of the same mess.
     const page = read('src/pages/Payroll.jsx')
     expect(page).toMatch(/\.eq\('status', 'accrued'\)\.eq\('queued_for_payroll', true\)\.eq\('needs_verification', false\)/)
+  })
+})
+
+describe('a voided bonus stays voided', () => {
+  // 20 Oct 2026. Alayda went to delete a bonus; the only control that asks
+  // for an explanation is Release, so she typed her reason in and the system
+  // verified it instead. Void is the other door — and it only works if a
+  // recompute cannot undo it.
+  //
+  // syncJobBonuses runs on EVERY Payroll page load. It used to freeze `paid`
+  // alone, which is why clearing rows never stuck: the next render minted
+  // them again (Christopher Lyman, 2 Oct). `void` is frozen the same way, for
+  // the mirror-image reason — paid is money that went out, void is a person
+  // saying it should not exist, and neither is the engine's to reverse.
+  const VOIDED = [{ job_id: 900, employee_id: 7, status: 'void', accrued_at: null }]
+
+  it('is not recomputed, whatever the money says', async () => {
+    const { captured } = await sync({ existing: VOIDED, paid: 5000 })
+    expect(captured).toHaveLength(0)
+  })
+
+  it('is not recomputed when the job has no money in either', async () => {
+    const { captured } = await sync({ existing: VOIDED, paid: 0 })
+    expect(captured).toHaveLength(0)
+  })
+
+  it('contributes nothing to what is owed or upcoming', async () => {
+    const { result } = await sync({ existing: VOIDED, paid: 5000 })
+    expect(result.accruedTotal).toBe(0)
+    expect(result.pendingTotal).toBe(0)
+  })
+
+  it('carries no held-for-verification message', () => {
+    // "Needs verification" on a bonus nobody is going to pay is noise.
+    expect(heldReasonLabel({ status: 'void', needs_verification: true, release_reason: 'no_clocked_time' })).toBe(null)
+    expect(heldReasonLabel({ status: 'accrued', needs_verification: true, release_reason: 'no_clocked_time' }))
+      .toBe('Held - nobody clocked in on this job')
+  })
+
+  it('reads as Void on screen', () => {
+    expect(bonusStatusLabel({ status: 'void' }).label).toBe('Void')
+  })
+
+  it('freezes exactly paid and void, and nothing else', () => {
+    expect([...FROZEN_STATUSES].sort()).toEqual(['paid', 'void'])
+    expect(isFrozen({ status: 'accrued' })).toBe(false)
+    expect(isFrozen({ status: 'pending' })).toBe(false)
+    expect(isFrozen(null)).toBe(false)
+  })
+})
+
+describe('the nightly cron freezes the same statuses', () => {
+  // api/cron/resync-bonuses.js has its own copy of the recompute — it is a
+  // CommonJS Vercel handler and cannot import this module. It runs over every
+  // tenant every night, so if it does not freeze `void` it undoes every void
+  // by morning, and the button looks like it worked for a day. Nothing
+  // behavioural can see that; this greps it.
+  it('skips a voided row as well as a paid one', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const cron = readFileSync(resolve(here, '../../api/cron/resync-bonuses.js'), 'utf8')
+    const skip = cron.match(/if \(ex && \(?([^)]*status[^)]*)\)?\) \{ frozen\+\+; continue \}/)
+    expect(skip, 'the frozen-status skip in the cron').toBeTruthy()
+    for (const status of FROZEN_STATUSES) {
+      expect(skip[1], `cron must freeze '${status}'`).toContain(`'${status}'`)
+    }
   })
 })

@@ -603,7 +603,8 @@ export default function MyPay() {
   })
   const accruedBonusTotal = accruedBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
   const pendingBonusTotal = pendingBonuses.reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
-  const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid').length
+  // A voided bonus is not waiting on anybody — it is off the books.
+  const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid' && b.status !== 'void').length
 
   // Owed bonuses (money already collected) count toward gross pay, and so do
   // setter commissions — leaving them out is what made this page disagree

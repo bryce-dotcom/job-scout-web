@@ -16,7 +16,20 @@
 //                       needed to split crew bonuses correctly, so it owns writes.
 
 import { computeJobBonusRows } from './bonusCalc'
+
 import { mergeJobHourSources } from './jobHours'
+
+// Statuses a recompute must never touch.
+//
+// 'paid' was always frozen — recomputing money that already went out is a
+// double-pay or a silent clawback. 'void' has to be frozen for the same
+// reason pointing the other way: a person decided this bonus should not
+// exist, and syncJobBonuses runs on every Payroll page load. Freezing only
+// 'paid' is why deleting rows never stuck — they came straight back on the
+// next render (Christopher Lyman, 2 Oct 2026). A decision a person made is
+// not the engine's to reverse; only a person undoes it.
+export const FROZEN_STATUSES = new Set(['paid', 'void'])
+export const isFrozen = (row) => FROZEN_STATUSES.has(row?.status)
 
 // ── Reader ─────────────────────────────────────────────────────────────
 // All of one employee's bonus rows, newest first, with the job title joined.
@@ -220,7 +233,7 @@ export async function syncJobBonuses({
     for (const r of rows) {
       const key = `${job.id}|${r.employee_id}`
       const ex = existingByKey.get(key)
-      if (ex?.status === 'paid') continue // frozen — never recompute a paid bonus
+      if (isFrozen(ex)) continue // paid or voided — a person's decision, not ours
       const status = (moneyIn || ex?.status === 'accrued') ? 'accrued' : 'pending'
       if (status === 'accrued') accruedTotal += r.amount; else pendingTotal += r.amount
       // Preserve a payroll verification override: once a human released it,
@@ -273,7 +286,7 @@ export async function syncJobBonuses({
   // already went out stays recorded.
   const stale = (existing || []).filter(r =>
     evaluatedJobIds.has(r.job_id) &&
-    r.status !== 'paid' &&
+    !isFrozen(r) &&
     !producedKeys.has(`${r.job_id}|${r.employee_id}`),
   )
   let removed = 0
@@ -286,7 +299,11 @@ export async function syncJobBonuses({
         .eq('company_id', companyId)
         .eq('job_id', r.job_id)
         .eq('employee_id', r.employee_id)
+        // Chained neq rather than not-in: the same AND, and it keeps the
+        // guard readable beside the isFrozen() filter that already scoped
+        // this list.
         .neq('status', 'paid')
+        .neq('status', 'void')
       if (error) { console.error('syncJobBonuses remove', error.message); break }
       removed += 1
     }
@@ -303,7 +320,7 @@ export async function syncJobBonuses({
  * time that never landed on the job (lib/bonusCalc's backstops).
  */
 export function heldReasonLabel(row) {
-  if (!row?.needs_verification || row.status === 'paid') return null
+  if (!row?.needs_verification || isFrozen(row)) return null
   switch (row.release_reason) {
     case 'no_clocked_time': return 'Held - nobody clocked in on this job'
     case 'job_not_finished': return 'Held - job still open, hours not all in'

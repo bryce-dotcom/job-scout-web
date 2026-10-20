@@ -101,7 +101,10 @@ module.exports = async function handler(req, res) {
         const moneyIn = (jobPaymentStatus.get(job.id)?.paid || 0) > 0.005
         for (const r of rows) {
           const ex = existingByKey.get(`${job.id}|${r.employee_id}`)
-          if (ex && ex.status === 'paid') { frozen++; continue } // frozen — never recompute a paid bonus
+          // paid or voided: a person's decision either way, and this runs
+          // nightly over every tenant. Mirrors FROZEN_STATUSES in
+          // src/lib/bonusLedger.js — the two must move together.
+          if (ex && (ex.status === 'paid' || ex.status === 'void')) { frozen++; continue }
           const status = moneyIn ? 'accrued' : 'pending'
           if (status === 'accrued') accrued++; else pending++
           // Preserve an admin verification release so the nightly run never re-flags it.
