@@ -366,6 +366,11 @@ export default function PurchaseOrderDetail() {
 
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      // send-email refuses the bare anon key (2026-10-20): send the signed-in
+      // user's token, refreshed if it has expired.
+      let userToken = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (!userToken) userToken = (await supabase.auth.refreshSession())?.data?.session?.access_token
+      if (!userToken) throw new Error('Your session has expired. Sign out and back in, then send it again.')
       const ccList = sendCc.split(',').map(s => s.trim()).filter(Boolean)
       const toList = [sendEmail.trim(), ...ccList]
       const companyName = company?.company_name || company?.name || 'Our Company'
@@ -386,7 +391,7 @@ export default function PurchaseOrderDetail() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ANON_KEY}`,
+          'Authorization': `Bearer ${userToken}`,
           'apikey': ANON_KEY,
         },
         body: JSON.stringify({

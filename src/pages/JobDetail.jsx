@@ -3755,9 +3755,13 @@ function JobDetailInner() {
       setSubmittalProgress('Sending email...')
       const companyName = job?.business_unit || company?.name || 'Our Company'
       const customerName = getCustomerPrimary(job.customer) || ''
-      // Call via direct fetch with anon key to avoid expired-JWT 401s
+      // Direct fetch. send-email refuses the bare anon key (2026-10-20), so the
+      // bearer is the signed-in user's token — refreshed if it has expired.
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let userToken = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (!userToken) userToken = (await supabase.auth.refreshSession())?.data?.session?.access_token
+      if (!userToken) throw new Error('Your session has expired. Sign out and back in, then send it again.')
       const docCount = fetched.filter(f => f.folder === 'Documents').length
       const photoCount = fetched.filter(f => f.folder === 'Photos').length
       const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -3857,7 +3861,7 @@ function JobDetailInner() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ANON_KEY}`,
+          'Authorization': `Bearer ${userToken}`,
           'apikey': ANON_KEY,
         },
         body: JSON.stringify(emailBody),

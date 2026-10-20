@@ -423,6 +423,13 @@ verify_jwt = false
 [functions.send-estimate]
 verify_jwt = true
 
+# send-email does its own caller check (servers or an active employee; the anon
+# key is refused — it was an open relay until 2026-10-20). Keep the gateway
+# check on too: every caller sends a real JWT, and a plain redeploy must not
+# quietly open it.
+[functions.send-email]
+verify_jwt = true
+
 [functions.estimate-followup]
 verify_jwt = true
 

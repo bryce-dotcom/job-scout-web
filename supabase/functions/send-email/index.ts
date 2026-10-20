@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { authorizeEmailCaller, companySenderNames, restrictFrom } from '../_shared/emailSender.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,20 @@ Deno.serve(async (req) => {
     })
 
   try {
+    // Who is asking? Our servers, or a signed-in active employee — never the
+    // anon key alone (it ships in every browser bundle). See _shared/emailSender.ts.
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+    const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    const auth = await authorizeEmailCaller(req, {
+      supabaseUrl: SUPABASE_URL,
+      serviceKey: SERVICE_KEY,
+      internalKey: Deno.env.get('ARNIE_INTERNAL_KEY'),
+    })
+    if (!auth.ok) {
+      console.warn('[send-email] refused: caller is not a service or an active employee')
+      return json({ success: false, error: auth.error }, auth.status)
+    }
+
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
     if (!RESEND_API_KEY) {
       return json({ success: false, error: 'RESEND_API_KEY not configured' })
@@ -31,7 +46,7 @@ Deno.serve(async (req) => {
       return json({ success: false, error: 'Invalid JSON body' })
     }
 
-    const { to, subject, html, from, reply_to, attachments } = payload as {
+    const { to, subject, html, reply_to, attachments } = payload as {
       to?: string | string[]
       subject?: string
       html?: string
@@ -44,6 +59,19 @@ Deno.serve(async (req) => {
 
     if (!to || !subject) {
       return json({ success: false, error: 'to and subject are required' })
+    }
+
+    // A signed-in person sends as their company (or one of its business
+    // units) from one of our mailboxes — never a name and domain of their
+    // choosing. Servers keep the `from` they ask for.
+    let from = payload.from as string | undefined
+    if (auth.kind === 'employee') {
+      const names = await companySenderNames(auth.caller.companyId as number, SUPABASE_URL, SERVICE_KEY)
+      const asked = from
+      from = restrictFrom(asked, names)
+      if ((asked || '').trim() !== from) {
+        console.warn('[send-email] from rewritten for', auth.caller.email, { asked, used: from })
+      }
     }
 
     // Sanitize from. Resend rejects non-ASCII and is strict about
@@ -85,7 +113,7 @@ Deno.serve(async (req) => {
         }))
     }
 
-    console.log('[send-email] sending', { to: requestBody.to, from: requestBody.from, subjectLen: subject.length, htmlLen: (html || '').length })
+    console.log('[send-email] sending', { by: auth.kind === 'employee' ? auth.caller.email : 'service', to: requestBody.to, from: requestBody.from, subjectLen: subject.length, htmlLen: (html || '').length })
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
