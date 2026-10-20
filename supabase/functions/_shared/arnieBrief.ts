@@ -18,7 +18,8 @@
 
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { readRecordList, readAllRecords } from './arnieRest.ts'
+import { readRecordList, readAllRecords } from './arnieRest.ts'
+import { withEffectiveTotals } from './quoteTotals.ts'
 import { invoiceCustomerTotal, isSettledStatus } from './money.ts'
 import { moneyAccess, myPay } from './arnieMoney.ts'
 import { tzOffsetMinutes } from './arnieTime.ts'
@@ -98,9 +99,13 @@ export async function dailyBrief(r: Rest, caller: Caller, input: { date?: string
     const weekAgo = new Date(new Date(start).getTime() - 7 * 86400000).toISOString()
     const [teamOpenShifts, staleQuotes, dupLeads] = await Promise.all([
       readRecordList(r, `time_clock?select=id,employee_id,clock_in,job_id&company_id=eq.${companyId}&clock_out=is.null&clock_in=lt.${start}&order=clock_in&limit=50`),
-      readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,sent_date,last_sent_at,status,salesperson_id&company_id=eq.${companyId}&status=not.in.(Approved,Rejected,Won,Lost,Expired)&approved_date=is.null&rejected_date=is.null&or=(last_sent_at.lt.${weekAgo},and(last_sent_at.is.null,sent_date.lt.${weekAgo.slice(0, 10)}))&order=quote_amount.desc.nullslast`), // ALL — a capped read told Cole "200" when there were 931
+      readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,discount,sent_date,last_sent_at,status,salesperson_id&company_id=eq.${companyId}&status=not.in.(Approved,Rejected,Won,Lost,Expired)&approved_date=is.null&rejected_date=is.null&or=(last_sent_at.lt.${weekAgo},and(last_sent_at.is.null,sent_date.lt.${weekAgo.slice(0, 10)}))&order=quote_amount.desc.nullslast`), // ALL — a capped read told Cole "200" when there were 931
       readRecordList(r, `leads?select=id,business_name,customer_name,possible_duplicate_of,created_at,lead_owner_id&company_id=eq.${companyId}&possible_duplicate_of=not.is.null&created_at=gte.${weekAgo}&order=created_at.desc&limit=20`),
     ])
+    // Worth what their LINES say (quoteTotals.ts), largest first — the stored
+    // quote_amount drifts, and one typo was most of "$8.3M stale" (ST-485).
+    await withEffectiveTotals(r, companyId, staleQuotes)
+    staleQuotes.sort((a: any, b: any) => b.amount - a.amount)
     const unstaffed = sections.filter((s: any) => s.assigned_to == null)
     const byJob = new Map<number, any[]>()
     for (const s of unstaffed) byJob.set(s.job_id, [...(byJob.get(s.job_id) || []), s])
@@ -112,9 +117,9 @@ export async function dailyBrief(r: Rest, caller: Caller, input: { date?: string
       open_shifts_from_earlier_days: teamOpenShifts.map((s: any) => ({ who: name(s.employee_id), since: s.clock_in, job_id: s.job_id })),
       stale_quotes: {
         count: staleQuotes.length,
-        total: money(staleQuotes.reduce((s: number, q: any) => s + num(q.quote_amount), 0)),
+        total: money(staleQuotes.reduce((s: number, q: any) => s + num(q.amount), 0)),
         rule: 'Sent more than 7 days ago, no approval or rejection recorded.',
-        top: staleQuotes.slice(0, 5).map((q: any) => ({ quote: q.quote_id || q.estimate_name || `#${q.id}`, amount: num(q.quote_amount), sent: (q.last_sent_at || q.sent_date || '').slice(0, 10), rep: name(q.salesperson_id) })),
+        top: staleQuotes.slice(0, 5).map((q: any) => ({ quote: q.quote_id || q.estimate_name || `#${q.id}`, amount: num(q.amount), sent: (q.last_sent_at || q.sent_date || '').slice(0, 10), rep: name(q.salesperson_id) })),
       },
       possible_duplicate_leads_this_week: dupLeads.map((l: any) => ({ lead: l.business_name || l.customer_name, duplicate_of: l.possible_duplicate_of, created_by: name(l.lead_owner_id), created: String(l.created_at).slice(0, 10) })),
     }

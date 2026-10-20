@@ -15,7 +15,8 @@
 // deno-lint-ignore-file no-explicit-any
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { readRecordList, readAllRecords } from './arnieRest.ts'
+import { readRecordList, readAllRecords } from './arnieRest.ts'
+import { withEffectiveTotals } from './quoteTotals.ts'
 import { dailyBrief, dayBounds } from './arnieBrief.ts'
 
 type Any = any
@@ -50,7 +51,7 @@ export async function jobscoutRefresh(r: Rest, caller: Caller, input: { date?: s
     // ALL of them. This was limit=50, so Cole's refresh said "50 approved
     // estimates not yet jobs, $292.9k" when there were 157 worth $632.8k — and
     // a second report the same day said 159 (2026-10-14). See below for the 2.
-    readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,approved_date,salesperson_id&company_id=eq.${companyId}&status=eq.Approved&job_id=is.null&order=approved_date.desc.nullslast`),
+    readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,discount,approved_date,salesperson_id&company_id=eq.${companyId}&status=eq.Approved&job_id=is.null&order=approved_date.desc.nullslast`),
   ])
   // An estimate a job POINTS BACK to (jobs.quote_id) has become a job even if
   // its own job_id was never stamped — the Closed rule counts it converted
@@ -63,22 +64,25 @@ export async function jobscoutRefresh(r: Rest, caller: Caller, input: { date?: s
     }
     for (let i = approvedNotJobs.length - 1; i >= 0; i--) if (became.has(String(approvedNotJobs[i].id))) approvedNotJobs.splice(i, 1)
   }
+  // Worth what their lines say, as the app shows them (quoteTotals.ts).
+  await withEffectiveTotals(r, companyId, approvedNotJobs)
   const clock = (iso: string) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: '2-digit' }) } catch { return iso } }
   const leadSetter = {
     new_meetings_booked_since: { since, count: meetingsBooked.length, list: meetingsBooked.slice(0, 15).map((a: Any) => ({ when: clock(a.start_time), title: a.title })) },
-    approved_estimates_not_yet_jobs: { count: approvedNotJobs.length, total: money(approvedNotJobs.reduce((s: number, q: Any) => s + num(q.quote_amount), 0)), list: approvedNotJobs.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.quote_amount), approved: q.approved_date })) },
+    approved_estimates_not_yet_jobs: { count: approvedNotJobs.length, total: money(approvedNotJobs.reduce((s: number, q: Any) => s + num(q.amount), 0)), list: approvedNotJobs.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.amount), approved: q.approved_date })) },
   }
   if (lsOnly) return { date, timezone: tz, lead_setter_check: leadSetter, how_to_read: 'New meetings first, then approved estimates still waiting to become jobs. Skip a section that is empty.' }
 
   // ── the daily refresh ────────────────────────────────────────────────
   const [newLeads, newDrafts, sent, approved, tickets, myReplies] = await Promise.all([
     readRecordList(r, `leads?select=id,business_name,customer_name,lead_source,created_at&company_id=eq.${companyId}&created_at=gte.${since}&order=created_at.desc&limit=100`),
-    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,created_at&company_id=eq.${companyId}&status=eq.Draft&created_at=gte.${since}&order=created_at.desc&limit=100`),
-    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,last_sent_at&company_id=eq.${companyId}&last_sent_at=gte.${since}&order=last_sent_at.desc&limit=100`),
-    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,approved_date&company_id=eq.${companyId}&approved_date=gte.${since}&order=approved_date.desc&limit=100`),
+    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,discount,created_at&company_id=eq.${companyId}&status=eq.Draft&created_at=gte.${since}&order=created_at.desc&limit=100`),
+    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,discount,last_sent_at&company_id=eq.${companyId}&last_sent_at=gte.${since}&order=last_sent_at.desc&limit=100`),
+    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,discount,approved_date&company_id=eq.${companyId}&approved_date=gte.${since}&order=approved_date.desc&limit=100`),
     readRecordList(r, `feedback?select=id,subject,status,created_at&company_id=eq.${companyId}&status=in.(new,in_progress)&order=created_at.desc&limit=100`),
     readRecordList(r, `feedback?select=id,subject,status,replied_at&company_id=eq.${companyId}&user_email=eq.${encodeURIComponent(caller.email)}&replied_at=gte.${since}&order=replied_at.desc&limit=20`),
   ])
+  await Promise.all([withEffectiveTotals(r, companyId, newDrafts), withEffectiveTotals(r, companyId, sent), withEffectiveTotals(r, companyId, approved)])
   const brief: Any = await dailyBrief(r, caller, { date, timezone: tz })
   const banners: Any[] = []
   if (admin) {
@@ -90,9 +94,9 @@ export async function jobscoutRefresh(r: Rest, caller: Caller, input: { date?: s
     date, timezone: tz, since,
     lead_setter_check: leadSetter,
     new_leads: { count: newLeads.length, list: newLeads.slice(0, 15).map((l: Any) => ({ lead: who(l), source: l.lead_source })) },
-    new_draft_estimates: { count: newDrafts.length, list: newDrafts.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.quote_amount) })) },
-    moved_to_sent: { count: sent.length, list: sent.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.quote_amount) })) },
-    moved_to_approved: { count: approved.length, list: approved.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.quote_amount) })) },
+    new_draft_estimates: { count: newDrafts.length, list: newDrafts.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.amount) })) },
+    moved_to_sent: { count: sent.length, list: sent.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.amount) })) },
+    moved_to_approved: { count: approved.length, list: approved.slice(0, 15).map((q: Any) => ({ estimate: q.quote_id || `#${q.id}`, name: q.estimate_name, amount: num(q.amount) })) },
     todays_meetings: meetingsToday.map((a: Any) => ({ when: clock(a.start_time), title: a.title, where: a.location, status: a.status })),
     tickets: { open_for_the_company: tickets.length, replies_to_you_since: myReplies.map((t: Any) => ({ subject: t.subject, status: t.status })) },
     release_notes: 'In your instructions, under "What changed in JobScout lately" (platform company only) — summarise the ones since the last workday.',

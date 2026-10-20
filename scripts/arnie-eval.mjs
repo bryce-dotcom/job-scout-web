@@ -1262,7 +1262,18 @@ CASES.splice(CASES.findIndex(c => c.id === 'pay.tech.own') + 1, 0, {
 const results = []
 let techUserId = null
 try {
-  const tech = await (await fetch(`${U}/auth/v1/admin/users`, { method: 'POST', headers: SRH, body: JSON.stringify({ email: DEMO.tech.email, password: DEMO.tech.password, email_confirm: true }) })).json()
+  let tech = await (await fetch(`${U}/auth/v1/admin/users`, { method: 'POST', headers: SRH, body: JSON.stringify({ email: DEMO.tech.email, password: DEMO.tech.password, email_confirm: true }) })).json()
+  // A run that died before its cleanup leaves this login behind, and every run
+  // after it failed right here with email_exists — the nightly was dark from
+  // 2026-10-16 until this was noticed on 10-20. Take the leftover over with
+  // this run's password instead; the cleanup below removes it as usual.
+  if (!tech.id && /email_exists|already been registered/i.test(JSON.stringify(tech))) {
+    const found = ((await (await fetch(`${U}/auth/v1/admin/users?filter=${encodeURIComponent(DEMO.tech.email)}&per_page=10`, { headers: SRH })).json())?.users || []).find((u) => u.email === DEMO.tech.email)
+    if (found?.id) {
+      const upd = await fetch(`${U}/auth/v1/admin/users/${found.id}`, { method: 'PUT', headers: SRH, body: JSON.stringify({ password: DEMO.tech.password, email_confirm: true }) })
+      if (upd.ok) tech = { id: found.id }
+    }
+  }
   techUserId = tech.id
   if (!techUserId) throw new Error('could not create the throwaway tech login: ' + JSON.stringify(tech).slice(0, 160))
   await seed()
