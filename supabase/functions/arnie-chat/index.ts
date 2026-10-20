@@ -594,7 +594,7 @@ const PROPOSE_CREATE_TOOL = {
           'appointment: lead (required — describe it in words, never an id), when (required — YYYY-MM-DD HH:MM in the user\'s zone; work "Tuesday at 2" out from Today in Current User), timezone (from Current User), salesperson (name; omit to use the rep already on the lead), duration_minutes (default 60), location (defaults to the lead\'s address), notes. ' +
           'quote: quote (optional — an existing EMPTY Draft estimate to fill instead of creating one, as the user names it: "#5112", "EST-5112", or its name; when given, lead/customer may be omitted), lead OR customer (one required unless quote is given, in words), lines (required — an ARRAY of { item, quantity, price? }: item is the product as the user said it and the server finds it in the price book; give price ONLY if the user said one, otherwise the book price is used), estimate_name, service_type, salesperson, notes. ' +
           'quote FROM A LIGHTING TAKEOFF (when the company has an estimating playbook — see that section): instead of lines, takeoff = an ARRAY of { kind (cobra|flood|wall_pack|mini_wall_pack|dome|high_bay|t5_high_bay|t8_4ft|t8_8ft), qty (HEADS, not poles), existing_watts, lamps (T5/T8), no_lift (true only if they said no lift), mount (pole|arm|flush for cobras; trunnion|knuckle for floods), words (their own words for it), area }; business_name (the business it is for — an existing lead is matched by name, otherwise a new lead is made on the same card), address and phone ONLY as found or said, state (AZ|UT), rebate (only a figure they read you from TrakSmart). The server picks the products, prices, notes, GMs and incentive by the playbook — never pass lines with a takeoff. ' +
-          'company_rule: rules (required unless retiring — an ARRAY of strings, one rule each, each one or two plain sentences in the words they used; a pasted list from another AI or document is split into one rule per line, leaving out what the Company rules section already has, anything about one customer or job, and any password or account number), retire (numbers of existing rules to retire, comma-separated — to CHANGE a rule, retire its number and add the new wording in the same card), topic (one word: estimating, srp, closing, scheduling, general…), source (import when the rules were pasted from elsewhere, else omit). Read the card back as the rules it will add — never say it is taught until they approve it. ' +
+          'company_rule: rules (required unless retiring — an ARRAY of strings, one rule each, each one or two plain sentences in the words they used; a pasted list from another AI or document is split into one rule per line and sent WHOLE — the server skips duplicates; leave out only anything about one customer or job, and any password or account number), retire (numbers of existing rules to retire, comma-separated — to CHANGE a rule, retire its number and add the new wording in the same card), topic (one word: estimating, srp, closing, scheduling, general…), source (import when the rules were pasted from elsewhere, else omit). Read the card back as the rules it will add — never say it is taught until they approve it. ' +
           'closing_gaps: email the estimate\'s sales rep what the closing check found missing (only the rep — never the customer) — quote (required). Use it when marking an estimate won was refused for missing items. ' +
           'srp_rebate: the REAL SRP rebate from TrakSmart, written back onto an estimate that was built from a takeoff — quote (required — its number or name), rebate (required — the dollar figure exactly as TrakSmart shows it), annual_savings (the annual $ savings TrakSmart shows, if it gave one). The fixture lines stay as they are; the GMs are redone to fit the rebate and the incentive set. ' +
           'routine: prompt (required — what to check, in the words they would use), when (required — the hour as said: "7am", "half six", "noon"), routine_name (a short name for it), how (app|sms|email, default app), every_day ("yes" only if they said every day — weekdays is the default). Standing work that runs as THEM, with their access, so it sees what they see; anything it would change still comes back as a card for them to approve. ' +
@@ -1992,7 +1992,7 @@ Deno.serve(async (req) => {
         + await whoYouAreBlock(caller.employeeId)
         + await appMapFor(caller.employeeId)
         + await playbookBlock(companyId)
-        + await companyRulesBlock(companyId)
+        + await companyRulesBlock(companyId, caller.level >= 3)
         + await releasesBlock(companyId)
         + await cardsTruthBlock(companyId, caller.email)
         + await memoriesBlock(companyId, caller.employeeId)
@@ -2329,9 +2329,9 @@ You CAN send feedback and report problems: propose_create with target=ticket. Ne
  * What the TEAM has taught the assistant — company rules an admin approved
  * (Teach Jenny, 2026-10-20). Read for everyone in the company, every turn.
  */
-async function companyRulesBlock(companyId: number): Promise<string> {
+async function companyRulesBlock(companyId: number, canTeach: boolean): Promise<string> {
   try {
-    return rulesPromptBlock(await activeRules({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId))
+    return rulesPromptBlock(await activeRules({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId), canTeach)
   } catch { return '' }
 }
 

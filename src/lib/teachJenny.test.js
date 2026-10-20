@@ -83,6 +83,11 @@ describe('every assistant in the company reads them', () => {
     expect(empty).toMatch(/Company rules — what your team has taught you/)
     expect(empty).toMatch(/propose_create target=company_rule/)
     expect(empty).toMatch(/\(None yet\.\)/)
+    // A pasted list goes over WHOLE: in the live run she dropped a new rule
+    // as a "duplicate" while filtering it herself (2026-10-20).
+    expect(empty).toMatch(/send EVERY rule they gave/)
+    expect(empty).not.toMatch(/not an admin/)
+    expect(rulesPromptBlock([], false)).toMatch(/This person is not an admin, so they cannot add a company rule/)
   })
   it('lists each rule with its number and who taught it, and never widens access', () => {
     const b = rulesPromptBlock([{ id: 4, rule: 'Every exterior light uses the 12/7 schedule.', taught_by: 'cole@hhh.services', created_at: '2026-10-20T15:00:00Z' }])
@@ -93,7 +98,7 @@ describe('every assistant in the company reads them', () => {
   })
   it('arnie-chat adds the block to every company prompt and offers the card', () => {
     const chat = read('supabase/functions/arnie-chat/index.ts')
-    expect(chat).toMatch(/\+ await playbookBlock\(companyId\)\n\s+\+ await companyRulesBlock\(companyId\)/)
+    expect(chat).toMatch(/\+ await playbookBlock\(companyId\)\n\s+\+ await companyRulesBlock\(companyId, caller\.level >= 3\)/)
     expect(chat).toMatch(/'srp_rebate', 'closing_gaps', 'company_rule'\]/)
     expect(chat).toMatch(/'company_rule: rules \(required unless retiring/)
   })
