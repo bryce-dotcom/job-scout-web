@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { syncJobBonuses, bonusStatusLabel } from './bonusLedger'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -455,5 +458,26 @@ describe('a job the caller cannot see does not send a bonus backwards', () => {
   it('never resurrects a paid bonus, blind or not', async () => {
     const captured = await blind([{ job_id: 900, employee_id: 7, status: 'paid', accrued_at: '2026-08-20T00:00:00Z' }])
     expect(captured).toHaveLength(0)
+  })
+})
+
+// A payment nobody can trace is a payment nobody can defend. Alayda,
+// 2026-10-19: "I have no way of seeing what we have paid on."
+describe('a paid bonus names the cheque that paid it', () => {
+  // Payroll.jsx is CRLF — an anchor written with \n matches nothing in it.
+  const read = (p) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', p), 'utf8').replace(/\r\n/g, '\n')
+
+  it('stamps the payroll run, like every other ledger in the same block', () => {
+    const page = read('src/pages/Payroll.jsx')
+    const at = page.indexOf("from('job_bonuses')\n            .update({ status: 'paid'")
+    expect(at, 'the bonus mark-paid block moved').toBeGreaterThan(-1)
+    expect(page.slice(at, at + 400)).toMatch(/paid_payroll_run_id: payrollRun\.id/)
+  })
+
+  it('still only pays what was queued, accrued and verified', () => {
+    // Widening this is how a bonus gets stamped paid with nothing on the
+    // paystub, which is the other half of the same mess.
+    const page = read('src/pages/Payroll.jsx')
+    expect(page).toMatch(/\.eq\('status', 'accrued'\)\.eq\('queued_for_payroll', true\)\.eq\('needs_verification', false\)/)
   })
 })

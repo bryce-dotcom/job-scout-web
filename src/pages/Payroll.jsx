@@ -2531,8 +2531,17 @@ export default function Payroll() {
           // bonus queued while clear and re-flagged for review by a later
           // ledger sync was stamped paid with nothing on the paystub.
           const bonusPaid = (b) => paidEmpIds.includes(b.employee_id) && b.status === 'accrued' && b.queued_for_payroll && !b.needs_verification
+          // paid_payroll_run_id is what makes "what have we paid on?"
+          // answerable afterwards. Every other ledger below this stamps it;
+          // bonuses alone did not, so a paid bonus recorded a date and a
+          // person but nothing tying it to the cheque. Alayda, 2026-10-19:
+          // "I have no way of seeing what we have paid on." With no run on
+          // the row, a bonus knocked off `paid` by any later recompute is
+          // unrecoverable — 81 HHH rows carry a paid_at whose run nobody can
+          // name, and only the 8 that matched a paystub to the cent could be
+          // put back.
           const { error: bonusErr } = await supabase.from('job_bonuses')
-            .update({ status: 'paid', paid_at: payDate.toISOString(), paid_by: adminEmp?.id || null, queued_for_payroll: false, ...stamp })
+            .update({ status: 'paid', paid_at: payDate.toISOString(), paid_by: adminEmp?.id || null, paid_payroll_run_id: payrollRun.id, queued_for_payroll: false, ...stamp })
             .eq('company_id', companyId).in('employee_id', paidEmpIds)
             .eq('status', 'accrued').eq('queued_for_payroll', true).eq('needs_verification', false)
           if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }

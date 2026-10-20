@@ -134,7 +134,11 @@ describe('a run closes what it paid', () => {
 
   it('tags every close with the run that did it, so history can group them', () => {
     const tagged = payroll.match(/paid_payroll_run_id: payrollRun\.id/g) || []
-    expect(tagged.length).toBe(4)   // setter, rep, and both greater-of settle groups
+    // setter, rep, both greater-of settle groups — and efficiency bonuses,
+    // which were the one close that recorded a date and a person but no
+    // cheque, so a paid bonus knocked off `paid` by a later recompute could
+    // not be traced back to the run that paid it (Alayda, 2026-10-19).
+    expect(tagged.length).toBe(5)
   })
 })
 
