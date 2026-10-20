@@ -49,3 +49,10 @@ describe('the correction', () => {
     expect((chat.match(/if \(!claim && untraced\.length\) claim = 'figures'/g) || []).length).toBe(2)
   })
 })
+
+describe('figures read off a picture are not checked', () => {
+  it('a conversation with an image or a document skips the trace', () => {
+    const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+    expect(chat).toMatch(/b\?\.type === 'image' \|\| b\?\.type === 'document'\)\)\) return \[\]/)
+  })
+})

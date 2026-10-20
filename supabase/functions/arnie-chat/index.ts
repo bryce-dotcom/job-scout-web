@@ -2688,6 +2688,10 @@ async function cardPendingFor(caller: Caller): Promise<boolean | null> {
  */
 function untracedFiguresOf(text: string, systemPrompt: string, convo: any[]): string[] {
   try {
+    // Figures read off a PICTURE or an attached document exist nowhere in the
+    // text, so they cannot be traced — the eval's price-sheet photo was
+    // flagged as invented and the retry dropped the card (2026-10-20).
+    if (convo.some((m: any) => Array.isArray(m?.content) && m.content.some((b: any) => b?.type === 'image' || b?.type === 'document'))) return []
     const toolResults = convo.flatMap((m: any) => Array.isArray(m?.content) ? m.content.filter((b: any) => b?.type === 'tool_result') : [])
     return untracedFigures(text, (systemPrompt || '') + '\n' + JSON.stringify(convo), JSON.stringify(toolResults))
   } catch { return [] }
