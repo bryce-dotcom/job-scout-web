@@ -3117,7 +3117,11 @@ export default function Payroll() {
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {readyRows.length > 0 && <button onClick={() => queueSetter(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
                       {queuedRows.length > 0 && <button onClick={() => queueSetter(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
-                      <button onClick={() => { if (confirm(`Mark all ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions paid (e.g. outside the app)?`)) markCommissionsPaid(details, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark all paid</button>
+                      <button onClick={() => { if (confirm(`Record ${fmt(readyTot + queuedTot)} of ${emp.name}'s setter commissions as ALREADY PAID outside JobScout?
+
+This does NOT pay them. It records that you paid them some other way, and removes the amount from payroll so it is not paid twice.
+
+To pay through JobScout instead, cancel and use "Add to payroll".`)) markCommissionsPaid(details, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Paid outside payroll</button>
                     </div>
                   )}
                   {/* Same per-item control as the rep card. */}
@@ -3187,7 +3191,11 @@ export default function Payroll() {
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
                         {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
-                        {ready.length > 0 && <button onClick={() => { if (confirm(`Mark all ${fmt(readyTot + queuedTot)} of ${emp.name}'s rep commissions paid (e.g. outside the app)?`)) markRepCommissionsPaid(ready, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark all paid</button>}
+                        {ready.length > 0 && <button onClick={() => { if (confirm(`Record ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions as ALREADY PAID outside JobScout?
+
+This does NOT pay them. It records that you paid them some other way, and removes the amount from payroll so it is not paid twice.
+
+To pay through JobScout instead, cancel and use "Add to payroll".`)) markRepCommissionsPaid(ready, true) }} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Paid outside payroll</button>}
                       </div>
                     )}
                     {/* Per-job control. The bulk button above stays for the
@@ -3255,7 +3263,11 @@ export default function Payroll() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
                   {owed.length > 0 && (
                     <button
-                      onClick={() => { if (confirm(`Mark ${fmt(owedTotal)} of owed bonuses paid? Use this if you paid them outside the app — they'll drop off the owed list.`)) handleBonusesPaid(owed, true) }}
+                      onClick={() => { if (confirm(`Record ${fmt(owedTotal)} of bonuses as ALREADY PAID outside JobScout?
+
+This does NOT pay them. It records that you paid them some other way, and removes the amount from payroll so it is not paid twice.
+
+To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonusesPaid(owed, true) }}
                       style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                     >
                       Mark {fmt(owedTotal)} paid
@@ -3380,7 +3392,7 @@ export default function Payroll() {
                         ) : (
                           <button onClick={() => queueBonuses([b], true)} style={{ padding: '4px 10px', background: theme.accent, color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Add to payroll</button>
                         )}
-                        <button onClick={() => { if (confirm('Mark this bonus paid (e.g. paid outside the app)?')) handleBonusesPaid([b], true) }} style={{ padding: '4px 10px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Mark paid</button>
+                        <button onClick={() => { if (confirm('Record this bonus as ALREADY PAID outside JobScout?\n\nThis does NOT pay it. It records that you paid it some other way, and removes it from payroll so it is not paid twice.')) handleBonusesPaid([b], true) }} style={{ padding: '4px 10px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Paid outside</button>
                       </div>
                     )}
                   </div>

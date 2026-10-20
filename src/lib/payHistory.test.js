@@ -164,3 +164,33 @@ describe('both surfaces show the same history', () => {
     expect(read('src/lib/repCommissions.js')).toMatch(/paid_payroll_run_id/)
   })
 })
+
+// Alayda, 2026-10-20, on Damien Hargett: "she pulled those numbers straight
+// from the payroll page and paid them through payroll in jobscout." She did
+// what the screen said. The green button beside the payroll controls read
+// "Mark all paid", and it does not pay anybody — it records that you paid
+// them somewhere else and takes the amount OFF payroll. Damien's stub in the
+// run she processed reads $0.00 gross, $0.00 net, while $604.67 of his
+// commission was stamped paid two minutes before that run was even created.
+describe('the button that records a payment cannot read as the button that makes one', () => {
+  const page = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', 'src/pages/Payroll.jsx'), 'utf8').replace(/\r\n/g, '\n')
+
+  it('no longer offers "Mark all paid" next to the payroll controls', () => {
+    expect(page).not.toMatch(/>Mark all paid<\/button>/)
+    expect(page).not.toMatch(/>Mark paid<\/button>/)
+  })
+
+  it('says outside payroll on the control itself', () => {
+    expect(page).toMatch(/>Paid outside payroll<\/button>/)
+  })
+
+  it('every one of those paths warns that it does NOT pay', () => {
+    // three bulk controls (setter, rep, bonuses) plus the single bonus row
+    const warnings = page.match(/This does NOT pay/g) || []
+    expect(warnings.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('and says it removes the amount from payroll, which is the part that bit', () => {
+    expect(page).toMatch(/removes the amount from payroll so it is not paid twice/)
+  })
+})
