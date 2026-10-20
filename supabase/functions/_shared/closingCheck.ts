@@ -30,6 +30,10 @@ export interface ClosingInput {
 export interface Gap { item: string; detail: string }
 
 const GM = (n: string) => /^MES Cobra Head Mount - /i.test(n) || /^ES LIFT$/i.test(n) || /^lift gm$/i.test(n)
+// A GM is also what the rep CALLED one: Cole's Luxury RV estimate carries a
+// "Custom Item" described "Boom Lift GM", and the check demanded height,
+// wattage and a spec sheet for it (2026-10-19). GM lines need none of that.
+const isGmLine = (l: Any) => GM(String(l?.item_name || '').trim()) || /\bGMs?\b/.test(`${l?.item_name || ''} ${l?.description || ''} ${l?.notes || ''}`)
 const MOUNTED = /cobra|flood/i
 
 /** Is this estimate in Arizona? The address, else an "AZ " estimate name. */
@@ -52,7 +56,7 @@ export function closingGaps(x: ClosingInput): Gap[] {
 
   // Notes on every fixture line: the height, the existing wattage, and the
   // mount where it has one. GM lines are not fixtures.
-  const fixtures = x.lines.filter((l) => !GM(String(l.item_name || '').trim()))
+  const fixtures = x.lines.filter((l) => !isGmLine(l))
   if (!fixtures.length) gaps.push({ item: 'Line items', detail: 'the estimate has no fixture lines' })
   for (const l of fixtures) {
     const text = `${l.description || ''} ${l.notes || ''}`

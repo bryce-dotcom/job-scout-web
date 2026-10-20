@@ -41,6 +41,14 @@ describe("Cole's closing check, item by item", () => {
   it('GM lines need no notes and no spec sheet', () => {
     expect(items(complete())).not.toContain('Spec sheets')
   })
+  it('a custom line the rep CALLED a GM is a GM (Luxury RV: "Custom Item", "Boom Lift GM")', () => {
+    const x = complete(); x.lines.push({ item_id: null, item_name: 'Custom Item', description: 'Boom Lift GM' })
+    expect(closingGaps(x)).toEqual([])
+  })
+  it('a custom FIXTURE line still needs its notes and a spec sheet', () => {
+    const x = complete(); x.lines.push({ item_id: null, item_name: 'Custom Item', description: 'LED canopy light' })
+    expect(items(x)).toEqual(expect.arrayContaining(['Line notes', 'Spec sheets']))
+  })
   it('signed terms are required in Arizona — and a signature on the lead counts', () => {
     const x = complete(); x.quote = { ...x.quote, signed_proposal_attachment_id: null }
     expect(items(x)).toContain('Signed terms')

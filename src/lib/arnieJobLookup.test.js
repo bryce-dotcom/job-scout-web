@@ -70,7 +70,7 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
   const s = chat.slice(chat.indexOf('async function streamWithTools'))
   it('held only for computer work; ordinary chat still streams word by word', () => {
     expect(s).toMatch(/const hold = computerAsk \|\| used\.has\('use_my_computer'\)/)
-    expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\n\s+else \{ send\('text', \{ delta: evt\.delta\.text \}\); shownAny = true \}/)
+    expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\r?\n\s+else \{\s+send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)\s+shownAny = true/)
   })
   it('a held claim is never shown — he is corrected out of sight, as unseen', () => {
     expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false\)[\s\S]{0,40}continue/)

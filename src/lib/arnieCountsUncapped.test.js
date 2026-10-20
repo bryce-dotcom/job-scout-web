@@ -48,3 +48,24 @@ describe('the counts Cole reads are uncapped', () => {
     expect(src('arnieRefresh.ts')).toMatch(/jobs\?select=quote_id/)
   })
 })
+
+describe('spec sheets come from JobScout only', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('query_products hands back the spec sheet JobScout holds, own or a bundle component\'s', () => {
+    expect(chat).toMatch(/async function specSheetsFor\(companyId: number, ids: number\[\]\)/)
+    expect(chat).toMatch(/p\.spec_sheet = sheets\[String\(p\.id\)\] \|\| null/)
+    expect(chat).toMatch(/product_components\?select=parent_product_id,component_product_id/)
+  })
+  it('the playbook tells her never to send them to a supplier or the internet', () => {
+    expect(chat).toMatch(/Spec sheets come from JobScout ONLY/)
+    expect(chat).toMatch(/Never point them to the manufacturer, a supplier or the internet/)
+  })
+})
+
+describe('a reply that calls a tool mid-way reads as two paragraphs', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('a new round\'s first streamed words start a new paragraph', () => {
+    expect(chat).toMatch(/let roundShown = false/)
+    expect(chat).toMatch(/send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)/)
+  })
+})

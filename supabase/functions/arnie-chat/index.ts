@@ -795,6 +795,31 @@ function cardsFor(body: Record<string, unknown>): string[] {
 const squash = (s: unknown) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
 /**
+ * The spec sheet JobScout holds for each product: its own, else the first
+ * component's inside the bundle — the same rule the closing check uses
+ * (_shared/closingCheck.ts). Keyed by product id; absent = none on file.
+ */
+async function specSheetsFor(companyId: number, ids: number[]): Promise<Record<string, string>> {
+  if (!ids.length) return {}
+  const h = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+  const get = async (path: string) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: h })
+    return res.ok ? await res.json().catch(() => []) : []
+  }
+  const comps: any[] = await get(`product_components?select=parent_product_id,component_product_id&company_id=eq.${companyId}&parent_product_id=in.(${ids.join(',')})&limit=2000`)
+  const all = [...new Set([...ids, ...comps.map((c) => c.component_product_id)])]
+  const prods: any[] = await get(`products_services?select=id,spec_sheet_url&company_id=eq.${companyId}&id=in.(${all.join(',')})&spec_sheet_url=not.is.null&limit=3000`)
+  const url: Record<string, string> = Object.fromEntries(prods.map((p) => [String(p.id), p.spec_sheet_url]))
+  const out: Record<string, string> = {}
+  for (const id of ids) {
+    const own = url[String(id)]
+    const comp = comps.filter((c) => c.parent_product_id === id).map((c) => url[String(c.component_product_id)]).find(Boolean)
+    if (own || comp) out[String(id)] = own || comp
+  }
+  return out
+}
+
+/**
  * The most recent image on the conversation, as Lenard wants it.
  *
  * Attachments arrive as Anthropic content blocks; the newest one wins, because
@@ -1696,10 +1721,24 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           String(inactiveNote.scope || '')
       }
 
+      // The spec sheet JobScout already holds — the product's own, or a
+      // component's inside the bundle. Cole asked for "the spec sheet for the
+      // cobra head" and was sent to MES's website for one that was sitting on
+      // the product all along (2026-10-19). His rule: spec sheets come from
+      // JobScout ONLY, never the internet.
+      let specNote: Record<string, unknown> = {}
+      if (!grouping && got.rows.length && got.rows.length <= 50) {
+        const ids = got.rows.map((p: any) => p.id).filter(Boolean)
+        const sheets = await specSheetsFor(companyId, ids)
+        for (const p of got.rows as any[]) p.spec_sheet = sheets[String(p.id)] || null
+        specNote = { spec_sheets: 'spec_sheet is the file JobScout holds for that product (its own, or a component\'s inside the bundle) — give that link. null means JobScout has none: say so and that it can be added on the product\'s Documents in Products & Services. NEVER send them to the manufacturer, a supplier or the internet for one.' }
+      }
+
       return {
         matches: got.total,
         showing: got.rows.length,
         products: got.rows,
+        ...specNote,
         ...inactiveNote,
         ...(got.truncated
           ? { WARNING: `Listing ${got.rows.length} of ${got.total} matches. Do NOT draw a conclusion about all of them from this page — re-run with group_by to cover the whole set.` }
@@ -2191,6 +2230,7 @@ When someone says "create a new quote" (or estimate, or bid) on site:
 4. When the count arrives, read it back briefly — counts, wattages, lift or no-lift — then call propose_create target=quote with a takeoff (NOT lines) and business_name/address/phone/state. Ask about something only if the rules cannot decide it (existing watts for a fixture they did not give; whether a cobra is on a pole or an arm only if mounts matter). Do not ask about products, prices or business unit: the playbook decides those. It stays a Draft — do not suggest sending it, making a PDF or DocuSign unless they ask.
 5. The SRP rebate from TrakSmart: before the estimate exists, pass it as rebate on the quote. After it exists, call propose_create target=srp_rebate with the estimate, the rebate and the annual savings — the GMs and incentive are redone to fit and the fixtures are left alone. That is also how a TrakSmart run on their computer finishes: read the incentive and savings off the Assessment Report, then write them back this way.
 6. Closing ("they signed", "mark it won"): the won card runs the closing check — customer name, phone, email and address; business unit; project name; notes on every line (height, existing wattage, mount); signed terms (Arizona); spec sheets from Products & Services; annual savings. If it refuses, say what is missing and offer to email that job's rep the list (closing_gaps). Approving is "Approve and Record": nothing goes to the customer.
+7. Spec sheets come from JobScout ONLY: query_products gives each product's spec_sheet (its own, or a component's inside the bundle) — give that link. If it is null, say JobScout has none and it can be added on the product's Documents in Products & Services. Never point them to the manufacturer, a supplier or the internet for one. GM lines need no spec sheet.
 An admin sees and changes these rules in Settings → Estimating Playbook.
 The playbook (do not override it, and explain it if asked): products only from the ${pb.catalog_type} section; business unit ${pb.business_unit}; quantities are heads, not poles; exterior is 20 ft on a lift unless marked no-lift (15 ft, the no-lift product), interior never on a lift; Arizona swaps — cobra or shoebox (400W, 750W or more) to a 60W LED cobra, 400W flood to 45W and 750W+ to 60W, 400W wall pack to 30-40W, mini 15W wall packs only for small security lights above doors, dome to a 25W wall pack, high bays up to 400W to a 60W LED high bay, 6-lamp T5 to a full high bay, 4 ft T8 to Type B tubes, 8 ft T8 to 43W 8 ft tubes; GMs only while the rebate keeps the customer at $0 — $77 mounts first (cobras before floods), then the ES LIFT item at $49.98 an hour (2 hours per fixture on a lift, 1 off); incentive = the lower of the rebate and the subtotal; never a discount; never sent, no PDF, never marked sent unless asked.`
   } catch { return '' }
@@ -2645,6 +2685,10 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
           const hold = computerAsk || used.has('use_my_computer')
           let pending = ''
+          // A new round's first words start a new paragraph, streamed or held:
+          // "I'll build that estimate for you now.Got it — here's…" was the
+          // tool call's before and after run together (Cole's takeoff, 2026-10-19).
+          let roundShown = false
           const flush = () => {
             if (!pending) return
             send('text', { delta: (shownAny ? '\n\n' : '') + pending.replace(/^\s+/, '') })
@@ -2712,7 +2756,11 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                   if (evt.delta.type === 'text_delta') {
                     b.text = (b.text || '') + evt.delta.text
                     if (hold) pending += evt.delta.text
-                    else { send('text', { delta: evt.delta.text }); shownAny = true }
+                    else {
+                      send('text', { delta: (shownAny && !roundShown ? '\n\n' : '') + evt.delta.text })
+                      shownAny = true
+                      roundShown = true
+                    }
                   } else if (evt.delta.type === 'input_json_delta') {
                     b.input_buf = (b.input_buf || '') + evt.delta.partial_json
                   } else if (evt.delta.type === 'thinking_delta') {
