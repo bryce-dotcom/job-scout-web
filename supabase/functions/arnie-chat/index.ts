@@ -11,7 +11,7 @@ import { fabricationIn, correctionFor, CARD_TOOLS as PROPOSE_TOOLS, type Fabrica
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
-import { playbookFor } from '../_shared/lightingPlaybook.ts'
+import { playbookFor, parseTakeoff, planEstimate } from '../_shared/lightingPlaybook.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
 import { setGoals, scoreboard, localDay, dayStartUtc } from '../_shared/repGoals.ts'
 
@@ -318,6 +318,18 @@ const TOOLS = [
     name: 'query_lighting_products',
     description: "What this company sells for lighting — the price-book sections configured for Lenard, and the products on them. Use this for 'what do we put on a 400W wall pack', 'what high bays do we sell', 'what does the cobra head cost'. Products come from the configured section ONLY, never from a name search, because that is the shelf the company has chosen to quote from.",
     input_schema: { type: 'object', properties: { like: { type: 'string', description: 'Narrow by name if they named a kind of fixture (\"high bay\", \"wall pack\").' } } },
+  },
+  {
+    name: 'query_lighting_swap',
+    description: "What the company's estimating playbook puts up for existing fixtures — the exact product, price and line note it would quote, without building anything. Use this for 'what would you swap a 1000W flood for', 'what goes on a 6-lamp T5', 'what do we replace these with'. Read-only: nothing is created. Give the product names it returns; never answer a swap question with just a wattage.",
+    input_schema: { type: 'object', properties: {
+      takeoff: { type: 'array', items: { type: 'object', properties: {
+        kind: { type: 'string', enum: ['cobra', 'flood', 'wall_pack', 'mini_wall_pack', 'dome', 'high_bay', 't5_high_bay', 't8_4ft', 't8_8ft'] },
+        qty: { type: 'number' }, existing_watts: { type: 'number' }, lamps: { type: 'number' },
+        no_lift: { type: 'boolean' }, location: { type: 'string', enum: ['exterior', 'interior'] }, words: { type: 'string' },
+      }, required: ['kind', 'qty'] } },
+      state: { type: 'string', description: 'AZ or UT if known' },
+    }, required: ['takeoff'] },
   },
   {
     name: 'analyse_fixture_photo',
@@ -1468,6 +1480,29 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       return await lightingCatalogue({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, input)
     }
 
+    if (name === 'query_lighting_swap') {
+      // Cole asked "what would you swap a 1000W flood for… just tell me the
+      // products" and got "60W LED flood" — a wattage, not the product he
+      // quotes (2026-10-19). The playbook already knows the product; ask it,
+      // with no estimate built.
+      const h = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+      const sres = await fetch(`${SUPABASE_URL}/rest/v1/settings?select=value&company_id=eq.${companyId}&key=eq.estimating_playbook&order=id.desc&limit=1`, { headers: h })
+      const pb = playbookFor(sres.ok ? (await sres.json().catch(() => []))?.[0]?.value : null)
+      if (!pb) return { error: 'This company has no estimating playbook set up, so there is no rule for what replaces what. Say what is on the lighting shelf instead.' }
+      const items = parseTakeoff(input.takeoff, pb)
+      if (typeof items === 'string') return { error: items }
+      const cres = await fetch(`${SUPABASE_URL}/rest/v1/products_services?select=id,name,unit_price,type&company_id=eq.${companyId}&active=eq.true&type=eq.${encodeURIComponent(pb.catalog_type)}&limit=3000`, { headers: h })
+      const catalog = cres.ok ? await cres.json().catch(() => []) : []
+      const state = /^(az|arizona)$/i.test(String(input.state || '')) ? 'AZ' : /^(ut|utah)$/i.test(String(input.state || '')) ? 'UT' : null
+      const plan = planEstimate(items, catalog, { rebateGiven: null, state, playbook: pb })
+      if (!plan.ok) return { error: plan.error }
+      return {
+        playbook: pb.name,
+        swaps: plan.lines.filter((l) => l.role === 'fixture').map((l) => ({ product: l.item_name.trim(), price_each: l.price, quantity: l.quantity, note: l.description })),
+        means: `Each row is the ${pb.catalog_type} product the playbook quotes for that fixture. Nothing was built — offer to draft the quote if they want one.`,
+      }
+    }
+
     if (name === 'analyse_fixture_photo') {
       // The photo rides on the conversation, not in the tool input — the model
       // cannot pass an image through a tool call, so the turn handler stashes
@@ -2231,7 +2266,7 @@ When someone says "create a new quote" (or estimate, or bid) on site:
 5. The SRP rebate from TrakSmart: before the estimate exists, pass it as rebate on the quote. After it exists, call propose_create target=srp_rebate with the estimate, the rebate and the annual savings — the GMs and incentive are redone to fit and the fixtures are left alone. That is also how a TrakSmart run on their computer finishes: read the incentive and savings off the Assessment Report, then write them back this way.
 6. Closing ("they signed", "mark it won"): the won card runs the closing check — customer name, phone, email and address; business unit; project name; notes on every line (height, existing wattage, mount); signed terms (Arizona); spec sheets from Products & Services; annual savings. If it refuses, say what is missing and offer to email that job's rep the list (closing_gaps). Approving is "Approve and Record": nothing goes to the customer.
 7. Spec sheets come from JobScout ONLY: query_products gives each product's spec_sheet (its own, or a component's inside the bundle) — give that link. If it is null, say JobScout has none and it can be added on the product's Documents in Products & Services. Never point them to the manufacturer, a supplier or the internet for one. GM lines need no spec sheet.
-8. The swaps are for EXISTING metal halide, HPS, fluorescent and other old lamps. A fixture that is already LED has nothing to retrofit and no rebate — say so and do not propose replacing it, unless they ask. When asked what to put up, name the product from the ${pb.catalog_type} section the playbook would pick, not just a wattage.
+8. The swaps are for EXISTING metal halide, HPS, fluorescent and other old lamps. A fixture that is already LED has nothing to retrofit and no rebate — say so and do not propose replacing it, unless they ask. When asked what to put up, call query_lighting_swap and name the product it returns, not just a wattage.
 An admin sees and changes these rules in Settings → Estimating Playbook.
 The playbook (do not override it, and explain it if asked): products only from the ${pb.catalog_type} section; business unit ${pb.business_unit}; quantities are heads, not poles; exterior is 20 ft on a lift unless marked no-lift (15 ft, the no-lift product), interior never on a lift; Arizona swaps — cobra or shoebox (400W, 750W or more) to a 60W LED cobra, 400W flood to 45W and 750W+ to 60W, 400W wall pack to 30-40W, mini 15W wall packs only for small security lights above doors, dome to a 25W wall pack, high bays up to 400W to a 60W LED high bay, 6-lamp T5 to a full high bay, 4 ft T8 to Type B tubes, 8 ft T8 to 43W 8 ft tubes; GMs only while the rebate keeps the customer at $0 — $77 mounts first (cobras before floods), then the ES LIFT item at $49.98 an hour (2 hours per fixture on a lift, 1 off); incentive = the lower of the rebate and the subtotal; never a discount; never sent, no PDF, never marked sent unless asked.`
   } catch { return '' }

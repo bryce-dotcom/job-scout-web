@@ -76,3 +76,17 @@ describe('fixture identification', () => {
     expect(chat).toMatch(/A fixture that is already LED has nothing to retrofit and no rebate/)
   })
 })
+
+describe('what would we put up — the playbook answers, read-only', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('query_lighting_swap is a tool and runs the same planner the quote card uses', () => {
+    expect(chat).toMatch(/name: 'query_lighting_swap'/)
+    const body = chat.slice(chat.indexOf("if (name === 'query_lighting_swap')"), chat.indexOf("if (name === 'analyse_fixture_photo')"))
+    expect(body).toMatch(/parseTakeoff\(input\.takeoff, pb\)/)
+    expect(body).toMatch(/planEstimate\(items, catalog/)
+    expect(body).not.toMatch(/method: 'POST'|PATCH|DELETE/)
+  })
+  it('the playbook sends swap questions to it', () => {
+    expect(chat).toMatch(/call query_lighting_swap and name the product it returns/)
+  })
+})
