@@ -2084,14 +2084,20 @@ function EstimateDetailInner() {
       const dpLabel = formalCfg.down_payment_label || 'Deposit'
 
       // Call edge function via direct fetch so we can read the actual
-      // error body instead of the generic "non-2xx status code" wrapper
+      // error body instead of the generic "non-2xx status code" wrapper.
+      // send-estimate refuses the anon key (anyone holding the bundle could
+      // mail any company's estimate with it), so the bearer is the signed-in
+      // user's token — refreshed if it has expired.
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
       const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+      let userToken = (await supabase.auth.getSession())?.data?.session?.access_token
+      if (!userToken) userToken = (await supabase.auth.refreshSession())?.data?.session?.access_token
+      if (!userToken) throw new Error('Your session has expired. Sign out and back in, then send it again.')
       const sendRes = await fetch(`${SUPABASE_URL}/functions/v1/send-estimate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ANON_KEY}`,
+          'Authorization': `Bearer ${userToken}`,
           'apikey': ANON_KEY,
         },
         body: JSON.stringify({

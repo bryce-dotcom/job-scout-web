@@ -169,11 +169,17 @@ export async function sendInvoice(supabase, { invoice, lines, customer, company,
     parentInvoice, linkedUtilityInvoice, job, utilityProviders, defaultUtilityProviderId,
   })
 
+  // send-invoice refuses the anon key (anyone holding the bundle could mail
+  // any company's invoice with it), so the bearer is the signed-in user's
+  // token — refreshed if it has expired.
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
   const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+  let userToken = (await supabase.auth.getSession())?.data?.session?.access_token
+  if (!userToken) userToken = (await supabase.auth.refreshSession())?.data?.session?.access_token
+  if (!userToken) throw new Error('Your session has expired. Sign out and back in, then send it again.')
   const res = await fetch(`${SUPABASE_URL}/functions/v1/send-invoice`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON_KEY}`, 'apikey': ANON_KEY },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}`, 'apikey': ANON_KEY },
     body: JSON.stringify(payload),
   })
   const data = await res.json().catch(() => ({}))

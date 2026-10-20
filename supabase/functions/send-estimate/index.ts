@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveQuoteEmailLinks, renderQuoteEmailLinks } from "../_shared/quoteEmailLinks.ts";
 import { replyAddress } from "../_shared/replyToken.ts";
 import { sendGate, sendGateMessage, resolveDocumentType } from "../_shared/sourcedPricing.ts";
+import { authorizeDocumentSend, mayAttachPath, senderName } from "../_shared/emailSender.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,6 +67,26 @@ serve(async (req) => {
       acknowledge_unverified,
     } = await req.json();
 
+    // Who is asking, for which company's estimate? Our servers, or an active
+    // employee of the company that owns it — never the anon key alone (it
+    // ships in every browser bundle). See _shared/emailSender.ts.
+    const send = await authorizeDocumentSend(req, {
+      supabaseUrl: SUPABASE_URL,
+      serviceKey: SERVICE_ROLE_KEY,
+      internalKey: Deno.env.get('ARNIE_INTERNAL_KEY'),
+    }, { table: 'quotes', id: estimate_id });
+    if (!send.ok) {
+      console.warn('[send-estimate] refused', send.status, estimate_id);
+      return new Response(JSON.stringify({ error: send.error }),
+        { status: send.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    // The estimate's own company, not the body's company_id: the price gate
+    // below read the body's, so naming another company skipped every line.
+    const companyId = send.companyId;
+    if (_company_id != null && Number(_company_id) !== companyId) {
+      console.warn('[send-estimate] body company_id', _company_id, 'is not the estimate\'s', companyId);
+    }
+
     const isInteractive = presentation_mode === 'interactive';
     const isFormal = presentation_mode === 'formal';
     const word: string = String(document_word || ((isInteractive || isFormal) ? 'Proposal' : 'Estimate')).trim() || 'Estimate';
@@ -95,18 +116,18 @@ serve(async (req) => {
         .from('quote_lines')
         .select('id, item_name, price_source, price_verified_at')
         .eq('quote_id', estimate_id)
-        .eq('company_id', _company_id);
+        .eq('company_id', companyId);
       const { data: gateQuote } = await supabase
         .from('quotes')
         .select('document_type')
         .eq('id', estimate_id)
-        .eq('company_id', _company_id)
+        .eq('company_id', companyId)
         .maybeSingle();
       let settingRaw: unknown = null;
       if (!gateQuote?.document_type && !document_type) {
         const { data: sRows } = await supabase
           .from('settings').select('value')
-          .eq('company_id', _company_id).eq('key', 'document_types').limit(1);
+          .eq('company_id', companyId).eq('key', 'document_types').limit(1);
         settingRaw = sRows?.[0]?.value ?? null;
       }
       const kind = resolveDocumentType(gateQuote?.document_type || document_type, settingRaw);
@@ -123,6 +144,12 @@ serve(async (req) => {
 
     // Download PDF from Supabase Storage (PDF estimates only — formal and
     // interactive modes don't attach a PDF since the customer uses the portal)
+    // For a signed-in person, only a file the estimate's company owns.
+    if (!(await mayAttachPath(send, pdf_storage_path, SUPABASE_URL, SERVICE_ROLE_KEY))) {
+      console.warn('[send-estimate] refused attachment', pdf_storage_path, 'for company', companyId);
+      return new Response(JSON.stringify({ error: 'That PDF belongs to another company.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     let pdfBase64 = '';
     if (pdf_storage_path && !isInteractive && !isFormal) {
       const { data: pdfData, error: dlError } = await supabase.storage
@@ -154,7 +181,7 @@ serve(async (req) => {
     try {
       const { data: linkSetting } = await supabase
         .from('settings').select('value')
-        .eq('company_id', _company_id).eq('key', 'quote_email_links').maybeSingle();
+        .eq('company_id', companyId).eq('key', 'quote_email_links').maybeSingle();
       extraLinksHtml = renderQuoteEmailLinks(
         resolveQuoteEmailLinks(linkSetting?.value, business_unit_name)
       );
@@ -162,7 +189,9 @@ serve(async (req) => {
       // A footer link is never a reason not to send the estimate.
     }
 
-    const displayName = business_unit_name || company_name || 'Our Company';
+    // A signed-in person sends as the company or one of its business units.
+    const askedName = business_unit_name || company_name || 'Our Company';
+    const displayName = send.kind === 'employee' ? senderName(askedName, send.names) : askedName;
     const contactPhone = business_unit_phone || '';
     const contactEmail = business_unit_email || '';
     const contactAddress = business_unit_address || '';

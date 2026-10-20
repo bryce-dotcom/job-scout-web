@@ -417,10 +417,16 @@ verify_jwt = false
 # These two send customer email from estimates@appsannex.com and MUST require a
 # JWT: send-estimate mails any recipient with any estimate on request, and
 # estimate-followup mass-mails on a bare POST. Both callers carry one — the
-# app sends the anon key, the Vercel cron the service role key. Pinned because
+# app sends the user's session token, the Vercel cron the service role key. Pinned because
 # a deploy on 2026-09-11 briefly ran with --no-verify-jwt and a plain redeploy
 # did NOT switch verification back on; the setting only follows this file.
+# The gateway check alone is not enough: the anon key is a JWT too, so since
+# 2026-10-20 send-estimate and send-invoice also check the caller themselves
+# (servers, or an active employee of the document's company — emailSender.ts).
 [functions.send-estimate]
+verify_jwt = true
+
+[functions.send-invoice]
 verify_jwt = true
 
 # send-email does its own caller check (servers or an active employee; the anon

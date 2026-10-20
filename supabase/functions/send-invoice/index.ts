@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { parseEmailList } from "../_shared/emailList.ts";
 import { paymentMethodNames, parsePaymentConfig } from "../_shared/paymentMethods.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeDocumentSend, mayAttachPath, senderName } from "../_shared/emailSender.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,6 +53,22 @@ serve(async (req) => {
       extra_attachments,
     } = await req.json();
 
+    // Who is asking, for which company's invoice? Our servers, or an active
+    // employee of the company that owns it — never the anon key alone (it
+    // ships in every browser bundle). See _shared/emailSender.ts.
+    const send = await authorizeDocumentSend(req, {
+      supabaseUrl: SUPABASE_URL,
+      serviceKey: SERVICE_ROLE_KEY,
+      internalKey: Deno.env.get('ARNIE_INTERNAL_KEY'),
+    }, { table: 'invoices', id: invoice_id });
+    if (!send.ok) {
+      console.warn('[send-invoice] refused', send.status, invoice_id);
+      return new Response(JSON.stringify({ error: send.error }),
+        { status: send.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    // The invoice's own company, not the body's company_id.
+    const companyId = send.companyId;
+
     if (!recipient_email || !invoice_id) {
       return new Response(JSON.stringify({ error: 'recipient_email and invoice_id are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -67,7 +84,13 @@ serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Download PDF from Supabase Storage
+    // Download PDF from Supabase Storage — for a signed-in person, only a
+    // file the invoice's company owns.
+    if (!(await mayAttachPath(send, pdf_storage_path, SUPABASE_URL, SERVICE_ROLE_KEY))) {
+      console.warn('[send-invoice] refused attachment', pdf_storage_path, 'for company', companyId);
+      return new Response(JSON.stringify({ error: 'That PDF belongs to another company.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     let pdfBase64 = '';
     if (pdf_storage_path) {
       const { data: pdfData, error: dlError } = await supabase.storage
@@ -90,7 +113,9 @@ serve(async (req) => {
     }
 
     // Resolve branding
-    const displayName = business_unit_name || company_name || 'Our Company';
+    // A signed-in person sends as the company or one of its business units.
+    const askedName = business_unit_name || company_name || 'Our Company';
+    const displayName = send.kind === 'employee' ? senderName(askedName, send.names) : askedName;
     const contactPhone = business_unit_phone || '';
     const contactEmail = business_unit_email || '';
     const contactAddress = business_unit_address || '';
@@ -126,12 +151,12 @@ serve(async (req) => {
     // when the caller sends nothing we read it here with the service role.
     // A caller that did send a list still wins, byte for byte as before.
     let methods: string[] = Array.isArray(payment_methods) ? payment_methods : [];
-    if (methods.length === 0 && company_id) {
+    if (methods.length === 0 && companyId) {
       try {
         const { data: pcRow } = await supabase
           .from('settings')
           .select('value')
-          .eq('company_id', company_id)
+          .eq('company_id', companyId)
           .eq('key', 'payment_config')
           .maybeSingle();
         methods = paymentMethodNames(parsePaymentConfig(pcRow?.value));
