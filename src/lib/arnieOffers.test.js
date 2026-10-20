@@ -142,7 +142,8 @@ describe('the machine still has the last word', () => {
   it('launching is the one action not checked against what is in front', () => {
     // Because that is what launching IS. Checking it made opening a program
     // impossible, which is most of the way back to having no hands.
-    expect(agent).toMatch(/if \(a\.app && a\.kind !== 'launch'\)/)
+    // (and the background browser, which has nothing "in front" — 2026-10-19)
+    expect(agent).toMatch(/if \(a\.app && a\.kind !== 'launch' && !isBg\)/)
     expect(agent).toMatch(/case 'launch': return await launchApp\(a\.app\)/)
   })
 

@@ -38,7 +38,11 @@ import { readFile, unlink } from 'node:fs/promises'
 import {
   frontmostApp, screenshot, clickAt, scroll, typeText, pressKey, launchApp, pngSize, checkPermissions, permissionNotes,
   capabilities, platformName, browserKind, frontWindowTitle, isBrowserWindowTitle, focusBrowserWindow,
+  activateTitle, activateProfile,
 } from './agent/hands.mjs'
+// The assistant's own background browser (app 'browser'). See browser.mjs.
+import * as bg from './agent/browser.mjs'
+bg.setWindowHooks({ frontTitle: frontWindowTitle, activate: activateTitle, activateProfile })
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
@@ -337,8 +341,31 @@ const toScreen = (x, y) => (lastShot && Number.isFinite(Number(x)) && Number.isF
   ? [lastShot.ox + Number(x) * lastShot.sx, lastShot.oy + Number(y) * lastShot.sy]
   : [x, y])
 
+// The background browser: same kinds, no mouse, no keyboard, no focus.
+const bgRun = async (a) => {
+  const t = a.target || {}
+  const up = await bg.ensureBrowser()
+  if (up.error) return up
+  switch (a.kind) {
+    case 'screenshot': return await bg.screenshot()
+    case 'click': return await bg.click(t.x, t.y, 'left', 1)
+    case 'double_click': return await bg.click(t.x, t.y, 'left', 2)
+    case 'right_click': return await bg.click(t.x, t.y, 'right', 1)
+    case 'type': return await bg.type(t.value ?? '')
+    case 'key': return await bg.key(t.key ?? t.value)
+    case 'scroll': return await bg.scroll(t.direction, t.amount)
+    case 'navigate': return await bg.navigate(t.url ?? t.value)
+    case 'show': return await bg.show()
+    case 'hide': return await bg.hide()
+    case 'launch': return {}
+    default: return { error: `the background browser cannot ${a.kind}` }
+  }
+}
+const sameSite = (a, b) => { a = String(a || '').toLowerCase(); b = String(b || '').toLowerCase(); return !!a && !!b && (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) }
+
 const run = async (a) => {
   const t = a.target || {}
+  if (String(a.app || '').toLowerCase() === 'browser') return await bgRun(a)
   switch (a.kind) {
     case 'screenshot': return await takeShot()
     case 'click': return await clickAt(...toScreen(t.x, t.y), 'left')
@@ -583,6 +610,9 @@ const handshake = {
     // Whether this launcher can loop round for a new build (see newerBuildOut).
     // The page uses it to ask for ONE re-download from computers that cannot.
     self_update: process.env.JOBSCOUT_LAUNCHER_LOOP === '1',
+    // Her own browser behind theirs (browser.mjs): Chrome found, and a Node
+    // with WebSocket to drive it.
+    background_browser: bg.available(),
   },
 }
 // The Mac's switches, asked of macOS itself (see checkPermissions). The
@@ -699,6 +729,39 @@ while (!stopping) {
     continue
   }
 
+  // 0. THE BACKGROUND BROWSER KNOWS WHERE IT IS. Its site is read from the
+  // page itself (or, to navigate, from the address being opened) — never taken
+  // from what the model said — and the leash below decides on THAT. A step
+  // named for one site while the page is on another is refused, and a field
+  // that wants a secret is never typed into.
+  const isBg = String(a.app || '').toLowerCase() === 'browser'
+  if (isBg) {
+    const up = await bg.ensureBrowser()
+    if (up.error) {
+      show('!!', `${describe(a)} — ${up.error}`)
+      await report({ session_id: sessionId, action_id: a.id, ok: false, error: up.error })
+      continue
+    }
+    let realHost = ''
+    if (a.kind === 'navigate') {
+      try { realHost = new URL(/^[a-z][a-z0-9+.-]*:/i.test(String(a.target?.url ?? a.target?.value ?? '')) ? String(a.target?.url ?? a.target?.value) : `https://${a.target?.url ?? a.target?.value}`).hostname.toLowerCase() } catch { /* bad address */ }
+    } else {
+      realHost = (await bg.pageInfo().catch(() => ({}))).host || ''
+    }
+    const named = String(a.host || '').toLowerCase()
+    const why = a.kind !== 'navigate' && named && named !== '*' && realHost && !sameSite(named, realHost)
+      ? `the page is on ${realHost}, not ${named}`
+      : (a.kind === 'type' || a.kind === 'key') && bg.isSecretField(await bg.activeField().catch(() => null))
+        ? 'the cursor is in a password or security-code field — that one is yours to type'
+        : null
+    if (why) {
+      show('no', `${describe(a)} — refused here: ${why}`)
+      await report({ session_id: sessionId, action_id: a.id, ok: false, error: `refused on the machine: ${why}` })
+      continue
+    }
+    if (realHost) a.host = realHost
+  }
+
   // 1. The leash, locally, with the same module the server used.
   let verdict = decideAction({ id: a.id, kind: a.kind, app: a.app, host: a.host, target: a.target }, grants)
 
@@ -741,7 +804,8 @@ while (!stopping) {
   // opening a program impossible: Arnie could only ever work in something a
   // person had already opened for him, which is most of the way back to not
   // having hands at all.
-  if (a.app && a.kind !== 'launch') {
+  // (Not for the background browser: nothing about it is "in front".)
+  if (a.app && a.kind !== 'launch' && !isBg) {
     const isFront = (f) => f && (f.includes(String(a.app).toLowerCase()) || String(a.app).toLowerCase().includes(f))
     let front = await frontmostApp()
     // A LOOK at an allowed program brings it forward first. London allowed
@@ -766,7 +830,7 @@ while (!stopping) {
   // the same program with no address bar. The JobScout app itself is one: on
   // Bryce's PC Jenny typed his Gmail address into it (2026-10-16). Bring a real
   // browser window forward first, or open one; never act inside an app window.
-  if (a.app && browserKind(a.app) && a.kind !== 'launch') {
+  if (a.app && browserKind(a.app) && a.kind !== 'launch' && !isBg) {
     const title = await frontWindowTitle()
     if (title != null && !isBrowserWindowTitle(a.app, title)) {
       const f = await focusBrowserWindow(a.app)

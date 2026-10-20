@@ -82,6 +82,47 @@ describe('on a scaled screen the picture and the click agree (Bryce, 150%, 2026-
   })
 })
 
+describe('her own browser behind theirs (Cole, 2026-10-19: "so I can work and let my bot work as well")', () => {
+  const browser = read('../../scripts/agent/browser.mjs')
+  const agent = read('../../scripts/jobscout-agent.mjs')
+  const chat = read('../../supabase/functions/arnie-chat/index.ts')
+  const grants = read('../../supabase/functions/_shared/computerGrants.ts')
+  it('a separate Chrome on its own profile, driven by DevTools — kept behind, never minimised', () => {
+    expect(browser).toMatch(/`--user-data-dir=\$\{PROFILE\}`/)
+    expect(browser).toMatch(/'--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'/)
+    expect(browser).toMatch(/if \(before\) await hooks\.activate\(before\)/)          // the person's window goes back on top
+    expect(browser).not.toMatch(/windowState: 'minimized'/)
+    expect(browser).toMatch(/Emulation\.setDeviceMetricsOverride', \{ width: VIEW\.width, height: VIEW\.height, deviceScaleFactor: 1/)
+  })
+  it('a password or security-code field is recognised and never typed into', async () => {
+    const { isSecretField } = await import('../../scripts/agent/browser.mjs')
+    expect(isSecretField({ type: 'password' })).toBe(true)
+    expect(isSecretField({ type: 'text', autocomplete: 'one-time-code' })).toBe(true)
+    expect(isSecretField({ type: 'text', name: 'username', label: 'Username' })).toBe(false)
+    expect(agent).toMatch(/\(a\.kind === 'type' \|\| a\.kind === 'key'\) && bg\.isSecretField\(await bg\.activeField\(\)/)
+  })
+  it('the site comes from the page (or the address), never the model — and a mismatch is refused', () => {
+    expect(agent).toMatch(/realHost = \(await bg\.pageInfo\(\)\.catch\(\(\) => \(\{\}\)\)\)\.host \|\| ''/)
+    expect(agent).toMatch(/`the page is on \$\{realHost\}, not \$\{named\}`/)
+    expect(agent.indexOf('0. THE BACKGROUND BROWSER KNOWS WHERE IT IS')).toBeLessThan(agent.indexOf('// 1. The leash, locally'))
+    expect(chat).toMatch(/host: navHost \|\| \(input\?\.host \?/)
+  })
+  it('ctrl+l → type → enter still works: kept as the intent to open an address', async () => {
+    expect(browser).toMatch(/if \(addressBar !== null && k === 'enter'\) return await navigate\(addressBar\)/)
+    expect(browser).toMatch(/if \(!\/\^https\?:\/i\.test\(u\)\) return \{ error: 'only web addresses can be opened' \}/)
+  })
+  it('the leash knows the new kinds: show/hide at watch, navigate at click', () => {
+    expect(grants).toMatch(/watch: \['screenshot', 'read_text', 'show', 'hide'\]/)
+    expect(grants).toMatch(/click: \[[^\]]*'navigate'\]/)
+    expect(grants).toMatch(/'background browser': 'browser'/)
+  })
+  it('Jenny is told about it only when that computer has it', () => {
+    expect(agent).toMatch(/background_browser: bg\.available\(\),/)
+    expect(chat).toMatch(/if \(session\.capabilities\?\.background_browser\) \{\n\s+lines\.push\('YOUR OWN BROWSER: for any WEBSITE, use app="browser"/)
+    expect(chat).toMatch(/enum: \[[^\]]*'navigate', 'show', 'hide'\]/)
+  })
+})
+
 describe('a browser step happens in a browser window, never in the JobScout app (Bryce, 2026-10-16)', () => {
   const hands = read('../../scripts/agent/hands.mjs')
   const agent = read('../../scripts/jobscout-agent.mjs')
@@ -94,7 +135,7 @@ describe('a browser step happens in a browser window, never in the JobScout app 
     expect(isBrowserWindowTitle('excel', 'Book1 - Excel')).toBe(false)
   })
   it('before acting, the agent brings a real browser window forward — or refuses — never types into an app window', () => {
-    expect(agent).toMatch(/if \(a\.app && browserKind\(a\.app\) && a\.kind !== 'launch'\) \{/)
+    expect(agent).toMatch(/if \(a\.app && browserKind\(a\.app\) && a\.kind !== 'launch' && !isBg\) \{/)
     expect(agent).toMatch(/if \(title != null && !isBrowserWindowTitle\(a\.app, title\)\) \{\n\s+const f = await focusBrowserWindow\(a\.app\)/)
     expect(agent.indexOf('2b. A BROWSER means a browser window')).toBeLessThan(agent.indexOf('// 3. Do it, and say so.'))
     expect(hands).toMatch(/\[void\]\$w\.AppActivate\(/)
@@ -143,7 +184,7 @@ describe('the agent keeps its connection through a blip (Bryce, 2026-10-15)', ()
     expect(agent.match(/await call\('hello', handshake\)/g).length).toBe(1)   // only inside helloOnce
     expect(agent).toMatch(/async function helloOnce\(\) \{\n\s+for \(let i = 0; ; i\+\+\) \{\n\s+try \{ return await call\('hello', handshake\) \}/)
     expect(agent).not.toMatch(/await call\('report', \{/)
-    expect(agent.match(/await report\(\{/g).length).toBe(5)   // incl. the browser-window refusal
+    expect(agent.match(/await report\(\{/g).length).toBe(7)   // incl. the browser-window refusal and the background browser's two
     expect(agent).not.toMatch(/await call\('report', \{/)
     expect(agent).toMatch(/if \(r\.ok \|\| r\.status === 409\) return r/)
   })

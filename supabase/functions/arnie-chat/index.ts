@@ -699,14 +699,14 @@ const USE_COMPUTER_TOOL = {
     properties: {
       kind: {
         type: 'string',
-        enum: ['screenshot', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
+        enum: ['screenshot', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch', 'navigate', 'show', 'hide'],
         description: 'What to do. screenshot is how you LOOK — the picture comes straight back to you. (read_text is deliberately not offered: the agent cannot do it, and advertising an action that always fails just burns a turn.)',
       },
-      app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, safari, excel, outlook, messages, mail, calendar. ALWAYS required, screenshots included — you look at one program, never at their whole desktop. If they have not said which, ask. A WEBSITE is never the app: Google, Gmail, iCloud and a utility portal are sites — the app is the browser (chrome or safari) and the site goes in host. (London was asked to allow "google" and "icloud", which matched no program and did nothing.)' },
+      app: { type: 'string', description: 'The program, lowercase and as a person would name it: chrome, safari, excel, outlook, messages, mail, calendar. ALWAYS required, screenshots included — you look at one program, never at their whole desktop. If they have not said which, ask. A WEBSITE is never the app: Google, Gmail, iCloud and a utility portal are sites — the app is a browser and the site goes in host. Prefer app="browser" (YOUR own background browser, when they have one — see the computer notes) so they can keep working; use "chrome" or "safari" for their own window only when they ask. (London was asked to allow "google" and "icloud", which matched no program and did nothing.)' },
       host: { type: 'string', description: 'For a browser, the site — e.g. rockymountainpower.net. Permission is per site, so always name it.' },
       target: {
         type: 'object',
-        description: 'Where on screen. A click, double_click or right_click NEEDS { x, y }: pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen. So look first, then click where you saw it. Add { label } to name what it is ("Inbox", "Send") for the log; a label alone is never something the agent can find.',
+        description: 'For kind=navigate: { url } — the address to open (in app="browser"). Where on screen. A click, double_click or right_click NEEDS { x, y }: pixels IN THE LAST PICTURE YOU WERE GIVEN, measured from its top-left corner — the agent maps them onto the screen. So look first, then click where you saw it. Add { label } to name what it is ("Inbox", "Send") for the log; a label alone is never something the agent can find.',
       },
       value: { type: 'string', description: 'For kind=type, the text to type — it goes wherever the cursor is, so click the field first. Never a password or a code. For kind=key, the key: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, or ctrl+l (puts the cursor in a browser\'s address bar — do that before typing a web address, never type one into the page).' },
       why: { type: 'string', description: 'One short line, in their words, for the log and for the offer they may see.' },
@@ -947,6 +947,15 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           }
         }
       }
+      // Going to an address: the site the permission is checked against is
+      // the address's OWN host — never one the model names beside it.
+      let navHost: string | null = null
+      if (kind === 'navigate') {
+        const raw = String(input?.target?.url ?? input?.value ?? '').trim()
+        try { navHost = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`).hostname.toLowerCase() } catch { navHost = null }
+        if (!raw || !navHost) return { needs_url: true, say: 'To go somewhere, give target {url} — the web address to open.' }
+        input = { ...input, target: { ...(input?.target || {}), url: raw } }
+      }
       // Which machine: theirs, the newest, and only if the agent is checking
       // in. Arnie is never asked to supply a session id — a model holding one
       // is a model that can mistype one.
@@ -985,7 +994,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           session_id: session.id,
           kind: String(input?.kind || ''),
           app: input?.app ? String(input.app).toLowerCase() : null,
-          host: input?.host ? String(input.host).toLowerCase() : null,
+          host: navHost || (input?.host ? String(input.host).toLowerCase() : null),
           // A key's NAME belongs in target.key, which is where the agent reads
           // it (and the log keeps it — a key name is not anybody's text).
           // Arnie put "Enter" in value, and every key he ever pressed failed
@@ -2309,6 +2318,11 @@ async function computerBlock(companyId: number, employeeId: number): Promise<str
       if (perms.screen === false) off.push('Screen Recording (System Settings → Privacy & Security → Screen & System Audio Recording → Terminal on, then quit Terminal and start the agent again)')
       if (perms.accessibility === false) off.push('Accessibility (System Settings → Privacy & Security → Accessibility → Terminal on)')
       if (off.length) lines.push(`On that Mac, macOS has NOT yet allowed: ${off.join('; ')}. Until it does you cannot see or work its screen — say so plainly, with the step, rather than trying and failing.`)
+      // Her own browser behind theirs (Cole, 2026-10-19: "if I have two tabs
+      // open the bot runs both tabs so I can't work").
+      if (session.capabilities?.background_browser) {
+        lines.push('YOUR OWN BROWSER: for any WEBSITE, use app="browser" — a separate Chrome of yours on their computer that sits BEHIND their windows, so they keep working while you do. Go to a site with kind="navigate" and target {url}; then screenshot, click {x,y}, type, key, scroll as usual (pictures are 1280x860, positions are exact). It has its own sign-ins, separate from theirs: when a site asks them to sign in, or a final Submit/Send/Pay is theirs to click, use kind="show" to bring your window up, tell them what to do, and kind="hide" once they say they are done. Use app="chrome" only when they ask you to work in their own Chrome window.')
+      }
       if (!Array.isArray(grants) || !grants.length) {
         lines.push('Nothing is allowed on it yet, so the first thing you try in any program will come back asking for permission. That is the normal way in: ask for what the job needs, and they get one tap to allow it.')
       } else {

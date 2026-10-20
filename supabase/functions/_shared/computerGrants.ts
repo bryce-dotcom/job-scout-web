@@ -95,10 +95,16 @@ export interface Action {
  * programs that must never be typed into, so do not let it drift into meaning
  * "mostly allowed".
  */
+//
+// The assistant's own background browser (app 'browser', 2026-10-19) adds
+// three kinds. 'show' and 'hide' only move HER window in front of or behind
+// the person's — a look-level thing. 'navigate' goes to an address, which is
+// what clicking a link does, so it sits with click; the site it goes to must
+// itself be allowed (the host is taken from the address, never the model).
 export const TIER_ALLOWS: Record<Tier, readonly string[]> = {
-  watch: ['screenshot', 'read_text'],
-  click: ['screenshot', 'read_text', 'click', 'double_click', 'scroll', 'launch'],
-  full: ['screenshot', 'read_text', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch'],
+  watch: ['screenshot', 'read_text', 'show', 'hide'],
+  click: ['screenshot', 'read_text', 'show', 'hide', 'click', 'double_click', 'scroll', 'launch', 'navigate'],
+  full: ['screenshot', 'read_text', 'show', 'hide', 'click', 'double_click', 'right_click', 'type', 'key', 'scroll', 'drag', 'launch', 'navigate'],
 }
 
 /**
@@ -406,6 +412,9 @@ const APP_ALIAS: Record<string, string> = {
   'microsoft edge': 'edge', 'edge browser': 'edge',
   'windows explorer': 'explorer', 'file explorer': 'explorer', 'files': 'explorer',
   'note pad': 'notepad',
+  // The assistant's own background browser.
+  'background browser': 'browser', 'jenny browser': 'browser', "jenny's browser": 'browser', "arnie's browser": 'browser',
+  'arnie browser': 'browser', 'her browser': 'browser', 'his browser': 'browser', 'assistant browser': 'browser',
 }
 
 export function appNames(typed: string): string[] {

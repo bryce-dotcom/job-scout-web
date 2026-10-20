@@ -489,6 +489,25 @@ public static class JsWins {
   return { error: 'could not bring a browser window to the front' }
 }
 
+/** Bring the window with this exact title back to the front (Windows). */
+export async function activateTitle(title) {
+  if (!WIN || !title) return
+  const esc = String(title).replace(/'/g, "''")
+  await ps(`$w = New-Object -ComObject WScript.Shell; [void]$w.AppActivate('${esc}')`)
+}
+
+/**
+ * Bring forward the Chrome that was started with this profile folder — the
+ * assistant's own browser. Its main process is the one whose command line
+ * names the folder and is not a --type= helper.
+ */
+export async function activateProfile(profileDir) {
+  if (!WIN || !profileDir) return
+  const esc = String(profileDir).replace(/'/g, "''")
+  await ps(`$p = Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='msedge.exe'" | Where-Object { $_.CommandLine -like ('*' + '${esc}' + '*') -and $_.CommandLine -notlike '*--type=*' } | Select-Object -First 1
+    if ($p) { $w = New-Object -ComObject WScript.Shell; [void]$w.AppActivate([int]$p.ProcessId) }`)
+}
+
 export async function launchApp(name) {
   const key = String(name || '').toLowerCase().trim()
   const known = LAUNCHABLE[key]
