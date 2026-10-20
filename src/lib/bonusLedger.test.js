@@ -434,10 +434,34 @@ describe('a job the caller cannot see does not send a bonus backwards', () => {
     expect(captured[0].status).toBe('pending')
   })
 
-  it('still downgrades when the caller HAS the job and nothing is paid', async () => {
-    // A real unpaid invoice is visible to every caller, so this is evidence,
-    // not silence — a refunded or reversed job must still be able to fall back.
+  it('does not downgrade even when the caller HAS the job and it reports nothing paid', async () => {
+    // Presence is not completeness. Job 23549 carries invoice 32906 (Paid
+    // 09-18) and invoice 33412 (Pending, 10-12). Only the Pending one is
+    // inside Payroll's window, so the job IS in the map, reporting the
+    // nothing that one invoice has paid — while the invoice that actually
+    // paid it sits outside. Six rows and $9,468 were still going backwards
+    // on the first version of this guard, which trusted presence.
+    //
+    // A real reversal still happens; it waits for the nightly cron, which
+    // loads every invoice. A bonus wrongly owed gets argued about; a bonus
+    // wrongly un-owed just vanishes from someone's My Pay.
     const { client, captured } = fakeSupabase(ACCRUED)
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [JOB], timeClockRows: [SHIFT], employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: CFG,
+      verifiedJobIds: new Set(),
+      jobPaymentStatus: new Map([[900, { paid: 0, total: 5000 }]]),
+      bonusOverrides: [],
+      verificationExemptUnits: EXEMPT,
+    })
+    expect(captured[0].status).toBe('accrued')
+  })
+
+  it('a job with no money in at all still starts pending', async () => {
+    // The rule only holds ground that was already won. A first sync of a job
+    // nobody has paid for must not invent an accrual.
+    const { client, captured } = fakeSupabase([])
     await syncJobBonuses({
       supabase: client, companyId: 3,
       jobs: [JOB], timeClockRows: [SHIFT], employees: EMPLOYEES, skillLevels: [],

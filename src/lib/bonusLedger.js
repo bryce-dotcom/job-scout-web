@@ -196,18 +196,32 @@ export async function syncJobBonuses({
     // flipped 92 of HHH's 232 rows that way; the nightly cron, which loads
     // every invoice, had put them right that morning.
     //
-    // So: a job the caller knows nothing about cannot send a bonus
-    // backwards. A job it DOES hold, reporting nothing paid, still can —
-    // that is real evidence, and an unpaid invoice stays visible to every
-    // caller. Money-in always wins, and `paid` is frozen above either way.
+    // PRESENCE IS NOT COMPLETENESS EITHER. The first version of this guard
+    // only protected a job the caller had never heard of, on the reasoning
+    // that a job it DID hold reporting nothing paid was real evidence. It is
+    // not. Job 23549 holds two invoices: 32906, Paid on 09-18, and 33412,
+    // still Pending from 10-12. The Pending one is inside Payroll's window,
+    // so the job IS in the map — reporting the nothing that one invoice has
+    // paid, while the invoice that actually paid it sits outside. Six rows
+    // and $9,468 were still going backwards after the first fix.
+    //
+    // There is no test a partial view can pass. So no partial view demotes:
+    // money in promotes, and nothing here sends a bonus back. The nightly
+    // cron (api/cron/resync-bonuses.js) loads every invoice for every tenant
+    // and is the ONLY thing allowed to reverse one, so a genuine reversal —
+    // a refund, a voided invoice — waits one night instead of never. That is
+    // the right way round: a bonus wrongly owed is visible and gets argued
+    // about, a bonus wrongly un-owed just disappears from someone's My Pay.
+    //
+    // syncJobBonuses has exactly one caller, Payroll, which is where the
+    // partial view comes from. `paid` is frozen above either way.
     const payment = jobPaymentStatus?.get?.(job.id)
     const moneyIn = (payment?.paid || 0) > 0.005
-    const paymentUnknown = !payment
     for (const r of rows) {
       const key = `${job.id}|${r.employee_id}`
       const ex = existingByKey.get(key)
       if (ex?.status === 'paid') continue // frozen — never recompute a paid bonus
-      const status = (moneyIn || (paymentUnknown && ex?.status === 'accrued')) ? 'accrued' : 'pending'
+      const status = (moneyIn || ex?.status === 'accrued') ? 'accrued' : 'pending'
       if (status === 'accrued') accruedTotal += r.amount; else pendingTotal += r.amount
       // Preserve a payroll verification override: once a human released it,
       // don't re-flag it as needing verification on the next recompute.
