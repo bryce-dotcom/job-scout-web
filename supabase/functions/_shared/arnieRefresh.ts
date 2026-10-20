@@ -15,7 +15,7 @@
 // deno-lint-ignore-file no-explicit-any
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { readRecordList } from './arnieRest.ts'
+import { readRecordList, readAllRecords } from './arnieRest.ts'
 import { dailyBrief, dayBounds } from './arnieBrief.ts'
 
 type Any = any
@@ -47,8 +47,22 @@ export async function jobscoutRefresh(r: Rest, caller: Caller, input: { date?: s
   const [meetingsBooked, meetingsToday, approvedNotJobs] = await Promise.all([
     readRecordList(r, `appointments?select=id,title,start_time,lead_id,salesperson_id,created_at&company_id=eq.${companyId}&created_at=gte.${since}&order=start_time&limit=100`),
     readRecordList(r, `appointments?select=id,title,start_time,location,lead_id,status&company_id=eq.${companyId}&start_time=gte.${start}&start_time=lt.${end}&order=start_time&limit=100`),
-    readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,approved_date,salesperson_id&company_id=eq.${companyId}&status=eq.Approved&job_id=is.null&order=approved_date.desc.nullslast&limit=50`),
+    // ALL of them. This was limit=50, so Cole's refresh said "50 approved
+    // estimates not yet jobs, $292.9k" when there were 157 worth $632.8k — and
+    // a second report the same day said 159 (2026-10-14). See below for the 2.
+    readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,approved_date,salesperson_id&company_id=eq.${companyId}&status=eq.Approved&job_id=is.null&order=approved_date.desc.nullslast`),
   ])
+  // An estimate a job POINTS BACK to (jobs.quote_id) has become a job even if
+  // its own job_id was never stamped — the Closed rule counts it converted
+  // (arnieClosed "became"), so this must too. Those were the 2 of the 159.
+  {
+    const ids = approvedNotJobs.map((q: Any) => q.id)
+    const became = new Set<string>()
+    for (let i = 0; i < ids.length; i += 200) {
+      for (const j of await readRecordList(r, `jobs?select=quote_id&company_id=eq.${companyId}&quote_id=in.(${ids.slice(i, i + 200).join(',')})&limit=5000`)) became.add(String(j.quote_id))
+    }
+    for (let i = approvedNotJobs.length - 1; i >= 0; i--) if (became.has(String(approvedNotJobs[i].id))) approvedNotJobs.splice(i, 1)
+  }
   const clock = (iso: string) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric', minute: '2-digit' }) } catch { return iso } }
   const leadSetter = {
     new_meetings_booked_since: { since, count: meetingsBooked.length, list: meetingsBooked.slice(0, 15).map((a: Any) => ({ when: clock(a.start_time), title: a.title })) },

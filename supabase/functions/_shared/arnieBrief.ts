@@ -18,7 +18,7 @@
 
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { readRecordList } from './arnieRest.ts'
+import { readRecordList, readAllRecords } from './arnieRest.ts'
 import { invoiceCustomerTotal, isSettledStatus } from './money.ts'
 import { moneyAccess, myPay } from './arnieMoney.ts'
 import { tzOffsetMinutes } from './arnieTime.ts'
@@ -98,7 +98,7 @@ export async function dailyBrief(r: Rest, caller: Caller, input: { date?: string
     const weekAgo = new Date(new Date(start).getTime() - 7 * 86400000).toISOString()
     const [teamOpenShifts, staleQuotes, dupLeads] = await Promise.all([
       readRecordList(r, `time_clock?select=id,employee_id,clock_in,job_id&company_id=eq.${companyId}&clock_out=is.null&clock_in=lt.${start}&order=clock_in&limit=50`),
-      readRecordList(r, `quotes?select=id,quote_id,estimate_name,quote_amount,sent_date,last_sent_at,status,salesperson_id&company_id=eq.${companyId}&status=not.in.(Approved,Rejected,Won,Lost,Expired)&approved_date=is.null&rejected_date=is.null&or=(last_sent_at.lt.${weekAgo},and(last_sent_at.is.null,sent_date.lt.${weekAgo.slice(0, 10)}))&order=quote_amount.desc.nullslast&limit=200`),
+      readAllRecords(r, `quotes?select=id,quote_id,estimate_name,quote_amount,sent_date,last_sent_at,status,salesperson_id&company_id=eq.${companyId}&status=not.in.(Approved,Rejected,Won,Lost,Expired)&approved_date=is.null&rejected_date=is.null&or=(last_sent_at.lt.${weekAgo},and(last_sent_at.is.null,sent_date.lt.${weekAgo.slice(0, 10)}))&order=quote_amount.desc.nullslast`), // ALL — a capped read told Cole "200" when there were 931
       readRecordList(r, `leads?select=id,business_name,customer_name,possible_duplicate_of,created_at,lead_owner_id&company_id=eq.${companyId}&possible_duplicate_of=not.is.null&created_at=gte.${weekAgo}&order=created_at.desc&limit=20`),
     ])
     const unstaffed = sections.filter((s: any) => s.assigned_to == null)
