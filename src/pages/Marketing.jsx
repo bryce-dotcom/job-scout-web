@@ -110,6 +110,7 @@ export default function Marketing() {
   // "Add to a campaign" on the Find tab hands the picked people to the
   // Campaigns tab, which opens a new campaign with them already in it.
   const [campaignPreset, setCampaignPreset] = useState(null)
+  const [findOpen, setFindOpen] = useState(false)
   // On a phone the page opens on "shoot it and send it". The queue, tabs and
   // settings are the marketer's; a tech in the field never needs them.
   const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'capture' : 'full'))
@@ -339,6 +340,11 @@ export default function Marketing() {
       setComposer({ post, captureIds: post.capture_ids || [] })
       return
     }
+    // A draft published from its card is approved by the act of publishing it.
+    if (post.status === 'draft') {
+      const { error } = await supabase.from('marketing_posts').update({ status: 'approved', approved_by: currentEmployee?.id || null, approved_at: new Date().toISOString() }).eq('id', post.id).eq('company_id', companyId)
+      if (error) { toast.error(error.message); return }
+    }
     const r = await invoke('marketing-publish', { action: 'publish', post_id: post.id })
     if (!r.ok) { toast.error(r.error || 'Publish failed'); load(); return }
     if (r.warning) toast.error(`Posted with a problem: ${r.warning}`)
@@ -369,11 +375,8 @@ export default function Marketing() {
     { id: 'library', label: 'Library', icon: FolderOpen },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
-    { id: 'brand', label: 'Brand', icon: Palette },
-    { id: 'channels', label: 'Channels', icon: Link2 },
-    { id: 'find', label: 'Find', icon: Search },
     { id: 'campaigns', label: 'Campaigns', icon: Send },
-    { id: 'email', label: 'Email', icon: Mail },
+    { id: 'setup', label: 'Setup', icon: Palette },
   ]
   const brandPosts = brands.length > 1 ? posts.filter((p) => (p.brand || '') === (brandId || '')) : posts
 
@@ -450,7 +453,7 @@ export default function Marketing() {
       {!loading && !(progress.complete && walkthroughHidden) && (
         <SetupWalkthrough
           theme={theme} isMobile={isMobile} progress={progress} isManager={isManager}
-          onBrand={() => setTab('brand')} onChannels={() => setTab('channels')} onFirstPost={() => setComposer({ captureIds: [] })}
+          onBrand={() => setTab('setup')} onChannels={() => setTab('setup')} onFirstPost={() => setComposer({ captureIds: [] })}
           onHide={() => { try { localStorage.setItem('mkt_walkthrough_hidden', '1') } catch { /* private mode */ } setWalkthroughHidden(true) }}
         />
       )}
@@ -461,14 +464,13 @@ export default function Marketing() {
           const Icon = t.icon
           const active = tab === t.id
           return (
-            <button key={t.id} type="button" onClick={() => (t.id === 'email' ? navigate('/agents/conrad-connect') : setTab(t.id))} style={{
+            <button key={t.id} type="button" onClick={() => setTab(t.id)} style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', minHeight: 40, borderRadius: 999, whiteSpace: 'nowrap',
               border: `1px solid ${active ? MKT : theme.border}`, background: active ? MKT_BG : theme.bgCard, color: active ? MKT : theme.textSecondary,
               fontSize: 13, fontWeight: active ? 600 : 500, cursor: 'pointer', flexShrink: 0,
             }}>
               <Icon size={15} /> {t.label}
               {t.count > 0 && <span style={{ fontSize: 11, fontWeight: 700, background: active ? MKT : theme.border, color: active ? '#fff' : theme.text, borderRadius: 999, padding: '1px 7px' }}>{t.count}</span>}
-              {t.id === 'email' && <ExternalLink size={12} />}
             </button>
           )
         })}
@@ -486,8 +488,21 @@ export default function Marketing() {
         <InboxTab theme={theme} isMobile={isMobile} captures={captures} uploading={uploading} uploadPct={uploadPct} invoke={invoke} isManager={isManager} onChanged={load}
           picking={picking} onUploadClick={() => pick('library', uploadRef)} onTakePhoto={() => pick('photo', photoCamRef)} onRecordVideo={() => pick('video', videoCamRef)} onDismiss={dismissCapture}
           onMakePost={(ids) => setComposer({ captureIds: ids })} />
-      ) : tab === 'brand' ? (
-        <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
+      ) : tab === 'setup' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, marginBottom: 8 }}>Brand &amp; voice</div>
+            <BrandTab theme={theme} isMobile={isMobile} kit={brandKit} company={company} eos={eos} onSave={saveBrandKit} onFill={fillFromEos} brands={brands} brand={currentBrand} businessUnits={businessUnits} isManager={isManager} onSaveBrands={saveBrands} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, marginBottom: 8 }}>Where posts go</div>
+            <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit}
+              companyLinks={companyLinks} onPushToCompany={pushLinksToCompany} />
+          </div>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>
+            Newsletters through Constant Contact live with <button type="button" onClick={() => navigate('/agents/conrad-connect')} style={{ background: 'none', border: 'none', padding: 0, color: MKT, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>Conrad Connect</button>. Campaigns here send from JobScout itself.
+          </div>
+        </div>
       ) : tab === 'library' ? (
         <LibraryTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} employees={employees} isManager={isManager}
           onMakePost={(ids) => setComposer({ captureIds: ids })}
@@ -503,19 +518,23 @@ export default function Marketing() {
             if (error) { toast.error(error.message); return }
             await publishPost({ ...p, scheduled_for: when })
           }} />
-      ) : tab === 'find' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, color: theme.textMuted }}>Say who you want in plain words. The people you tick become leads on the Lead Setter board; Add to a campaign writes to them from here.</div>
-          <ProspectResearchDrawer inline importLabel="Add to a campaign" companyId={companyId} employees={(employees || []).filter((e) => e.active !== false)} theme={theme} isMobile={isMobile}
-            onImported={(ids) => { if (ids?.length) { setCampaignPreset({ kind: 'leads', ids }); setTab('campaigns') } else toast.error('Nothing was added.') }} />
-        </div>
       ) : tab === 'campaigns' ? (
-        <CampaignsTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} invoke={invoke} preset={campaignPreset} onPresetUsed={() => setCampaignPreset(null)} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setFindOpen((v) => !v)} style={findOpen ? primaryBtn(MKT) : ghostBtn(theme)}><Search size={15} /> {findOpen ? 'Hide Find people' : 'Find people'}</button>
+            {!findOpen && <span style={{ fontSize: 13, color: theme.textMuted }}>Prospect Scout finds businesses from a sentence; the ones you tick become leads and a campaign.</span>}
+          </div>
+          {findOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, color: theme.textMuted }}>Say who you want in plain words. The people you tick become leads on the Lead Setter board; Add to a campaign writes to them from here.</div>
+              <ProspectResearchDrawer inline importLabel="Add to a campaign" companyId={companyId} employees={(employees || []).filter((e) => e.active !== false)} theme={theme} isMobile={isMobile}
+                onImported={(ids) => { if (ids?.length) { setCampaignPreset({ kind: 'leads', ids }); setFindOpen(false) } else toast.error('Nothing was added.') }} />
+            </div>
+          )}
+          <CampaignsTab theme={theme} isMobile={isMobile} companyId={companyId} brands={brands} brand={brandId} invoke={invoke} preset={campaignPreset} onPresetUsed={() => setCampaignPreset(null)} />
+        </div>
       ) : tab === 'performance' ? (
         <PerformanceTab theme={theme} isMobile={isMobile} posts={brandPosts} captureMap={captureMap} brand={brandId} invoke={invoke} publisher={publisher} companyId={companyId} brands={brands} />
-      ) : tab === 'channels' ? (
-        <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit}
-          companyLinks={companyLinks} onPushToCompany={pushLinksToCompany} />
       ) : null}
 
       {hiddenInputs}
@@ -617,6 +636,11 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
         </div>
       )}
 
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>What is it? (optional)</span>
+        <input value={note} onChange={(e) => { setNote(e.target.value); noteRef.current = e.target.value }} placeholder="Finished the Ogden warehouse today, crew of three" style={inputStyle(theme)} />
+      </label>
+
       <button type="button" onClick={onTakePhoto} disabled={uploading} style={big(MKT)}>
         <Camera size={26} /> <span>{sending || 'Take a photo'}</span>
       </button>
@@ -624,7 +648,7 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
         <Play size={26} /> <span>{sending ? 'Video' : 'Record a video'}</span>
       </button>
       <button type="button" onClick={onLibrary} disabled={uploading} style={{ ...big(theme.bgCard), color: theme.text, border: `1px solid ${theme.border}` }}>
-        <Upload size={24} /> <span>From my phone's library</span>
+        <Upload size={24} /> <span>Choose a file</span>
       </button>
       {uploading && (
         <ScoutLoader overlay theme={theme} label={uploadPct != null && uploadPct < 100 ? 'Sending' : 'Almost there…'} pct={uploadPct} sub="Keep the app open until he gets there. One tap is enough." />
@@ -635,11 +659,6 @@ function CaptureFirst({ theme, isMobile, brands, brandId, onPickBrand, uploading
           <span>{picking === 'video' ? 'Camera is open. When you stop recording, the phone takes a few seconds to hand the video over, then the scout walks while it sends. One tap is enough.' : picking === 'photo' ? 'Camera is open. Take the shot and the scout walks while it sends.' : 'Pick from your library and the scout walks while it sends.'}</span>
         </div>
       )}
-
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: theme.textSecondary }}>What is it? (optional, goes with the next thing you send)</span>
-        <input value={note} onChange={(e) => { setNote(e.target.value); noteRef.current = e.target.value }} placeholder="Finished the Ogden warehouse today, crew of three" style={inputStyle(theme)} />
-      </label>
 
       {/* What this person has sent, and where each one got to */}
       {mine.length > 0 && (
@@ -708,7 +727,7 @@ function SetupWalkthrough({ theme, isMobile, progress, isManager, onBrand, onCha
   const actions = { brand: onBrand, channels: onChannels, first_post: onFirstPost }
   const hints = {
     brand: 'Pulled from your EOS core values, focus and marketing strategy. Fix anything that sounds wrong; the AI writes in this voice.',
-    channels: isManager ? 'Tap Connect on Facebook, Instagram, Google Business or LinkedIn and sign in. Two minutes, no other accounts to create.' : 'A Manager or above connects the accounts. Ask them to open this page.',
+    channels: isManager ? 'Tap Connect on each network you use and sign in. Two minutes, no other accounts to create.' : 'A Manager or above connects the accounts. Ask them to open this page.',
     first_post: 'Pick a photo from the inbox, or start blank. The AI drafts it, you approve it, it goes everywhere at once.',
   }
   const next = progress.steps.find((s) => !s.done)
@@ -812,8 +831,7 @@ function QueueTab({ theme, isMobile, posts, isManager, captureMap = {}, brands =
                   )}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
                     {['draft', 'approved', 'failed'].includes(p.status) && <button type="button" onClick={() => onEdit(p)} style={ghostBtn(theme)}><Pencil size={14} /> Edit</button>}
-                    {p.status === 'draft' && <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onApprove(p))} style={ghostBtn(theme)}><Check size={14} /> Approve</button>}
-                    {['approved', 'failed'].includes(p.status) && isManager && (
+                    {['draft', 'approved', 'failed'].includes(p.status) && isManager && (
                       <button type="button" disabled={busy === p.id} onClick={() => run(p.id, () => onPublish(p), `Posting to ${(p.platforms || []).map((id) => PLATFORM_BY_ID[id]?.label || id).join(', ')}…`)} style={primaryBtn(MKT)}>
                         {p.scheduled_for && new Date(p.scheduled_for) > new Date() ? <><CalendarClock size={14} /> Schedule</> : <><Send size={14} /> Publish now</>}
                       </button>
@@ -859,9 +877,9 @@ function InboxTab({ theme, isMobile, captures, uploading, uploadPct = null, pick
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onTakePhoto} disabled={uploading} style={primaryBtn(MKT)}><Camera size={15} /> {sending || 'Take photo'}</button>
-        <button type="button" onClick={onRecordVideo} disabled={uploading} style={primaryBtn(MKT)}><Play size={15} /> {sending ? 'Video' : 'Record video'}</button>
-        <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> Upload</button>
+        <button type="button" onClick={onTakePhoto} disabled={uploading} style={primaryBtn(MKT)}><Camera size={15} /> {sending || 'Take a photo'}</button>
+        <button type="button" onClick={onRecordVideo} disabled={uploading} style={primaryBtn(MKT)}><Play size={15} /> {sending ? 'Video' : 'Record a video'}</button>
+        <button type="button" onClick={onUploadClick} disabled={uploading} style={ghostBtn(theme)}><Upload size={15} /> Choose a file</button>
         {selected.length > 0 && <button type="button" onClick={() => { onMakePost(selected); setSelected([]) }} style={primaryBtn(MKT)}><Sparkles size={15} /> Make a post from {selected.length}</button>}
         {isManager && <button type="button" onClick={suggestNow} disabled={suggesting} title="Draft posts from unused photos and yesterday's finished jobs" style={ghostBtn(theme)}><Sparkles size={15} /> {suggesting ? 'Drafting…' : 'Suggest posts now'}</button>}
         <span style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>Every morning, unused photos and finished jobs become drafts in the queue.</span>
@@ -1089,7 +1107,6 @@ function ChannelsTab({ theme, isMobile, publisher, brand = '', brandName, isMana
         {(byPlatform.facebook || byPlatform.linkedin) && <PagePickers theme={theme} brand={brand} invoke={invoke} isManager={isManager} status={status} />}
       </Card>
       <LinksCard theme={theme} isMobile={isMobile} kit={kit} brandName={brandName} isManager={isManager} onSave={onSaveKit} companyLinks={companyLinks} onPushToCompany={onPushToCompany} />
-      <AdsCard theme={theme} isMobile={isMobile} kit={kit} isManager={isManager} onSave={onSaveKit} />
     </div>
   )
 }
@@ -1449,7 +1466,7 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => setViewing({ url: videoCapture.url, video: true })} style={ghostBtn(theme)}><Play size={14} /> Preview</button>
-                  <button type="button" onClick={editVideo} style={primaryBtn(MKT)}>{plan?.sb ? <Clapperboard size={14} /> : <Scissors size={14} />} Edit video, music & voice</button>
+                  <button type="button" onClick={editVideo} style={primaryBtn(MKT)}>{plan?.sb ? <Clapperboard size={14} /> : <Scissors size={14} />} Edit video</button>
                 </div>
                 <div style={{ fontSize: 12, color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <Music size={13} color={theme.textMuted} /> <span>{musicLabel}</span>
@@ -1526,7 +1543,6 @@ function Composer({ theme, isMobile, companyId, currentEmployee, isManager, init
 
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderTop: `1px solid ${theme.border}`, position: 'sticky', bottom: 0, background: theme.bgCard, flexWrap: 'wrap' }}>
           <button type="button" disabled={saving} onClick={() => saveAnd('draft', false)} style={ghostBtn(theme)}>Save draft</button>
-          <button type="button" disabled={saving} onClick={() => saveAnd('approved', false)} style={ghostBtn(theme)}><Check size={15} /> Approve</button>
           <div style={{ flex: 1 }} />
           {isManager && (
             <button type="button" disabled={saving || !canPublish} onClick={() => saveAnd('approved', true)} style={{ ...primaryBtn(MKT), opacity: canPublish ? 1 : 0.5 }}>
@@ -2422,7 +2438,7 @@ function VideoEditor({ theme, isMobile, clips, caption, note, companyId, employe
         </div>
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button type="button" onClick={plan} disabled={planning} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Planning…' : 'Let the AI plan the cut'}</button>
+            <button type="button" onClick={plan} disabled={planning} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Working…' : 'Let the AI plan the cut'}</button>
             <span style={{ fontSize: 12, color: theme.textMuted }}>Orders the clips to tell the story and keeps the parts that match the caption.</span>
           </div>
           {planning && <ScoutLoader theme={theme} label="Watching the clips…" size={44} />}
@@ -2616,7 +2632,7 @@ function StoryboardMaker({ theme, isMobile, captures: given, caption, note, comp
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, position: 'sticky', top: 0, background: theme.bgCard, zIndex: 1 }}>
           <Clapperboard size={18} color={MKT} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Make a video with AI</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>Make a video</div>
             <div style={{ fontSize: 12, color: theme.textMuted }}>{captures.length ? `From ${captures.length} photo${captures.length === 1 ? '' : 's'}/clip${captures.length === 1 ? '' : 's'} and your line.` : 'From your line alone: bold text cards in the brand colour.'}</div>
           </div>
           <button type="button" onClick={onClose} style={{ ...ghostBtn(theme), padding: 8 }}><X size={18} /></button>
@@ -2626,8 +2642,8 @@ function StoryboardMaker({ theme, isMobile, captures: given, caption, note, comp
             <div style={sectionLabel(theme)}>What should it say?</div>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Hard evidence that lighting is everything. Same warehouse, before and after our LED retrofit." style={{ ...inputStyle(theme), minHeight: 72, resize: 'vertical', fontFamily: 'inherit' }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" onClick={plan} disabled={planning || (!description.trim() && !captures.length)} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Directing…' : sb ? 'Plan it again' : 'Plan the video'}</button>
-              {!captures.length && <button type="button" onClick={paint} disabled={painting || !description.trim()} title="No photos? The AI paints two from your line and they join the inbox" style={{ ...ghostBtn(theme), minHeight: 40 }}><ImageIcon size={15} /> {painting ? 'Painting…' : 'Make pictures first'}</button>}
+              <button type="button" onClick={plan} disabled={planning || (!description.trim() && !captures.length)} style={primaryBtn(MKT)}><Sparkles size={15} /> {planning ? 'Working…' : sb ? 'Plan it again' : 'Plan the video'}</button>
+              {!captures.length && <button type="button" onClick={paint} disabled={painting || !description.trim()} title="No photos? The AI paints two from your line and they join the inbox" style={{ ...ghostBtn(theme), minHeight: 40 }}><ImageIcon size={15} /> {painting ? 'Working…' : 'Make pictures first'}</button>}
               <span style={{ fontSize: 12, color: theme.textMuted }}>Two photos of the same spot become a before-and-after reveal.</span>
             </div>
           </div>
