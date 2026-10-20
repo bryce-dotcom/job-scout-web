@@ -156,6 +156,9 @@ const TOOLS = [
         status_changed_on: { type: 'string', description: 'Only jobs whose status CHANGED on this day: YYYY-MM-DD or "today". With status, that is "moved to <status> today".' },
         assigned_to: { type: 'integer', description: 'Filter by employee ID' },
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
+        state: { type: 'string', description: 'Only jobs in this state ("AZ", "Arizona", "UT") — matched on the job address, or an "AZ …" job title.' },
+        address_contains: { type: 'string', description: 'Only jobs whose address contains this (a city, street or ZIP).' },
+        open_only: { type: 'boolean', description: 'true = only jobs still to do (the company\'s OPEN statuses — not delivered or closed). Use it for "still to install", "in the pipeline", "not done yet". Answer revenue questions from job_total with group_by status.' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
         end_date: { type: 'string', description: 'ISO date — only jobs scheduled on/before this date' },
         group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'] },
@@ -1396,6 +1399,31 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
           params.append('last_status_change_at', `lt.${dayStartUtc(next, tz).toISOString()}`)
         }
       }
+      // STILL TO DO: the company's own OPEN statuses (category "open" in its
+      // status list — not delivered, not closed). "How much revenue do we
+      // have to install still" is a question about these.
+      if (input.open_only === true && !input.status) {
+        const st = await fetch(sb(`settings?select=value&company_id=eq.${companyId}&key=eq.job_statuses&limit=1`), { headers: hdr }).then((x) => x.ok ? x.json() : []).catch(() => [])
+        let open: string[] = []
+        try { open = (JSON.parse(st?.[0]?.value || '[]') || []).filter((s: any) => String(s?.category || '').toLowerCase() === 'open').map((s: any) => String(s.id ?? s.name)) } catch { /* none */ }
+        if (open.length) params.append('status', `in.(${open.map((s) => `"${s.replace(/"/g, '')}"`).join(',')})`)
+      }
+      // WHERE. London asked "how many jobs in Arizona" (2026-10-20) and this
+      // tool could not filter by place at all — the answer he got was
+      // invented. A state matches its two letters as a word in the job's
+      // address, its full name, or an "AZ …" job title (how HHH names them).
+      const STATE_NAMES: Record<string, string> = { AZ: 'Arizona', UT: 'Utah', ID: 'Idaho', NV: 'Nevada', CO: 'Colorado', NM: 'New Mexico', WY: 'Wyoming', CA: 'California', OR: 'Oregon', WA: 'Washington', MT: 'Montana', TX: 'Texas' }
+      if (input.state) {
+        const raw = String(input.state).trim()
+        const code = (raw.length === 2 ? raw.toUpperCase() : Object.entries(STATE_NAMES).find(([, n]) => n.toLowerCase() === raw.toLowerCase())?.[0]) || ''
+        const full = STATE_NAMES[code] || raw
+        if (code) params.append('or', `(job_address.imatch.\\m${code}\\M,address.imatch.\\m${code}\\M,job_address.ilike.*${full}*,address.ilike.*${full}*,job_title.imatch.^${code}\\s)`)
+        else params.append('or', `(job_address.ilike.*${full}*,address.ilike.*${full}*)`)
+      }
+      if (input.address_contains) {
+        const t = String(input.address_contains).replace(/[*,()]/g, '').trim()
+        if (t) params.append('or', `(job_address.ilike.*${t}*,address.ilike.*${t}*)`)
+      }
       if (input.assigned_to) params.append('salesperson_id', `eq.${input.assigned_to}`)
       if (input.customer_name) params.append('customer_name', `ilike.*${input.customer_name}*`)
       if (input.start_date) params.append('start_date', `gte.${input.start_date}`)
@@ -2080,7 +2108,9 @@ const LAST_STEP_NOTE = '\n\n## You are out of steps for this reply\nYou have use
 
 /** Is this message asking for work on their computer? Broad on purpose: a
  *  false yes costs a second of streaming, a false no shows an invented step. */
-const COMPUTER_ASK = /\b(my (computer|pc|mac|laptop|desktop|screen|machine)|on (the|my|this) (computer|pc|mac|laptop|machine)|chrome|safari|firefox|microsoft edge|excel|outlook|teams|notepad|file explorer|finder|traksmart|screenshot|my (texts|messages|email|inbox|gmail)|gmail|ctrl\+|address bar)\b/i
+// Typed fast on a phone, too: London's "take a screenshto fo whats infront"
+// (2026-10-20) missed "screenshot", so the reply streamed unchecked.
+const COMPUTER_ASK = /\b(my (computer|pc|mac|laptop|desktop|screen|machine)|on (the|my|this) (computer|pc|mac|laptop|machine)|chrome|safari|firefox|microsoft edge|excel|outlook|teams|notepad|file explorer|finder|traksmart|screenshot|my (texts|messages|email|inbox|gmail)|gmail|ctrl\+|address bar)\b|\bscre+n ?sh?o?t?\w*|\bscrn ?sh?o?t\w*|\bwhat'?s? ?(is )?in ?front\b|\bin ?front of (me|you|my)\b/i
 
 /** The newest thing the person said, as text — a message may be blocks. */
 function lastUserText(messages: any[] = []): string {
@@ -2718,6 +2748,12 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         const used = new Set<string>()
         let corrected = false
+        // After "you said you did it on their computer and did not": when they
+        // really ASKED for computer work, the next round must use the tool, not
+        // promise to. London, 2026-10-20: "take a screenshto fo whats infront" →
+        // "Taking a screenshot now… I said I was taking a screenshot, but I didn't
+        // actually send anything. Let me do it now:" — and the turn ended there.
+        let forceComputer = false
         // ON THEIR COMPUTER, WORDS WAIT FOR THE WORK. A streamed claim cannot
         // be unsaid: on 2026-10-15 Jenny wrote out a whole Gmail visit — "Clicking
         // the Bryce profile… 9 unread, top one from Bryce" — in a round with no
@@ -2759,11 +2795,12 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
               system: (systemPrompt || '') + (outOfSteps(round) ? LAST_STEP_NOTE : ''),
-              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : {}) } : {}),
+              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               messages: convo,
               stream: true,
             }),
           })
+          forceComputer = false // one forced round, never more
           if (!res.ok || !res.body) {
             const errText = await res.text()
             const failure = await reportAnthropicFailure(aiMeta, res.status, errText)
@@ -2860,6 +2897,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 pending = ''
                 convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
                 convo.push({ role: 'user', content: correctionFor(claim, false) })
+                forceComputer = claim === 'computer' && computerAsk
                 continue
               }
               if (claim) {
@@ -2877,6 +2915,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 // `true`: this is a stream, so they have already read it and
                 // it has to be taken back in words.
                 convo.push({ role: 'user', content: correctionFor(claim, true) })
+                forceComputer = claim === 'computer' && computerAsk
                 continue
               }
             }

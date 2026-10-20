@@ -58,7 +58,7 @@ describe('a step on their computer reports back, and he keeps going', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
     expect(s).toMatch(/const outOfSteps = \(round: number\) => used\.has\('use_my_computer'\) && round === 11/)
     expect(s).toMatch(/system: \(systemPrompt \|\| ''\) \+ \(outOfSteps\(round\) \? LAST_STEP_NOTE : ''\)/)
-    expect(s).toMatch(/tools: setup\.tools, \.\.\.\(outOfSteps\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : \{\}\)/)
+    expect(s).toMatch(/tools: setup\.tools, \.\.\.\(outOfSteps\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : forceComputer \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \} : \{\}\)/)
     expect(chat).toMatch(/Never say the job is done unless a screenshot showed it done\./)
   })
   it('a computer task gets 12 tool rounds, everything else 5', () => {
@@ -73,7 +73,7 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
     expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\r?\n\s+else \{\s+send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)\s+shownAny = true/)
   })
   it('a held claim is never shown — he is corrected out of sight, as unseen', () => {
-    expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false\)[\s\S]{0,40}continue/)
+    expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false\)[\s\S]{0,120}continue/)
   })
   it('a round that acts is shown as it acts, and a passed answer is shown at the end', () => {
     expect(s).toMatch(/\/\/ A round that acts: its words go out now, as the action runs\.\n\s+flush\(\)/)

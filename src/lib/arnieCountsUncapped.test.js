@@ -90,3 +90,24 @@ describe('what would we put up — the playbook answers, read-only', () => {
     expect(chat).toMatch(/call query_lighting_swap and name the product it returns/)
   })
 })
+
+describe('London, 2026-10-20: "how many jobs in Arizona" and a misspelt screenshot', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  it('query_jobs can filter by state, address and still-open', () => {
+    expect(chat).toMatch(/state: \{ type: 'string', description: 'Only jobs in this state/)
+    expect(chat).toMatch(/open_only: \{ type: 'boolean'/)
+    expect(chat).toMatch(/String\(s\?\.category \|\| ''\)\.toLowerCase\(\) === 'open'/)
+    expect(chat).toContain('job_title.imatch.^${code}\\\\s)')
+  })
+  it('a misspelt computer ask is still a computer ask', () => {
+    const src = chat.match(/const COMPUTER_ASK = (\/.*\/i)\n/)[1]
+    const re = new Function(`return ${src}`)()
+    for (const t of ['take a screenshto fo whats infront', 'screen shot please', 'what is in front']) expect(re.test(t), t).toBe(true)
+    for (const t of ['how many jobs in arizona', 'the screen door job']) expect(re.test(t), t).toBe(false)
+  })
+  it('after a caught claim of computer work they asked for, the retry must USE the tool, once', () => {
+    expect(chat).toMatch(/forceComputer \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \}/)
+    expect((chat.match(/forceComputer = claim === 'computer' && computerAsk/g) || []).length).toBe(2)
+    expect(chat).toMatch(/forceComputer = false \/\/ one forced round, never more/)
+  })
+})
