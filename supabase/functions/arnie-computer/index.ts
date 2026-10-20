@@ -196,6 +196,10 @@ Deno.serve(async (req) => {
               })(),
               // Can this computer's launcher pick up new builds by itself?
               self_update: (body.capabilities as Record<string, unknown>).self_update === true,
+              // Has it got the assistant's own background browser (browser.mjs)?
+              // Kept here or the assistant is never told it exists — the shape
+              // check drops anything it does not name.
+              background_browser: (body.capabilities as Record<string, unknown>).background_browser === true,
             }
             : null,
         }),

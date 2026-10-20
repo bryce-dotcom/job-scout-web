@@ -118,6 +118,8 @@ describe('her own browser behind theirs (Cole, 2026-10-19: "so I can work and le
   })
   it('Jenny is told about it only when that computer has it', () => {
     expect(agent).toMatch(/background_browser: bg\.available\(\),/)
+    // the server's shape check must KEEP it, or she is never told
+    expect(read('../../supabase/functions/arnie-computer/index.ts')).toMatch(/background_browser: \(body\.capabilities as Record<string, unknown>\)\.background_browser === true,/)
     expect(chat).toMatch(/if \(session\.capabilities\?\.background_browser\) \{\n\s+lines\.push\('YOUR OWN BROWSER: for any WEBSITE, use app="browser"/)
     expect(chat).toMatch(/enum: \[[^\]]*'navigate', 'show', 'hide'\]/)
   })
