@@ -1158,7 +1158,7 @@ export default function LenardAZSRP() {
           try {
             const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
             const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-            const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${project.audit.customer_signature}`, {
+            const res = await fetch(project.audit.signedUrls?.[project.audit.customer_signature] || `${SUPABASE_URL}/storage/v1/object/public/audit-photos/${project.audit.customer_signature}`, {
               headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON }
             });
             if (res.ok) {
@@ -1183,7 +1183,7 @@ export default function LenardAZSRP() {
             const restored = [];
             for (const path of project.audit.photoPaths) {
               try {
-                const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/audit-photos/${path}`, {
+                const res = await fetch(project.audit.signedUrls?.[path] || `${SUPABASE_URL}/storage/v1/object/public/audit-photos/${path}`, {
                   headers: { 'Authorization': `Bearer ${SUPABASE_ANON}`, 'apikey': SUPABASE_ANON }
                 });
                 if (res.ok) {

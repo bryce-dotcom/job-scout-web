@@ -64,7 +64,8 @@ import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
 import { clockInChoice, mustClockToJob, clockInSettings } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
-import { autoLinkReceipts } from '../lib/expenseMatch'
+import { autoLinkReceipts } from '../lib/expenseMatch'
+import { SignedImg } from '../lib/storageUrl'
 
 // Stripe card payment form (rendered inside Elements provider)
 function StripeCardForm({ theme, amount, onSuccess, onError }) {
@@ -2629,12 +2630,12 @@ export default function FieldScout() {
                                   {Array.isArray(a.photos) && a.photos.length > 0 && (
                                     <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       {a.photos.filter(Boolean).map((src, pi) => (
-                                        <img
+                                        <SignedImg
                                           key={pi}
                                           src={src}
                                           alt={`${a.area_name || 'Area'} photo ${pi + 1}`}
                                           loading="lazy"
-                                          onClick={(e) => { e.stopPropagation(); window.open(src, '_blank', 'noopener') }}
+                                          onClick={(e) => { e.stopPropagation(); window.open(e.currentTarget.src, '_blank', 'noopener') }}
                                           style={{
                                             width: '48px', height: '48px', objectFit: 'cover',
                                             borderRadius: '6px', cursor: 'pointer',
@@ -2716,12 +2717,12 @@ export default function FieldScout() {
                                   {Array.isArray(l.photos) && l.photos.length > 0 && (
                                     <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       {l.photos.filter(Boolean).map((src, pi) => (
-                                        <img
+                                        <SignedImg
                                           key={pi}
                                           src={src}
                                           alt={`Survey photo ${pi + 1}`}
                                           loading="lazy"
-                                          onClick={(e) => { e.stopPropagation(); window.open(src, '_blank', 'noopener') }}
+                                          onClick={(e) => { e.stopPropagation(); window.open(e.currentTarget.src, '_blank', 'noopener') }}
                                           style={{
                                             width: '48px', height: '48px', objectFit: 'cover',
                                             borderRadius: '6px', cursor: 'pointer',

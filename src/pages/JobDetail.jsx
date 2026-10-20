@@ -51,7 +51,8 @@ import { estimateLink, savePlan, propagateWarning, descriptionChanged } from '..
 import { documentWord } from '../lib/documentVocabulary'
 import { toast } from '../lib/toast'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
-import { autoLinkReceipts } from '../lib/expenseMatch'
+import { autoLinkReceipts } from '../lib/expenseMatch'
+import { SignedImg, signedUrlFor } from '../lib/storageUrl'
 
 const CATEGORY_COLORS = {
   CONTRACT: { bg: '#dcfce7', text: '#166534' },
@@ -711,13 +712,11 @@ function JobDetailInner() {
               .from('audit-photos')
               .list(`audits/${auditData.id}`, { search: 'photo_' })
             if (files?.length) {
-              const photos = files
-                .filter(f => f.name?.startsWith('photo_'))
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map(f => {
-                  const { data: urlData } = supabase.storage.from('audit-photos').getPublicUrl(`audits/${auditData.id}/${f.name}`)
-                  return { url: urlData.publicUrl, name: f.name }
-                })
+              // audit-photos is private (2026-10-20): sign them for the visit —
+              // six hours, so the gallery and the submittal export both open them.
+              const names = files.filter(f => f.name?.startsWith('photo_')).sort((a, b) => a.name.localeCompare(b.name)).map(f => f.name)
+              const { data: signed } = await supabase.storage.from('audit-photos').createSignedUrls(names.map(n => `audits/${auditData.id}/${n}`), 6 * 3600)
+              const photos = names.map((name, i) => ({ url: signed?.[i]?.signedUrl || null, name })).filter(p => p.url)
               setAuditPhotos(photos)
             } else {
               setAuditPhotos([])
@@ -3408,7 +3407,7 @@ function JobDetailInner() {
           if (item.type === 'text') {
             data = item.content
           } else if (item.type === 'public') {
-            const resp = await fetch(item.url)
+            const resp = await fetch((await signedUrlFor(item.url)) || item.url)
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
             data = await resp.blob()
           } else if (item.type === 'signed') {
@@ -3520,7 +3519,7 @@ function JobDetailInner() {
 
           let bytes = null
           if (item.type === 'public') {
-            const resp = await fetch(item.url); if (resp.ok) bytes = await resp.arrayBuffer()
+            const resp = await fetch((await signedUrlFor(item.url)) || item.url); if (resp.ok) bytes = await resp.arrayBuffer()
           } else if (item.type === 'signed') {
             const { data: signedData } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
             if (signedData?.signedUrl) { const resp = await fetch(signedData.signedUrl); if (resp.ok) bytes = await resp.arrayBuffer() }
@@ -3627,7 +3626,7 @@ function JobDetailInner() {
           let bytes = null
           let mime = ''
           if (item.type === 'public') {
-            const resp = await fetch(item.url)
+            const resp = await fetch((await signedUrlFor(item.url)) || item.url)
             if (resp.ok) { bytes = await resp.arrayBuffer(); mime = resp.headers.get('content-type') || '' }
           } else if (item.type === 'signed') {
             const { data: sd } = await supabase.storage.from(item.att.storage_bucket).createSignedUrl(item.att.file_path, 300)
@@ -5075,7 +5074,7 @@ function JobDetailInner() {
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                               {auditPhotos.map((url, idx) => (
                                 <div key={`audit-${idx}`} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
-                                  <img
+                                  <SignedImg
                                     src={url}
                                     alt={`Photo ${idx + 1}`}
                                     onClick={() => setViewingPhoto({ url, name: `${line.item?.name || 'Line'} Photo ${idx + 1}` })}
@@ -5178,7 +5177,7 @@ function JobDetailInner() {
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {victorPhotos.map((vp, idx) => (
                                   <div key={`victor-${idx}`} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: '2px solid rgba(168,85,247,0.3)' }}>
-                                    <img
+                                    <SignedImg
                                       src={vp.url}
                                       alt={`Verification ${idx + 1}`}
                                       onClick={() => setViewingPhoto({ url: vp.url, name: `Victor Verification ${idx + 1}` })}
@@ -6971,7 +6970,7 @@ function JobDetailInner() {
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
                           {verificationPhotos[report.id].map(photo => (
                             <div key={photo.id} style={{ position: 'relative' }}>
-                              <img
+                              <SignedImg
                                 src={photo.url}
                                 alt={photo.photoType}
                                 onClick={(e) => { e.stopPropagation(); setViewingPhoto({ url: photo.url, name: photo.photoType }) }}
@@ -7148,7 +7147,7 @@ function JobDetailInner() {
                       gap: '10px'
                     }}>
                       {isImage && att.storage_bucket ? (
-                        <img
+                        <SignedImg
                           src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
                           alt={att.file_name}
                           style={{
@@ -8981,7 +8980,7 @@ function JobDetailInner() {
           <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
             {'\u2715'}
           </button>
-          <img
+          <SignedImg
             src={viewingPhoto.url}
             alt={viewingPhoto.name || 'Photo'}
             onClick={(e) => e.stopPropagation()}

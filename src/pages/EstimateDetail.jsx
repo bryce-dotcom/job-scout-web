@@ -39,7 +39,8 @@ import { pricePercentOfContractFor } from '../lib/pricingRules'
 import DuplicateLeadWarning from '../components/DuplicateLeadWarning'
 import { findSimilarLeads } from '../lib/leadDuplicates'
 import { walletPortalFields } from '../lib/wallets'
-import { localDateStr } from '../lib/localDate'
+import { localDateStr } from '../lib/localDate'
+import { SignedImg } from '../lib/storageUrl'
 
 const InteractiveProposal = lazy(() => import('../components/proposal/InteractiveProposal'))
 const FormalProposal = lazy(() => import('../components/proposal/FormalProposal'))
@@ -3978,7 +3979,7 @@ function EstimateDetailInner() {
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                               {photos.map((url, idx) => (
                                 <div key={idx} style={{ position: 'relative', width: '72px', height: '72px', borderRadius: '8px', overflow: 'hidden', border: `1px solid ${theme.border}` }}>
-                                  <img
+                                  <SignedImg
                                     src={url}
                                     alt={`Photo ${idx + 1}`}
                                     onClick={() => setViewingPhoto({ url, name: `${line.item?.name || line.item_name || 'Line'} Photo ${idx + 1}` })}
@@ -4378,7 +4379,7 @@ function EstimateDetailInner() {
               )}
               {estimate.deposit_photo && (
                 <div style={{ marginTop: '8px' }}>
-                  <img
+                  <SignedImg
                     src={estimate.deposit_photo}
                     alt="Deposit receipt"
                     onClick={() => setViewingPhoto({ url: estimate.deposit_photo, name: 'Deposit Receipt' })}
@@ -4806,7 +4807,7 @@ function EstimateDetailInner() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {quoteExpenses.map(exp => (
                   <div key={exp.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}` }}>
-                    {exp.receipt_url && (<img src={exp.receipt_url} alt="receipt" onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })} style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }} />)}
+                    {exp.receipt_url && (<SignedImg src={exp.receipt_url} alt="receipt" onClick={() => setViewingPhoto({ url: exp.receipt_url, name: 'Receipt' })} style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '4px', cursor: 'pointer', border: `1px solid ${theme.border}`, flexShrink: 0 }} />)}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '13px', fontWeight: '500', color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.vendor || exp.description || 'Expense'}</div>
                       <div style={{ fontSize: '10px', color: theme.textMuted }}>{exp.category || 'Uncategorized'}</div>
@@ -4900,7 +4901,7 @@ function EstimateDetailInner() {
                       gap: '10px'
                     }}>
                       {isImage && att.storage_bucket ? (
-                        <img
+                        <SignedImg
                           src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
                           alt={att.file_name}
                           style={{
@@ -5612,7 +5613,7 @@ function EstimateDetailInner() {
           <button onClick={() => setViewingPhoto(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', color: '#fff', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2001 }}>
             <X size={22} />
           </button>
-          <img
+          <SignedImg
             src={viewingPhoto.url}
             alt={viewingPhoto.name}
             onClick={(e) => e.stopPropagation()}

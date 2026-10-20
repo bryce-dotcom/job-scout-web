@@ -30,7 +30,8 @@ import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
 import { createEstimateFromIntake } from '../lib/estimateIntake'
-import { localDateStr } from '../lib/localDate'
+import { localDateStr } from '../lib/localDate'
+import { SignedImg } from '../lib/storageUrl'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -2131,7 +2132,7 @@ export default function LeadDetail() {
                     border: `1px solid ${theme.border}`
                   }}>
                     {exp.receipt_url && (
-                      <img
+                      <SignedImg
                         src={exp.receipt_url}
                         alt="receipt"
                         onClick={() => setViewingDoc({ url: exp.receipt_url, name: 'Receipt' })}
@@ -2255,7 +2256,7 @@ export default function LeadDetail() {
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
                         {isImage && att.storage_bucket ? (
-                          <img
+                          <SignedImg
                             src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${att.storage_bucket}/${att.file_path}`}
                             alt={att.file_name}
                             style={{

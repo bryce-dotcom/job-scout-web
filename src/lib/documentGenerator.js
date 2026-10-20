@@ -127,9 +127,10 @@ export async function buildDataContext({ lead, job, audits, quotes, lineItems, a
   // canonical column system. Only used if the resolver found nothing.
   if (!signature.has_customer && audit?.customer_signature) {
     try {
-      const { data: sigUrlData } = supabase.storage.from('audit-photos').getPublicUrl(audit.customer_signature)
-      if (sigUrlData?.publicUrl) {
-        const sigRes = await fetch(sigUrlData.publicUrl)
+      // audit-photos is private (2026-10-20): a signed link, not the public one.
+      const { data: sigUrlData } = await supabase.storage.from('audit-photos').createSignedUrl(audit.customer_signature, 600)
+      if (sigUrlData?.signedUrl) {
+        const sigRes = await fetch(sigUrlData.signedUrl)
         if (sigRes.ok) {
           const sigBuf = await sigRes.arrayBuffer()
           const sigBytes = new Uint8Array(sigBuf)

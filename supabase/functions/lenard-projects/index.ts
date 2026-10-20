@@ -132,6 +132,27 @@ serve(async (req) => {
           }
         } catch (_) { /* best-effort */ }
       }
+
+      // audit-photos is PRIVATE (2026-10-20): the page reopening a project
+      // cannot fetch /object/public/ any more, so sign the photos and the
+      // signature here, for an hour. signedUrls maps path → URL.
+      for (const a of audits) {
+        const paths = [...(a.photoPaths || []), ...(a.customer_signature ? [a.customer_signature] : [])]
+        if (!paths.length) continue
+        try {
+          const signRes = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/audit-photos`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${key}`, 'apikey': key!, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expiresIn: 3600, paths }),
+          })
+          if (signRes.ok) {
+            const signed = await signRes.json()
+            auditsMap[a.lead_id].signedUrls = Object.fromEntries((signed || [])
+              .filter((s: any) => s?.signedURL && s?.path)
+              .map((s: any) => [s.path, `${SUPABASE_URL}/storage/v1${s.signedURL}`]))
+          }
+        } catch (_) { /* best-effort */ }
+      }
     }
 
     const projects = leads.map((l: any) => ({
