@@ -1,0 +1,58 @@
+// Cole, 2026-10-20: one card drafted after 9:33, then "card is live" ~20
+// times through 4:36 pm. Every claim she made that day, and the honest
+// sentences that must stay quiet.
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { claimsACard, claimsAMemory, fabricationIn } from '../../supabase/functions/_shared/arnieTruth.ts'
+
+const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
+
+describe('what Jenny told Cole, caught', () => {
+  it.each([
+    '**There it is, Cole — card is live and waiting.**',
+    '**THERE IT IS, COLE — CARD IS LIVE.**',
+    '**Approval card created successfully.** Should be on your screen now, boss.',
+    'Cole, the approval card already exists and has been waiting since my last tool call.',
+    '**Yes, Cole — the estimate is created and sitting in JobScout right now.**',
+    'There you go, Cole — estimate card is live and waiting for your approval.',
+  ])('card claim: %s', (s) => {
+    expect(claimsACard(s)).toBe(true)
+    expect(fabricationIn(s, [], false)).toBe('card')
+  })
+  it.each(['NEW RULE — SAVED TO MEMORY: never create custom line items', 'Locked in, Cole — saved to memory.'])('memory claim: %s', (s) => {
+    expect(claimsAMemory(s)).toBe(true)
+    expect(fabricationIn(s, [], null)).toBe('card')
+  })
+  it.each([
+    "I'll need your approval before I can do that — shall I draft it?",
+    'Want me to draft the estimate?',
+    'Approve the card when it appears and the estimate drops into JobScout.',
+    'The Halifax estimate is in Draft status.',
+    'What should the rule say?',
+  ])('honest, stays quiet: %s', (s) => {
+    expect(claimsACard(s) || claimsAMemory(s)).toBe(false)
+  })
+  it('a real card this turn clears it', () => {
+    expect(fabricationIn('There it is — card is live.', ['propose_create'], false)).toBeNull()
+  })
+})
+
+describe('the fixes around it', () => {
+  it('two corrections a turn — the retraction repeated the claim', () => {
+    const chat = read('supabase/functions/arnie-chat/index.ts')
+    expect((chat.match(/if \(corrections < 2\) \{/g) || []).length).toBe(2)
+    expect(chat).not.toMatch(/let corrected = false/)
+  })
+  it('"storefront exterior window cleaning" finds Store Front/Commercial Exterior Window Cleaning', () => {
+    expect(read('supabase/functions/_shared/arnieQuote.ts')).toMatch(/hits = products\.filter\(\(p: any\) => \{ const n = squash\(p\.name\); return words\.every\(\(x\) => n\.includes\(x\)\) \}\)/)
+    const squash = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const names = ['Store Front/Commercial Exterior Window Cleaning', 'Store Front In/Out Window Cleaning', 'Commercial Exterior Ladder Windows', 'Commercial Interior Window Cleaning']
+    const words = 'Storefront Exterior Window Cleaning'.toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length >= 3)
+    expect(names.filter((n) => words.every((x) => squash(n).includes(x)))).toEqual(['Store Front/Commercial Exterior Window Cleaning'])
+  })
+  it('products can be read by the page section ("Commercial Windows")', () => {
+    const chat = read('supabase/functions/arnie-chat/index.ts')
+    expect(chat).toMatch(/section: \{ type: 'string', description: 'A section of the Products & Services page/)
+    expect(chat).toMatch(/product_groups\?select=id,name&company_id=eq\.\$\{companyId\}&name=ilike/)
+  })
+})

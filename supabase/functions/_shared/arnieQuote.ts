@@ -256,6 +256,14 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
     const want = squash(w.item)
     let hits = products.filter((p: any) => squash(p.name) === want)
     if (!hits.length) hits = products.filter((p: any) => squash(p.name).includes(want) || squash(p.model_number).includes(want))
+    // Every word they said, in any order and spacing: "storefront exterior
+    // window cleaning" is "Store Front/Commercial Exterior Window Cleaning".
+    // Cole, 2026-10-20 — without this it fell to the loose rule below,
+    // matched several products, and no card was ever drafted.
+    if (!hits.length) {
+      const words = String(w.item).toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length >= 3)
+      if (words.length >= 2) hits = products.filter((p: any) => { const n = squash(p.name); return words.every((x) => n.includes(x)) })
+    }
     if (!hits.length && want.length >= 6) hits = products.filter((p: any) => want.includes(squash(p.name)) && squash(p.name).length >= 6)
     if (hits.length > 1) {
       return { needs_choice: hits.slice(0, 6).map((p: any) => ({ id: p.id, label: `${p.name}${p.manufacturer ? ' — ' + p.manufacturer : ''} (${usd(Number(p.unit_price) || 0)})` })),

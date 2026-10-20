@@ -104,7 +104,30 @@ export function claimsACard(text: string): boolean {
   // Missed live on 10-14, after a refusal, with nothing on screen.
   if (drafted.test(t) && /\bcard\b/i.test(t)) return true
   if (drafted.test(t) && /\bapprove (it|this|that|the)\b/i.test(t)) return true
+  // Cole, 2026-10-20 — eight of these in one afternoon, not one card drafted
+  // after 9:33, and the patterns above caught one: "card is live and
+  // waiting", "THERE IT IS — CARD IS LIVE", "Approval card created
+  // successfully", "the approval card already exists", "should be on your
+  // screen now", "the estimate is created and sitting in JobScout".
+  if (/\bcard\b[^.!?\n]{0,40}\b(is |'s )?(live|ready|up|there|waiting|created|sent|exists|in front of you|on (your|the) screen)\b/i.test(t)) return true
+  if (/\b(there it is|there you go|here it is)\b[^.!?\n]{0,30}\bcard\b/i.test(t)) return true
+  if (/\bshould be (on|in front of|up on) (you|your screen|the screen)\b/i.test(t)) return true
+  if (/\b(the |your |that |this )?(estimate|quote|lead|job|invoice|expense|appointment|rule|routine)\b[^.!?\n]{0,25}\b(is|has been|was) (created|added|saved|made|sitting|in jobscout|live)\b/i.test(t)) return true
   return false
+}
+
+/**
+ * "Saved to memory", "locked in", "I'll remember that" — a memory is a CARD
+ * (target memory; company-wide, a company_rule), so saying one was kept with
+ * no card drafted is the same lie. Cole was told "NEW RULE — SAVED TO MEMORY"
+ * three times on 2026-10-20 and nothing was saved.
+ */
+export function claimsAMemory(text: string): boolean {
+  const t = String(text || '')
+  return /\bsaved (it |that |this )?(to|in) (my )?memory\b/i.test(t)
+    || /\b(locked|locking) (it |that |this )?in\b[^.!?\n]{0,40}\b(memory|rule|from now on|going forward)\b/i.test(t)
+    || /\bnew rule\b[^.!?\n]{0,30}\b(saved|locked in|remembered)\b/i.test(t)
+    || /\b(i'?ve|i have) (saved|remembered|stored|noted) (that|this|it)\b/i.test(t)
 }
 
 /**
@@ -287,6 +310,9 @@ export function fabricationIn(
   if (claimsComputerWork(text) && !COMPUTER_TOOLS.some((n) => names.has(n))) return 'computer'
   const noCardTool = !CARD_TOOLS.some((n) => names.has(n))
   if (claimsACard(text) && noCardTool && cardPending === false) return 'card'
+  // A memory claim needs no "pending" lookup: if no card tool made a card
+  // this turn, nothing was remembered this turn.
+  if (claimsAMemory(text) && noCardTool) return 'card'
   // Blaming the app, having drafted nothing and with nothing pending. Filing
   // a ticket for a REAL fault is a tool call, so a turn that actually did
   // that has propose_create in `used` and never reaches here.

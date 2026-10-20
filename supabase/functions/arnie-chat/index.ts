@@ -452,6 +452,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         search: { type: 'string', description: 'Match name, model number or manufacturer' },
+        section: { type: 'string', description: 'A section of the Products & Services page, as they name it ("Commercial Windows", "Electrical Services (Bundles)") — only products in that section.' },
         manufacturer: { type: 'string', description: 'Exact manufacturer match. Values can differ only by trailing whitespace — group_by=manufacturer shows you the real ones.' },
         exclude_manufacturer: { type: 'string', description: 'Only products whose manufacturer is NOT this. Use for "which ones are not MES".' },
         missing_manufacturer: { type: 'boolean', description: 'Only products with no manufacturer set at all' },
@@ -1725,6 +1726,16 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       const params = new URLSearchParams({ company_id: `eq.${companyId}`, select })
       if (input.active_only !== false) params.append('active', 'eq.true')
       if (input.product_category) params.append('product_category', `eq.${input.product_category}`)
+      // The SECTIONS on the Products & Services page are product_groups (and the
+      // bundle sections are the type). Cole: "the only place you can get the
+      // correct product and pricing is products and service tab then commercial
+      // windows" — and this tool could not look there (2026-10-20).
+      if (input.section) {
+        const want = String(input.section).replace(/[*,()]/g, '').trim()
+        const gs = await fetch(sb(`product_groups?select=id,name&company_id=eq.${companyId}&name=ilike.*${encodeURIComponent(want)}*`), { headers: hdr }).then((x) => x.ok ? x.json() : []).catch(() => [])
+        if (Array.isArray(gs) && gs.length) params.append('group_id', `in.(${gs.map((g: any) => g.id).join(',')})`)
+        else params.append('type', `ilike.*${want}*`)
+      }
       if (input.type) params.append('type', `eq.${input.type}`)
       if (input.manufacturer) params.append('manufacturer', `eq.${input.manufacturer}`)
       if (input.exclude_manufacturer) params.append('manufacturer', `neq.${input.exclude_manufacturer}`)
@@ -2762,7 +2773,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
   // already had its one go. Once only: a model that will not correct itself
   // twice would otherwise loop.
   const used = new Set<string>()
-  let corrected = false
+  let corrections = 0 // up to two a turn: a retraction can repeat the claim (Cole, 2026-10-20)
   // 5 tool rounds, or 12 once he is working on their computer: opening Gmail
   // alone is look, ctrl+l, type, enter, look — the old cap ran out mid-task.
   for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5); i++) {
@@ -2788,13 +2799,13 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
     if (toolUses.length === 0) {
       const text = blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
       // He is finished talking. Did he claim something he never did?
-      if (!corrected) {
+      if (corrections < 2) {
         let claim = fabricationIn(text, used, null)
           || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
         const untraced = claim ? [] : untracedFiguresOf(text, systemPrompt, convo)
         if (!claim && untraced.length) claim = 'figures'
         if (claim) {
-          corrected = true
+          corrections++
           logFabrication(claim, caller)
           convo.push({ role: 'assistant', content: blocks })
           convo.push({ role: 'user', content: correctionFor(claim, false, untraced) })
@@ -2830,7 +2841,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const includeTools = !!companyId && setup.tools.length > 0
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         const used = new Set<string>()
-        let corrected = false
+        let corrections = 0 // up to two a turn: a retraction can repeat the claim (Cole, 2026-10-20)
         // After "you said you did it on their computer and did not": when they
         // really ASKED for computer work, the next round must use the tool, not
         // promise to. London, 2026-10-20: "take a screenshto fo whats infront" →
@@ -2975,7 +2986,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             // here; it can be stopped from being the LAST thing said. One more
             // round, with the truth in front of him, streams straight after.
             const text = blocks.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('\n')
-            if (!corrected) {
+            if (corrections < 2) {
               let claim = fabricationIn(text, used, null)
                 || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
               // Figures nobody looked up (London's Arizona revenue, 2026-10-20).
@@ -2984,7 +2995,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               if (claim && hold) {
                 // Held, so never shown: it is replaced by what he writes next,
                 // and there is nothing for him to take back.
-                corrected = true
+                corrections++
                 logFabrication(claim, caller)
                 pending = ''
                 convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
@@ -2993,7 +3004,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 continue
               }
               if (claim) {
-                corrected = true
+                corrections++
                 logFabrication(claim, caller)
                 // Tells the client a correction follows. Unknown events are
                 // ignored by older bundles, so this is safe to send to a phone

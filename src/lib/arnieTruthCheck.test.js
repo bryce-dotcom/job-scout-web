@@ -158,11 +158,13 @@ describe('what happens when it fires', () => {
     expect(T.correctionFor('card')).toMatch(/do not suggest a bug report/)
   })
 
-  it('it fires at most once a turn, so it cannot loop', () => {
-    expect(chat).toMatch(/let corrected = false/)
-    // both loops, and the stream's held (computer) branch — every one of them
-    // inside an `if (!corrected)`, so each turn still gets exactly one go.
-    expect((chat.match(/corrected = true/g) || []).length).toBe(3)
+  it('it fires at most twice a turn, so it cannot loop', () => {
+    // Twice, not once, since 2026-10-20: Cole's retraction repeated the claim
+    // ("Calling the tool now… card is live") and went out unchecked.
+    expect((chat.match(/let corrections = 0/g) || []).length).toBe(2)
+    expect((chat.match(/if \(corrections < 2\) \{/g) || []).length).toBe(2)
+    // both loops, and the stream's held (computer) branch.
+    expect((chat.match(/corrections\+\+/g) || []).length).toBe(3)
   })
 
   it('both turn loops are covered, streaming included', () => {
