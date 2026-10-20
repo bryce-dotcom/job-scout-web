@@ -65,3 +65,16 @@ describe('what Jenny told Christopher, caught', () => {
     expect(claimsACard(s)).toBe(true)
   })
 })
+
+describe('an app too old to draw a card is said out loud, not covered up', () => {
+  const chat = read('supabase/functions/arnie-chat/index.ts')
+  it('the notice names what the app cannot show and the one-sentence fix', () => {
+    expect(chat).toMatch(/if \(!cards\.includes\('create'\)\) missing\.push\('approval cards for new records/)
+    expect(chat).toMatch(/if \(!cards\.includes\('computer'\)\) missing\.push\('anything on their computer'\)/)
+    expect(chat).toMatch(/close it completely \(on a phone, swipe it away\) and open it again/)
+  })
+  it('only for a person in the app — a text, an email or a routine is not an app', () => {
+    expect(chat).toMatch(/const inTheApp = !!caller\n/)
+    expect(chat).toMatch(/\+ \(inTheApp \? oldAppBlock\(cards, caller\) : ''\)/)
+  })
+})

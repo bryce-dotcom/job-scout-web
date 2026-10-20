@@ -796,6 +796,28 @@ function toolsFor(role: string, cards: string[], opts: { ownSession?: boolean } 
  * with the config and record cards, so they are credited with exactly those
  * and nothing newer. Anything added later has to ask for itself.
  */
+/**
+ * THE APP IN THEIR HAND IS TOO OLD to draw a card, or to reach their computer.
+ *
+ * Cole, 2026-10-20: one card all day, then "card is live" about twenty times,
+ * and "I see the TrakSmart login page" with nothing sent to his machine —
+ * yesterday the same machine took 56 actions. An app cached from before a card
+ * type existed does not declare it, the tool that drafts it is quietly left off
+ * the list, and the model, asked for an estimate it now cannot draft, invents
+ * one. She cannot fix his phone; she can tell him to, in one sentence.
+ */
+function oldAppBlock(cards: string[], caller: Caller): string {
+  const missing: string[] = []
+  if (!cards.includes('create')) missing.push('approval cards for new records (estimates, leads, rules, memories, routines)')
+  if (!cards.includes('computer')) missing.push('anything on their computer')
+  if (!missing.length) return ''
+  console.warn(`[arnie-old-app] ${caller.email} is on an app that declares [${cards.join(', ')}] — missing ${missing.join('; ')}`)
+  return `
+
+## THEIR APP IS OUT OF DATE — this decides what you can do
+The JobScout app they are using right now is an old copy that cannot show ${missing.join(', or ')}. You do not have those tools in this conversation. If they ask for something that needs one, say in ONE sentence: "Your JobScout app is on an old version that can't show that — close it completely (on a phone, swipe it away) and open it again, then ask me again." Never say a card is drafted, live or waiting, and never describe their screen — nothing you could do would reach them.`
+}
+
 function cardsFor(body: Record<string, unknown>): string[] {
   const declared = (body as { supports?: unknown }).supports
   if (!Array.isArray(declared)) return ['config', 'record']
@@ -2012,6 +2034,9 @@ Deno.serve(async (req) => {
     // at another tenant by editing two fields in devtools. Whatever the
     // client sends for these is now ignored outright.
     let caller = await resolveCaller(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    // A person in the app (their own session), as opposed to a text, an email
+    // or a routine running as them — only the app can be out of date.
+    const inTheApp = !!caller
 
     // The one exception, and it can only ever REDUCE privilege.
     //
@@ -2060,6 +2085,7 @@ Deno.serve(async (req) => {
         + await houseLightingBlock(companyId)
         // Last, so it wins over any manner described earlier.
         + answerStyleBlock(await detailFor(caller.employeeId))
+        + (inTheApp ? oldAppBlock(cards, caller) : '')
       : systemPrompt
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
