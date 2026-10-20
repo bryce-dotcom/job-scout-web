@@ -108,3 +108,35 @@ describe('Cole #2 and #3', () => {
     expect(read('supabase/functions/arnie-chat/index.ts')).toMatch(/'company_rule', 'quote_delete'\]/)
   })
 })
+
+describe('Cole #4: she knows who she is talking to', () => {
+  it('the prompt names the person, and "me" means them', () => {
+    const chat = read('supabase/functions/arnie-chat/index.ts')
+    expect(chat).toMatch(/\+ await whoTheyAreBlock\(caller\)/)
+    expect(chat).toMatch(/## Who you are talking to/)
+    expect(chat).toContain(String.raw`Never ask who they are or whether they are ${'$'}{e.name.split(/\s+/)[0]}`)
+  })
+})
+
+describe('Cole #5: the invented lead list and the email that never went', () => {
+  it('phone numbers must come from something she was given', async () => {
+    const T = await import('../../supabase/functions/_shared/arnieTruth.ts')
+    const invented = '1. Paradise Bakery - Scottsdale - Phone: (480) 502-7017\n2. Dairy Queen - Tempe - Phone: (480) 966-0313'
+    expect(T.untracedFigures(invented, '{"leads":[{"name":"Electro Tech Corp","phone":"801-393-6644"}]}', '')).toEqual(['(480) 502-7017', '(480) 966-0313'])
+    expect(T.untracedFigures('Electro Tech Corp – 801-393-6644', '{"phone":"801-393-6644"}', '')).toEqual([])
+  })
+  it('"email sent" with no email tool is caught; a real send is not', async () => {
+    const T = await import('../../supabase/functions/_shared/arnieTruth.ts')
+    const said = '**Email sent, boss.** **Subject:** Your Negotiation Leads **Check your inbox — it should be there now.**'
+    expect(T.claimsAnEmail(said)).toBe(true)
+    expect(T.fabricationIn(said, [], null)).toBe('email')
+    expect(T.fabricationIn(said, ['email_me'], null)).toBeNull()
+    expect(T.claimsAnEmail('Want me to email you the list?')).toBe(false)
+    expect(T.correctionFor('email', true)).toMatch(/CALL email_me with the real content/)
+  })
+  it('her own earlier replies are not a source, and a failed send is not a send', () => {
+    const chat = read('supabase/functions/arnie-chat/index.ts')
+    expect(chat).toMatch(/const theirs = convo\.filter\(\(m: any\) => m\?\.role === 'user'\)/)
+    expect(chat).toMatch(/if \(name === 'email_me'\) return !!\(result as Record<string, unknown> \| null\)\?\.sent/)
+  })
+})

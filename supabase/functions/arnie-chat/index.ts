@@ -2096,6 +2096,7 @@ Deno.serve(async (req) => {
     const systemPromptFinal = agent === 'arnie' && companyId != null && caller.employeeId != null
       ? await serverArniePrompt({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, body)
         + await whoYouAreBlock(caller.employeeId)
+        + await whoTheyAreBlock(caller)
         + await appMapFor(caller.employeeId)
         + await playbookBlock(companyId)
         + await companyRulesBlock(companyId, caller.level >= 3)
@@ -2212,6 +2213,8 @@ function lastUserText(messages: any[] = []): string {
 }
 
 function madeItsCard(name: string, result: unknown): boolean {
+  // An email counts only once it actually went (Cole's "email sent", 2026-10-20).
+  if (name === 'email_me') return !!(result as Record<string, unknown> | null)?.sent
   if (!/^propose_/.test(name)) return true
   const r = result as Record<string, unknown> | null
   // The same test the stream uses to draw the card: both halves present.
@@ -2297,6 +2300,24 @@ They like to see the work. As you go, say in a few words what you are checking a
 
 ## How much to say — SHORT (their setting, and the default)
 Answer the question first, in as few words as it takes: the figure, the name, the yes or no. No "Let me check…", "I'll pull…", "Here's what I found" or recap of what you looked at. No greeting, no sign-off, and no "want me to…?" offer unless something needs their decision. One or two sentences, or a tight list when they asked for several things. Keep your voice to a word at most. Never cut a card, a warning about money or safety, or anything they must act on. If they ask you to explain, walk them through it, or give the details, do that for that answer.`
+}
+
+/**
+ * WHO IS TALKING. The prompt named them only by email, so asked to "use me
+ * as the lead" Jenny asked Cole Westcott whether he was Cole (2026-10-20).
+ */
+async function whoTheyAreBlock(caller: Caller): Promise<string> {
+  try {
+    if (caller.employeeId == null) return ''
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/employees?select=name,role,business_unit&id=eq.${caller.employeeId}&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+    const e = r.ok ? (await r.json())?.[0] : null
+    if (!e?.name) return ''
+    return `
+
+## Who you are talking to
+**${e.name}** (employee #${caller.employeeId}${e.role ? `, ${e.role}` : ''}${e.business_unit ? `, ${e.business_unit}` : ''}). "Me", "my", "I" and "use me" mean ${e.name} — their own leads, estimates, jobs and pay. Never ask who they are or whether they are ${e.name.split(/\s+/)[0]}.`
+  } catch { return '' }
 }
 
 async function whoYouAreBlock(employeeId: number): Promise<string> {
@@ -2803,7 +2824,12 @@ function untracedFiguresOf(text: string, systemPrompt: string, convo: any[]): st
     // flagged as invented and the retry dropped the card (2026-10-20).
     if (convo.some((m: any) => Array.isArray(m?.content) && m.content.some((b: any) => b?.type === 'image' || b?.type === 'document'))) return []
     const toolResults = convo.flatMap((m: any) => Array.isArray(m?.content) ? m.content.filter((b: any) => b?.type === 'tool_result') : [])
-    return untracedFigures(text, (systemPrompt || '') + '\n' + JSON.stringify(convo), JSON.stringify(toolResults))
+    // Her OWN earlier replies are not a source: Cole's chat held 40 messages
+    // of invented lists, and a figure "traced" to one of them was traced to a
+    // guess (2026-10-20). What the person said, the tool results and the
+    // instructions are.
+    const theirs = convo.filter((m: any) => m?.role === 'user')
+    return untracedFigures(text, (systemPrompt || '') + '\n' + JSON.stringify(theirs), JSON.stringify(toolResults))
   } catch { return [] }
 }
 

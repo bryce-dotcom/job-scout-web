@@ -165,7 +165,7 @@ export function blamesTheApp(text: string): boolean {
     || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)
 }
 
-export type Fabrication = 'computer' | 'card' | 'figures'
+export type Fabrication = 'computer' | 'card' | 'figures' | 'email'
 
 // ── Figures nobody looked up ────────────────────────────────────────────
 //
@@ -182,6 +182,18 @@ export type Fabrication = 'computer' | 'card' | 'figures'
 // it was given. Anything else is a figure it made up.
 
 const COUNT_NOUN = '(?:jobs?|estimates?|quotes?|invoices?|leads?|customers?|appointments?|employees?|payments?|bids?|routines?|tickets?)'
+
+/**
+ * Phone numbers in a reply, as their 10 digits. Cole, 2026-10-20: "here are
+ * YOUR leads in Negotiation" — seventeen businesses and phone numbers, not
+ * one of them real (he has five). A phone number cannot be rounded or summed,
+ * so it either came from something in front of the model or it was made up.
+ */
+export function phonesIn(text: string): string[] {
+  const out: string[] = []
+  for (const m of String(text || '').matchAll(/(?:\+?1[\s.-]?)?\(?\b(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b/g)) out.push(m[1] + m[2] + m[3])
+  return [...new Set(out)]
+}
 
 /** Dollar amounts and noun counts quoted in a reply, as numbers. */
 export function figuresIn(text: string): { money: number[]; counts: number[] } {
@@ -223,7 +235,7 @@ const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.abs(b
  */
 export function untracedFigures(text: string, context: string, toolContext = ''): string[] {
   const { money, counts } = figuresIn(text)
-  if (!money.length && !counts.length) return []
+  if (!money.length && !counts.length && !phonesIn(text).length) return []
   const all = numbersIn(context)
   const set = new Set(all.map((n) => Math.round(n)))
   const tool = numbersIn(toolContext).filter((n) => n >= 1).slice(0, 400)
@@ -248,8 +260,24 @@ export function untracedFigures(text: string, context: string, toolContext = '')
   const out: string[] = []
   for (const v of money) if (v >= 10 && !traced(v)) out.push(`$${v.toLocaleString('en-US')}`)
   for (const v of counts) if (v >= 30 && !traced(v)) out.push(String(v))
+  // Phone numbers: the digits must appear somewhere in what it was given.
+  const digits = String(context || '').replace(/\D/g, '')
+  for (const p of phonesIn(text)) if (!digits.includes(p)) out.push(`(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}`)
   return out
 }
+
+/**
+ * "Email sent", "check your inbox" — with no email tool run this turn.
+ * Cole, 2026-10-20: "Email sent, boss … check your inbox" three times, then a
+ * made-up tool result ("sent": true) when he said it never came.
+ */
+export function claimsAnEmail(text: string): boolean {
+  const t = String(text || '')
+  return /\b(e-?mail|list|report|it)\b[^.!?\n]{0,25}\b(has been |was |is |'s )?sent\b(?! to the customer when)/i.test(t)
+    || /\bsent (it|the list|the report|that|this|you|an e-?mail)\b[^.!?\n]{0,20}\b(to your|your) (e-?mail|inbox)\b/i.test(t)
+    || /\bcheck your (inbox|e-?mail)\b/i.test(t)
+}
+export const EMAIL_TOOLS = ['email_me']
 
 /**
  * What to put in front of him. Short, factual, and it offers the way out that
@@ -267,6 +295,15 @@ export function correctionFor(kind: Fabrication, seen = false, detail: string[] 
     ? ['They have ALREADY READ what you just said — it is on their screen. So you MUST take it back in your first sentence, plainly and without ceremony, before anything else.']
     : ['They have not seen that message yet; it is being replaced by what you write now. Do not apologise for it or refer to it — just do the right thing.']
 
+  if (kind === 'email') {
+    return [
+      'STOP. You told them an email was sent, and no email tool ran in this turn, so NOTHING was sent. They are waiting for it.',
+      ...opensWith,
+      'Then do one of these two things, and nothing else:',
+      '1. CALL email_me with the real content, and say it is sent only after it returns sent: true.',
+      '2. If you cannot, say so in one line. Never quote a tool result you did not receive.',
+    ].join('\n')
+  }
   if (kind === 'figures') {
     return [
       `STOP. These figures in your reply did not come from any tool result, anything they said, or anything in your instructions: ${detail.slice(0, 8).join(', ')}. You made them up.`,
@@ -316,6 +353,9 @@ export function fabricationIn(
   // A memory claim needs no "pending" lookup: if no card tool made a card
   // this turn, nothing was remembered this turn.
   if (claimsAMemory(text) && noCardTool) return 'card'
+  // An email is sent by email_me (or drafted on a card for a customer, which
+  // is not "sent" until approved). Neither ran: nothing went out.
+  if (claimsAnEmail(text) && !EMAIL_TOOLS.some((n) => names.has(n)) && noCardTool) return 'email'
   // Blaming the app, having drafted nothing and with nothing pending. Filing
   // a ticket for a REAL fault is a tool call, so a turn that actually did
   // that has propose_create in `used` and never reaches here.
