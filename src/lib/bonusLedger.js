@@ -183,12 +183,31 @@ export async function syncJobBonuses({
       deliveredStatusIds,
       unassignedHoursByCrewDay,
     })
-    const moneyIn = (jobPaymentStatus?.get?.(job.id)?.paid || 0) > 0.005
+    // Absence of evidence is not evidence of absence.
+    //
+    // A caller's jobPaymentStatus only covers the invoices it fetched, and
+    // Payroll's fetch is "unpaid OR updated this period" (Payroll.jsx, the
+    // invoices select) — so a job invoiced and PAID in August, untouched
+    // since, is simply not in the map. Reading that silence as "no money in"
+    // moved the bonus back from accrued to pending every time anyone opened
+    // the Payroll page, which is Alayda's 2026-10-19 ticket and London's
+    // 2026-09-28 one before it: work that was earned, and in several cases
+    // already paid, reading as not owed yet. On 2026-10-20 one page load
+    // flipped 92 of HHH's 232 rows that way; the nightly cron, which loads
+    // every invoice, had put them right that morning.
+    //
+    // So: a job the caller knows nothing about cannot send a bonus
+    // backwards. A job it DOES hold, reporting nothing paid, still can —
+    // that is real evidence, and an unpaid invoice stays visible to every
+    // caller. Money-in always wins, and `paid` is frozen above either way.
+    const payment = jobPaymentStatus?.get?.(job.id)
+    const moneyIn = (payment?.paid || 0) > 0.005
+    const paymentUnknown = !payment
     for (const r of rows) {
       const key = `${job.id}|${r.employee_id}`
       const ex = existingByKey.get(key)
       if (ex?.status === 'paid') continue // frozen — never recompute a paid bonus
-      const status = moneyIn ? 'accrued' : 'pending'
+      const status = (moneyIn || (paymentUnknown && ex?.status === 'accrued')) ? 'accrued' : 'pending'
       if (status === 'accrued') accruedTotal += r.amount; else pendingTotal += r.amount
       // Preserve a payroll verification override: once a human released it,
       // don't re-flag it as needing verification on the next recompute.

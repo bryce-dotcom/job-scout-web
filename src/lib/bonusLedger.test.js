@@ -376,3 +376,84 @@ describe('labelling a bonus', () => {
     expect(bonusJobLabel(null).jobId).toBeNull()
   })
 })
+
+describe('a job the caller cannot see does not send a bonus backwards', () => {
+  // Alayda, 2026-10-19 (9/10): "Payroll tab isn't calculating bonuses
+  // correctly... I have no way of seeing what we have paid on." London had
+  // filed the same thing on 09-28: "lots of already paid jobs showing as
+  // owed." The cause was not the bonus maths. Payroll's invoice query is
+  // "unpaid OR updated this period", so a job invoiced and PAID in August
+  // and untouched since is absent from jobPaymentStatus entirely — and the
+  // sync read that silence as "no money in" and moved the bonus from accrued
+  // back to pending. Opening the page was enough: on 2026-10-20 a single
+  // page load flipped 92 of HHH's 232 rows, hours after the nightly cron
+  // (which loads every invoice) had put them right.
+  //
+  // Of the seven jobs Alayda named, five — Intermountain Concrete, Capital
+  // Lumber, Nucor, ABC Supply, Kimball — have a Paid invoice last touched
+  // between 2026-07-20 and 2026-09-21. Not one is visible to Payroll.
+  const ACCRUED = [{ job_id: 900, employee_id: 7, status: 'accrued', accrued_at: '2026-08-20T00:00:00Z' }]
+
+  // No entry for job 900 at all — the caller simply never fetched its invoice.
+  const blind = async (existing) => {
+    const { client, captured } = fakeSupabase(existing)
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [JOB], timeClockRows: [SHIFT], employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: CFG,
+      verifiedJobIds: new Set(),
+      jobPaymentStatus: new Map([[12345, { paid: 10, total: 10 }]]),
+      bonusOverrides: [],
+      verificationExemptUnits: EXEMPT,
+    })
+    return captured
+  }
+
+  it('leaves an accrued bonus accrued', async () => {
+    const captured = await blind(ACCRUED)
+    expect(captured).toHaveLength(1)
+    expect(captured[0].status).toBe('accrued')
+  })
+
+  it('keeps the date it was earned, not the date of the blind sync', async () => {
+    const captured = await blind(ACCRUED)
+    expect(captured[0].accrued_at).toBe('2026-08-20T00:00:00Z')
+  })
+
+  it('does not promote a pending bonus it knows nothing about', async () => {
+    // The rule only holds ground. Silence is not payment either.
+    const captured = await blind([{ job_id: 900, employee_id: 7, status: 'pending', accrued_at: null }])
+    expect(captured[0].status).toBe('pending')
+  })
+
+  it('starts a brand-new bonus at pending', async () => {
+    const captured = await blind([])
+    expect(captured[0].status).toBe('pending')
+  })
+
+  it('still downgrades when the caller HAS the job and nothing is paid', async () => {
+    // A real unpaid invoice is visible to every caller, so this is evidence,
+    // not silence — a refunded or reversed job must still be able to fall back.
+    const { client, captured } = fakeSupabase(ACCRUED)
+    await syncJobBonuses({
+      supabase: client, companyId: 3,
+      jobs: [JOB], timeClockRows: [SHIFT], employees: EMPLOYEES, skillLevels: [],
+      payrollConfig: CFG,
+      verifiedJobIds: new Set(),
+      jobPaymentStatus: new Map([[900, { paid: 0, total: 5000 }]]),
+      bonusOverrides: [],
+      verificationExemptUnits: EXEMPT,
+    })
+    expect(captured[0].status).toBe('pending')
+  })
+
+  it('money in still wins over everything', async () => {
+    const { captured } = await sync({ existing: [{ job_id: 900, employee_id: 7, status: 'pending', accrued_at: null }], paid: 2500 })
+    expect(captured[0].status).toBe('accrued')
+  })
+
+  it('never resurrects a paid bonus, blind or not', async () => {
+    const captured = await blind([{ job_id: 900, employee_id: 7, status: 'paid', accrued_at: '2026-08-20T00:00:00Z' }])
+    expect(captured).toHaveLength(0)
+  })
+})
