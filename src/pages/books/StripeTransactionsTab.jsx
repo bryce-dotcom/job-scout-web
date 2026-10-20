@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { PAYMENT_METHODS } from '../../lib/schema'
 import HelpBadge from '../../components/HelpBadge'
 import { localDateStr } from '../../lib/localDate'
+import { guardExport } from '../../lib/exportGuard'
 
 // ════════════════════ Stripe Transactions Tab ════════════════════
 // Itemized list of Stripe charges so Tracy can verify individual
@@ -99,6 +100,7 @@ export default function StripeTransactionsTab({ companyId, theme, isMobile }) {
   const unlinkedCount = visibleManual.filter(p => !p.source_transaction_id).length
 
   const downloadCsv = () => {
+    if (!guardExport('stripe_transactions', { rows: filtered.length })) return
     const headers = ['Date', 'Customer', 'Email', 'Amount', 'Status', 'Method', 'Refunded', 'Matched Invoice', 'Job ID', 'Stripe ID', 'Description']
     const rows = filtered.map(t => [
       new Date(t.created_iso).toLocaleString(),

@@ -4,6 +4,7 @@ import { adminTheme } from './components/adminTheme'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { Play, Save, Clock, Trash2, Download, AlertCircle, CheckCircle } from 'lucide-react'
 import { localDateStr } from '../../lib/localDate'
+import { guardExport } from '../../lib/exportGuard'
 
 export default function DataConsoleSQL() {
   const isMobile = useIsMobile()
@@ -131,6 +132,7 @@ export default function DataConsoleSQL() {
   }
 
   const exportResults = () => {
+    if (!guardExport('data_console_sql')) return
     if (!results || results.length === 0) return
 
     const headers = columns.join(',')

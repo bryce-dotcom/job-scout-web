@@ -705,6 +705,8 @@ function HandbookStep({ draft = {}, handbook, onSave, onBack, onNext }) {
   useEffect(() => {
     let cancelled = false
     if (!handbook?.pdf_storage_path) { setPdfLoading(false); return }
+    // Signed by employee-onboarding (the anon key can no longer read storage).
+    if (handbook.signed_url) { setPdfUrl(handbook.signed_url); setPdfLoading(false); return }
     ;(async () => {
       try {
         // We don't have the supabase client here directly; build the
@@ -911,6 +913,7 @@ function DocAcknowledgmentStep({ draft = {}, docConfig, titleText, introText, ac
   useEffect(() => {
     let cancelled = false
     if (!docConfig?.pdf_storage_path) { setPdfLoading(false); return }
+    if (docConfig.signed_url) { setPdfUrl(docConfig.signed_url); setPdfLoading(false); return }
     ;(async () => {
       try {
         const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')

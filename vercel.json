@@ -85,6 +85,10 @@
     {
       "path": "/api/cron/books-deduce",
       "schedule": "5 1,7,13,19 * * *"
+    },
+    {
+      "path": "/api/cron/sign-in-alerts",
+      "schedule": "*/15 * * * *"
     }
   ],
   "functions": {

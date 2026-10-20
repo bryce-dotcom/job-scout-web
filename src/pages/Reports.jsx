@@ -36,6 +36,7 @@ import {
 } from 'lucide-react'
 import { localDateStr } from '../lib/localDate'
 import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
+import { guardExport } from '../lib/exportGuard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -170,6 +171,8 @@ export default function Reports() {
 
   // ── CSV Export ─────────────────────────────────────────────────────
   const exportCSV = (headers, rows, filename) => {
+    // Admin-only, and logged (lib/exportGuard.js).
+    if (!guardExport(filename, { rows: rows?.length ?? null, fileName: `${filename}_${dateRange.start}_${dateRange.end}.csv` })) return
     const escape = (val) => {
       const str = String(val ?? '')
       return str.includes(',') || str.includes('"') || str.includes('\n')
@@ -604,6 +607,17 @@ export default function Reports() {
 
   // ── Report Detail View ────────────────────────────────────────────
   const currentReport = reportTypes.find(r => r.id === reportType)
+  // The cards were filtered by role but the detail view never re-checked, so
+  // typing /reports/custom reached every table — paystubs and payroll runs
+  // included — for anyone signed in (found 2026-10-20).
+  if (currentReport && !visibleReports.some((r) => r.id === currentReport.id)) {
+    return (
+      <div style={{ padding: isMobile ? '16px' : '24px', color: theme.text }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Access restricted</h2>
+        <p style={{ color: theme.textMuted, fontSize: '14px' }}>{currentReport.label || 'This report'} is for {currentReport.access === 'admin' ? 'admins' : 'managers'} only.</p>
+      </div>
+    )
+  }
   const showDateRange = !['custom', 'products-needed', 'standard'].includes(reportType)
 
   return (

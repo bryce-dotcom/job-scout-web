@@ -43,7 +43,7 @@ async function resolveAdmin(sb: any, req: Request): Promise<{ email: string; com
   const e = data?.[0];
   if (!e) return null;
   const admin = e.is_developer === true || e.is_admin === true
-    || ['Admin', 'admin', 'Owner', 'owner'].includes(e.user_role)
+    || ['Admin', 'admin', 'Owner', 'owner', 'Super Admin'].includes(e.user_role)
     || ['Admin', 'Owner'].includes(e.role);
   if (!admin) return null;
   return { email, companyId: e.company_id };

@@ -4,6 +4,7 @@ import { adminTheme } from './components/adminTheme'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import AdminModal, { FormField, FormInput, FormTextarea, ModalFooter } from './components/AdminModal'
 import { RefreshCw, Download, X, ChevronLeft, ChevronRight, Edit2, Trash2 } from 'lucide-react'
+import { guardExport } from '../../lib/exportGuard'
 
 const TABLES = [
   'companies', 'employees', 'customers', 'leads', 'jobs', 'quotes', 'invoices',
@@ -155,6 +156,7 @@ export default function DataConsoleBrowser() {
   }
 
   const exportCSV = () => {
+    if (!guardExport('data_console_table')) return
     if (data.length === 0) return
 
     const headers = columns.join(',')

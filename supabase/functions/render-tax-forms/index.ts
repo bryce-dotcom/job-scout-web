@@ -51,6 +51,18 @@ serve(async (req) => {
       return json({ error: '941 requires quarter (1-4)' }, 400);
     }
 
+    // WHO IS ASKING. This ran as the service role for whatever company_id the
+    // body named, with no check of the caller: the public anon key alone could
+    // render any company's W-2 totals, wage lists and 941s into storage and
+    // read the figures back (found 2026-10-20). Only a payroll admin of THAT
+    // company may — the same is_payroll_admin_of rule the files themselves use.
+    {
+      const auth = req.headers.get('Authorization') || '';
+      const asCaller = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } }, auth: { autoRefreshToken: false, persistSession: false } });
+      const { data: ok, error: gateErr } = await asCaller.rpc('is_payroll_admin_of', { p_company_id: Number(company_id) });
+      if (gateErr || ok !== true) return json({ error: 'Only a payroll admin of this company can generate its tax forms.' }, 403);
+    }
+
     // Load company once — used by every form for header + EIN.
     const { data: company, error: coErr } = await supabase
       .from('companies')

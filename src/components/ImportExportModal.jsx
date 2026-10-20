@@ -4,6 +4,7 @@ import { useTheme } from './Layout'
 import { Upload, X, ArrowRight, CheckCircle, AlertCircle, Loader, FileSpreadsheet, Undo2, FileText } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import ScoutLoader from './ScoutLoader'
+import { guardExport } from '../lib/exportGuard'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -64,6 +65,8 @@ export function exportToCSV(data, fields, filename) {
     alert('No data to export')
     return
   }
+  // Admin-only, and logged (lib/exportGuard.js).
+  if (!guardExport(filename, { rows: data.length, fileName: filename + '.csv' })) return
 
   const headers = fields.map(f => f.label)
   const rows = data.map(item =>
@@ -107,6 +110,7 @@ export async function exportToXLSX(data, fields, filename, options = {}) {
     alert('No data to export')
     return
   }
+  if (!guardExport(filename, { rows: data.length, fileName: filename + '.xlsx' })) return
 
   const wb = XLSX.utils.book_new()
 

@@ -1344,7 +1344,7 @@ export default function Employees() {
               <button onClick={() => setShowImportExport(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
                 <Upload size={18} /> Import
               </button>
-              <button onClick={() => exportToCSV(displayedEmployees || employees, employeesFields, 'employees_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
+              <button onClick={() => exportToCSV(displayedEmployees || employees, hasHR ? employeesFields : employeesFields.filter((f) => !['hourly_rate', 'annual_salary', 'tax_classification'].includes(f.field)), 'employees_export')} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', backgroundColor: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.border}`, borderRadius: '8px', fontSize: '14px', fontWeight: '500', cursor: 'pointer' }}>
                 <Download size={18} /> Export
               </button>
               {canManageTeam(currentUser) && (

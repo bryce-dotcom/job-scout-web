@@ -4,6 +4,7 @@ import { adminTheme } from './components/adminTheme'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { Upload, Download, FileText, CheckCircle, AlertCircle, X } from 'lucide-react'
 import { localDateStr } from '../../lib/localDate'
+import { guardExport } from '../../lib/exportGuard'
 
 const TABLES = [
   'companies', 'employees', 'customers', 'leads', 'jobs', 'quotes', 'invoices',
@@ -145,6 +146,7 @@ export default function DataConsoleBulkOps() {
   }
 
   const handleExport = async () => {
+    if (!guardExport(`data_console_all:${exportTable}`)) return
     setExporting(true)
 
     try {

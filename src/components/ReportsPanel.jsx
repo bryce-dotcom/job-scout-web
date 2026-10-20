@@ -9,6 +9,7 @@ import {
   STANDARD_REPORTS, formatReportCell, downloadReportCsv,
 } from '../lib/reports'
 import { localDateStr } from '../lib/localDate'
+import { guardExport } from '../lib/exportGuard'
 
 // Reusable Reports panel — same data wiring + UI used by Books → Reports
 // and Frankie → Reports. Pure-function reports library does the actual
@@ -246,7 +247,7 @@ export default function ReportsPanel({ theme = defaultTheme, isMobile = false, i
                   </p>
                 </div>
                 <button
-                  onClick={() => downloadReportCsv(activeReport)}
+                  onClick={() => { if (guardExport(activeReport.id, { rows: activeReport.rows?.length ?? null })) downloadReportCsv(activeReport) }}
                   disabled={!activeReport.rows?.length}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px',

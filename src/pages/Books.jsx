@@ -70,6 +70,8 @@ import LoansCard from './books/LoansCard'
 import VerdictsPanel from './books/VerdictsPanel'
 import MonthCloseCard from './books/MonthCloseCard'
 import { loanJournalRows } from '../lib/loanMatch'
+import { guardExport } from '../lib/exportGuard'
+
 export { TAX_CATEGORIES, TAX_CATEGORY_OPTIONS }
 
 // Manual accounts on the Accounts tab. Venmo, Cash App and PayPal balances
@@ -110,6 +112,7 @@ const TXN_PAGE = 150
 // it themselves. Plain-English filenames inside the ZIP so the accountant
 // can find what they need without guessing.
 async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTransactions, expenses, splitsByExpense, entityType, formatCurrency, payments = [], storeExpenses = [], connectedAccounts = [], bankAccounts = [], payrollRuns = [], paystubs = [], loans = [], loanPayments = [] }) {
+  if (!guardExport('cpa_package', { fileName: `cpa-package-${from}-${to}.zip` })) return
   const [{ default: JSZip }, { saveAs }] = await Promise.all([
     import('jszip'),
     import('file-saver'),
@@ -2076,6 +2079,7 @@ export default function Books() {
 
   // ─── Tax export ───
   const handleExportCSV = () => {
+    if (!guardExport('books_tax_transactions')) return
     const taxTxns = plaidTransactions.filter(t => {
       if (!t.confirmed) return false
       const d = new Date(t.date)

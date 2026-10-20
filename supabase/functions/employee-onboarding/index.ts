@@ -99,6 +99,16 @@ serve(async (req) => {
           .eq('key', 'onboarding_ica')
           .maybeSingle(),
       ]);
+      // The handbook and ICA PDFs, signed HERE. The portal used to sign them
+      // itself with the anon key, which only worked because project-documents
+      // let the anon key read (and list, and delete) every company's files —
+      // closed 2026-10-20. The token proved who this is; the URL lasts 6 hours.
+      const signed = async (v: any) => {
+        if (!v?.pdf_storage_path) return v || null;
+        const { data } = await supabase.storage.from('project-documents').createSignedUrl(v.pdf_storage_path, 6 * 3600);
+        return { ...v, signed_url: data?.signedUrl || null };
+      };
+      const [handbookOut, icaOut] = await Promise.all([signed(handbookSetting?.value), signed(icaSetting?.value)]);
       return jsonRes({
         ok: true,
         packet: {
@@ -111,8 +121,8 @@ serve(async (req) => {
         employee,
         company,
         training_videos: trainingSetting?.value || [],
-        handbook: handbookSetting?.value || null,
-        ica: icaSetting?.value || null,
+        handbook: handbookOut,
+        ica: icaOut,
       });
     }
 
