@@ -76,8 +76,16 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
     expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false, untraced\)[\s\S]{0,120}continue/)
   })
   it('a round that acts is shown as it acts, and a passed answer is shown at the end', () => {
-    expect(s).toMatch(/\/\/ A round that acts: its words go out now, as the action runs\.\n\s+flush\(\)/)
+    expect(s).toMatch(/if \(brief && !onComputer\) pending = ''\n\s+else flush\(\)/)
     expect(s).toMatch(/flush\(\)\n\s+send\('done', \{\}\)/)
+  })
+  it('short answers by default: every round held, a lookup round\'s narration dropped, computer steps kept', () => {
+    expect(s).toMatch(/const brief = agent === 'arnie' && caller\.employeeId != null && \(await detailFor\(caller\.employeeId\)\) !== 'detailed'/)
+    expect(s).toMatch(/const hold = computerAsk \|\| used\.has\('use_my_computer'\) \|\| brief/)
+    expect(s).toMatch(/const onComputer = computerAsk \|\| used\.has\('use_my_computer'\) \|\| toolUses\.some/)
+    expect(chat).toMatch(/\+ answerStyleBlock\(await detailFor\(caller\.employeeId\)\)/)
+    expect(chat).toMatch(/## How much to say — SHORT \(their setting, and the default\)/)
+    expect(chat).toMatch(/rows\?\.\[0\]\?\.detail === 'detailed' \? 'detailed' : 'brief'/)
   })
   it('recognises a computer ask from what they said', () => {
     const lit = chat.match(/const COMPUTER_ASK = \/(.+)\/i\n/)[1]

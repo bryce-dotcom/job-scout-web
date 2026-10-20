@@ -2039,6 +2039,8 @@ Deno.serve(async (req) => {
         + await computerBlock(companyId, caller.employeeId)
         + await crewBlock(companyId)
         + await houseLightingBlock(companyId)
+        // Last, so it wins over any manner described earlier.
+        + answerStyleBlock(await detailFor(caller.employeeId))
       : systemPrompt
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -2202,6 +2204,34 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
  * always knows — the database, keyed by the JWT — now says it last, after
  * whatever the client claimed.
  */
+/** 'brief' (the default — no row counts) or 'detailed', from their persona row. */
+const detailCache = new Map<number, Promise<'brief' | 'detailed'>>()
+function detailFor(employeeId: number | null | undefined): Promise<'brief' | 'detailed'> {
+  if (employeeId == null) return Promise.resolve('brief')
+  if (!detailCache.has(employeeId)) {
+    detailCache.set(employeeId, fetch(`${SUPABASE_URL}/rest/v1/arnie_personas?select=detail&employee_id=eq.${employeeId}&limit=1`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows: any) => (rows?.[0]?.detail === 'detailed' ? 'detailed' : 'brief') as 'brief' | 'detailed')
+      .catch(() => 'brief' as const)
+      .finally(() => setTimeout(() => detailCache.delete(employeeId), 30_000)))
+  }
+  return detailCache.get(employeeId)!
+}
+
+/** How much to say — their setting, read every message (Arnie → Setup). */
+function answerStyleBlock(detail: 'brief' | 'detailed'): string {
+  return detail === 'detailed'
+    ? `
+
+## How much to say — DETAILED (their setting)
+They like to see the work. As you go, say in a few words what you are checking and why, then give the answer, then anything worth knowing next to it.`
+    : `
+
+## How much to say — SHORT (their setting, and the default)
+Answer the question first, in as few words as it takes: the figure, the name, the yes or no. No "Let me check…", "I'll pull…", "Here's what I found" or recap of what you looked at. No greeting, no sign-off, and no "want me to…?" offer unless something needs their decision. One or two sentences, or a tight list when they asked for several things. Keep your voice to a word at most. Never cut a card, a warning about money or safety, or anything they must act on. If they ask you to explain, walk them through it, or give the details, do that for that answer.`
+}
+
 async function whoYouAreBlock(employeeId: number): Promise<string> {
   try {
     const r = await fetch(
@@ -2813,8 +2843,13 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           && COMPUTER_ASK.test(lastUserText(messages))
         let shownAny = false
         const outOfSteps = (round: number) => used.has('use_my_computer') && round === 11
+        // SHORT ANSWERS by default (Bryce, 2026-10-20: "most people just want
+        // her to haul ass"). In brief mode every round is held, and a round
+        // that only looks something up has its "Let me check…" dropped rather
+        // than shown — the answer arrives alone. Computer work keeps its steps.
+        const brief = agent === 'arnie' && caller.employeeId != null && (await detailFor(caller.employeeId)) !== 'detailed'
         for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
-          const hold = computerAsk || used.has('use_my_computer')
+          const hold = computerAsk || used.has('use_my_computer') || brief
           let pending = ''
           // A new round's first words start a new paragraph, streamed or held:
           // "I'll build that estimate for you now.Got it — here's…" was the
@@ -2989,8 +3024,12 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             return
           }
 
-          // A round that acts: its words go out now, as the action runs.
-          flush()
+          // A round that acts: its words go out now, as the action runs — unless
+          // they asked for short answers and this is only a lookup, in which
+          // case the narration is dropped and only the answer will be shown.
+          const onComputer = computerAsk || used.has('use_my_computer') || toolUses.some((t: any) => t.name === 'use_my_computer')
+          if (brief && !onComputer) pending = ''
+          else flush()
 
           // Push assistant turn + tool results, loop. Indices from the stream
           // are contiguous, but a hole would serialise as null and be rejected.

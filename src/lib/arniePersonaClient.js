@@ -16,7 +16,7 @@ export async function loadPersona(employeeId) {
   if (!employeeId) return null
   const { data } = await supabase
     .from('arnie_personas')
-    .select('id,persona,display_name,voice_id')
+    .select('id,persona,display_name,voice_id,detail')
     .eq('employee_id', employeeId)
     .maybeSingle()
   return data || null
