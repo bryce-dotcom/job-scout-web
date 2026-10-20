@@ -2368,7 +2368,7 @@ export default function Payroll() {
     try {
       const to = hrRecipients(employees)
       if (!to.length) {
-        toast('Bonus released. No one has HR access, so nobody was emailed.')
+        toast.warning('Bonus released. No one has HR access, so nobody was emailed.')
         return
       }
       const crew = employees.find(e => String(e.id) === String(bonusRow.employee_id))
@@ -2385,9 +2385,9 @@ export default function Payroll() {
         body: { to, subject, html, from: `${companyName} <payroll@appsannex.com>` },
       })
       if (error || data?.success === false) throw new Error(error?.message || data?.error || 'send failed')
-      toast(`Bonus released. HR notified (${to.length}).`)
+      toast.success(`Bonus released. HR notified (${to.length}).`)
     } catch (err) {
-      toast(`Bonus released, but the HR email failed: ${err.message}`)
+      toast.warning(`Bonus released, but the HR email failed: ${err.message}`)
     }
   }
 
