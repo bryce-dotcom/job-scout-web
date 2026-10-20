@@ -157,7 +157,7 @@ const TOOLS = [
         assigned_to: { type: 'integer', description: 'Filter by employee ID' },
         customer_name: { type: 'string', description: 'Filter by customer name (partial match)' },
         state: { type: 'string', description: 'Only jobs in this state ("AZ", "Arizona", "UT") — matched on the job address, or an "AZ …" job title.' },
-        address_contains: { type: 'string', description: 'Only jobs whose address contains this (a city, street or ZIP).' },
+        address_contains: { type: 'string', description: 'Only jobs whose address contains this (a city, street or ZIP). For a STATE use state, not this.' },
         open_only: { type: 'boolean', description: 'true = only jobs still to do (the company\'s OPEN statuses — not delivered or closed). Use it for "still to install", "in the pipeline", "not done yet". Answer revenue questions from job_total with group_by status. The result is ONLY the open ones: call them the open jobs, never "all" of them, and say nothing about how many are done unless you also ran it without open_only.' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
         end_date: { type: 'string', description: 'ISO date — only jobs scheduled on/before this date' },
@@ -1414,6 +1414,14 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       // invented. A state matches its two letters as a word in the job's
       // address, its full name, or an "AZ …" job title (how HHH names them).
       const STATE_NAMES: Record<string, string> = { AZ: 'Arizona', UT: 'Utah', ID: 'Idaho', NV: 'Nevada', CO: 'Colorado', NM: 'New Mexico', WY: 'Wyoming', CA: 'California', OR: 'Oregon', WA: 'Washington', MT: 'Montana', TX: 'Texas' }
+      // A STATE sent as address text ("Colorado") found the one address that
+      // spells it out and missed the seventeen written "CO" — "1 job, $3,850"
+      // for 18 jobs worth $151,525 (2026-10-20). A state is a state.
+      if (!input.state && input.address_contains) {
+        const t = String(input.address_contains).trim()
+        const isState = Object.entries(STATE_NAMES).find(([c, n]) => c.toLowerCase() === t.toLowerCase() || n.toLowerCase() === t.toLowerCase())
+        if (isState) { input.state = isState[0]; delete input.address_contains }
+      }
       if (input.state) {
         const raw = String(input.state).trim()
         const code = (raw.length === 2 ? raw.toUpperCase() : Object.entries(STATE_NAMES).find(([, n]) => n.toLowerCase() === raw.toLowerCase())?.[0]) || ''

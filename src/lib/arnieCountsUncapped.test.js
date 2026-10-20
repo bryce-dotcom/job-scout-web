@@ -133,3 +133,11 @@ describe('a promise to act on their computer is kept, once', () => {
     expect(chat).toMatch(/if \(computerAsk && !promisedOnce && !used\.has\('use_my_computer'\) && PROMISE_TO_ACT\.test\(text\)\) \{\n\s+promisedOnce = true[\s\S]{0,900}forceComputer = true\n\s+continue/)
   })
 })
+
+describe('a state sent as address text is treated as the state', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('"Colorado" in address_contains becomes state CO', () => {
+    expect(chat).toMatch(/if \(isState\) \{ input\.state = isState\[0\]; delete input\.address_contains \}/)
+    expect(chat).toMatch(/For a STATE use state, not this\./)
+  })
+})
