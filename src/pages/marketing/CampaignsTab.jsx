@@ -386,3 +386,58 @@ export function CampaignPerformance({ theme, isMobile, companyId, brands = [], b
     </div>
   )
 }
+
+/**
+ * Who this company must not email, and why. Written by the unsubscribe link,
+ * by Resend's bounce and complaint webhooks, and by hand; read by every
+ * sender. Removing a row is the only way to mail a bounced address again,
+ * which is deliberate: someone has to say the address was fixed.
+ */
+export function SuppressionsCard({ theme, companyId, isManager }) {
+  const [rows, setRows] = useState(null)
+  const [adding, setAdding] = useState('')
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('email_suppressions').select('id, email, reason, source, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(500)
+    setRows(data || [])
+  }, [companyId])
+  useEffect(() => { load() }, [load])
+  const remove = async (r) => {
+    if (!window.confirm(`Email ${r.email} again? They ${r.reason === 'bounced' ? 'bounced' : r.reason === 'complained' ? 'reported us as spam' : 'asked not to hear from us'}.`)) return
+    const { error } = await supabase.from('email_suppressions').delete().eq('id', r.id).eq('company_id', companyId)
+    if (error) { toast.error(error.message); return }
+    load()
+  }
+  const add = async () => {
+    const email = adding.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error('That is not an email address.'); return }
+    const { error } = await supabase.from('email_suppressions').insert({ company_id: companyId, email, reason: 'manual', source: 'office' })
+    if (error) { toast.error(error.message.includes('duplicate') ? 'Already on the list.' : error.message); return }
+    setAdding(''); load()
+  }
+  const why = { bounced: 'bounced', complained: 'marked as spam', unsubscribed: 'unsubscribed', manual: 'added by the office' }
+  return (
+    <div style={{ background: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: theme.text }}>Unsubscribed &amp; bounced</div>
+      <div style={{ fontSize: 12, color: theme.textMuted }}>Nobody here gets marketing mail. A bounced or spam-flagged address gets nothing at all, invoices included, until it is removed from this list.</div>
+      {rows == null ? null : !rows.length ? <div style={{ fontSize: 13, color: theme.textMuted }}>Nobody yet.</div> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map((r) => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.text, flexWrap: 'wrap' }}>
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>
+              <span style={pill(r.reason === 'bounced' || r.reason === 'complained' ? '#dc2626' : '#7d8a7f')}>{why[r.reason] || r.reason}</span>
+              <span style={{ fontSize: 12, color: theme.textMuted }}>{new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span style={{ flex: 1 }} />
+              {isManager && <button type="button" style={{ ...ghost(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} onClick={() => remove(r)}>Remove</button>}
+            </div>
+          ))}
+        </div>
+      )}
+      {isManager && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input style={{ ...input(theme), flex: 1, minWidth: 200 }} value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Add an address that asked to be left alone" />
+          <button type="button" style={ghost(theme)} onClick={add} disabled={!adding.trim()}><Plus size={15} /> Add</button>
+        </div>
+      )}
+    </div>
+  )
+}

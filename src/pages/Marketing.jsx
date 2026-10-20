@@ -15,7 +15,7 @@ import {
 import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/marketingUpload'
 import ScoutLoader from '../components/ScoutLoader'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
-import CampaignsTab, { CampaignPerformance } from './marketing/CampaignsTab'
+import CampaignsTab, { CampaignPerformance, SuppressionsCard } from './marketing/CampaignsTab'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
@@ -499,6 +499,7 @@ export default function Marketing() {
             <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit}
               companyLinks={companyLinks} onPushToCompany={pushLinksToCompany} />
           </div>
+          <SuppressionsCard theme={theme} companyId={companyId} isManager={isManager} />
           <div style={{ fontSize: 13, color: theme.textMuted }}>
             Newsletters through Constant Contact live with <button type="button" onClick={() => navigate('/agents/conrad-connect')} style={{ background: 'none', border: 'none', padding: 0, color: MKT, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>Conrad Connect</button>. Campaigns here send from JobScout itself.
           </div>
