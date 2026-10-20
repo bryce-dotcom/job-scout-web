@@ -55,6 +55,14 @@ async function mayDecide(rest: { url: string; key: string }, caller: Caller, pro
   if (isCreateTarget(prop.target)) {
     const need = CREATE_TARGETS[prop.target].minLevel;
     const own = prop.created_by && caller.email && prop.created_by.toLowerCase() === caller.email.toLowerCase();
+    // A target anyone may DRAFT but only some may APPROVE (a company rule:
+    // London suggests, an admin decides) never lets the drafter approve it.
+    const approve = CREATE_TARGETS[prop.target].approveLevel;
+    if (approve != null) {
+      return caller.level >= approve
+        ? { ok: true as const }
+        : { ok: false as const, error: `Only an admin can approve a ${CREATE_TARGETS[prop.target].label}. It is waiting for one on Arnie → Setup.` };
+    }
     return caller.level >= need || own
       ? { ok: true as const }
       : { ok: false as const, error: `Creating a ${CREATE_TARGETS[prop.target].label} is above your access level.` };
@@ -107,7 +115,9 @@ serve(async (req) => {
     const { data: prop } = await sb.from('arnie_proposals').select('*').eq('id', proposalId).eq('company_id', companyId).maybeSingle();
     if (!prop) return json({ error: 'Proposal not found.' }, 404);
 
-    const permitted = await mayDecide(rest, caller, prop);
+    // Withdrawing your OWN suggestion is always yours to do; approving it is not.
+    const ownWithdraw = action === 'reject' && prop.created_by && caller.email && String(prop.created_by).toLowerCase() === String(caller.email).toLowerCase();
+    const permitted = ownWithdraw ? { ok: true as const } : await mayDecide(rest, caller, prop);
     if (!permitted.ok) return json({ error: permitted.error }, 403);
     const isRecord = isRecordTarget(prop.target);
     const isBulk = isBulkTarget(prop.target);
@@ -155,6 +165,8 @@ serve(async (req) => {
         return json({ ok: true, status: 'applied', target: prop.target, changed: res.changed });
       }
       if (isCreate) {
+        // Who said yes, for targets that record it (company_rules.approved_by).
+        prop.approved_by_email = caller.email;
         const res = await applyCreateProposal(rest, companyId, prop);
         if (!res.ok) {
           if (res.stale) {

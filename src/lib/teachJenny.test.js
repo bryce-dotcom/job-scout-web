@@ -31,11 +31,22 @@ describe('reading what they taught', () => {
 })
 
 describe('the card', () => {
-  it('is admin-only, and says so in words', async () => {
-    expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/company_rule: \{\n\s+label: 'company rule',\n\s+table: 'company_rules',\n\s+minLevel: 3,/)
-    const p = await prepareCompanyRule(R, { ...admin, level: 2 }, { rules: '["x rule"]' })
-    expect(p.ok).toBe(false)
-    expect(p.error).toMatch(/Only an admin/)
+  it('anyone may suggest; only an admin approves — the drafter is no exception', async () => {
+    expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/table: 'company_rules',\n[^\n]*\n\s+minLevel: 0,\n\s+approveLevel: 3,/)
+    stubRules([])
+    const p = await prepareCompanyRule(R, { ...admin, level: 2 }, { rules: '["Every exterior light uses the 12/7 schedule."]' })
+    expect(p.ok).toBe(true)
+    expect(p.columns.suggested).toBe(true)
+    expect(p.display.find((d) => d.label === 'Suggested').value).toMatch(/An admin approves it on Arnie → Setup/)
+    const cfg = read('supabase/functions/arnie-config/index.ts')
+    expect(cfg).toMatch(/if \(approve != null\) \{\n\s+return caller\.level >= approve/)
+    expect(cfg).toMatch(/const ownWithdraw = action === 'reject'/)
+    expect(cfg).toMatch(/prop\.approved_by_email = caller\.email;/)
+  })
+  it('an admin\'s assistant is told what is waiting; a non-admin\'s says it is a suggestion', () => {
+    expect(rulesPromptBlock([], true, [{ id: 9, by: 'london', rules: ['Never pick a pole option.'] }])).toMatch(/london suggested "Never pick a pole option\."/)
+    expect(rulesPromptBlock([], false)).toMatch(/what they teach is a SUGGESTION/)
+    expect(read('src/pages/agents/arnie/ArnieTeamRules.jsx')).toMatch(/Suggested — waiting for an admin/)
   })
   it('skips what she already follows and shows the rest', async () => {
     stubRules([{ id: 7, rule: 'Every exterior light uses the 12/7 schedule.' }])
@@ -87,7 +98,7 @@ describe('every assistant in the company reads them', () => {
     // as a "duplicate" while filtering it herself (2026-10-20).
     expect(empty).toMatch(/send EVERY rule they gave/)
     expect(empty).not.toMatch(/not an admin/)
-    expect(rulesPromptBlock([], false)).toMatch(/This person is not an admin, so they cannot add a company rule/)
+    expect(rulesPromptBlock([], false)).toMatch(/This person is not an admin, so what they teach is a SUGGESTION/)
   })
   it('lists each rule with its number and who taught it, and never widens access', () => {
     const b = rulesPromptBlock([{ id: 4, rule: 'Every exterior light uses the 12/7 schedule.', taught_by: 'cole@hhh.services', created_at: '2026-10-20T15:00:00Z' }])

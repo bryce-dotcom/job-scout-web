@@ -2376,7 +2376,19 @@ You CAN send feedback and report problems: propose_create with target=ticket. Ne
  */
 async function companyRulesBlock(companyId: number, canTeach: boolean): Promise<string> {
   try {
-    return rulesPromptBlock(await activeRules({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId), canTeach)
+    const r = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
+    // Suggestions from non-admins, waiting for an admin — only an admin's
+    // assistant needs to know they are there.
+    let waiting: { id: number; by: string; rules: string[] }[] = []
+    if (canTeach) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/arnie_proposals?select=id,created_by,payload&company_id=eq.${companyId}&target=eq.company_rule&status=eq.pending&order=created_at&limit=20`,
+        { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+      const rows = res.ok ? await res.json().catch(() => []) : []
+      waiting = (Array.isArray(rows) ? rows : [])
+        .filter((p: any) => p?.payload?.columns?.suggested === true)
+        .map((p: any) => ({ id: p.id, by: String(p.created_by || '').split('@')[0], rules: Array.isArray(p.payload.columns.rules) ? p.payload.columns.rules : [] }))
+    }
+    return rulesPromptBlock(await activeRules(r, companyId), canTeach, waiting)
   } catch { return '' }
 }
 

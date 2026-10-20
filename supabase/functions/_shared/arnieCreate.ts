@@ -61,6 +61,8 @@ export interface CreateTarget {
   table: string
   /** Access-ladder level needed to draft and to approve. */
   minLevel: number
+  /** When set, the level needed to APPROVE — and the drafter's own card is no exception. */
+  approveLevel?: number
   fields: Record<string, CreateField>
   /** What the card and the audit call the new row. */
   labelOf: (fields: Record<string, string>) => string
@@ -514,7 +516,9 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
   company_rule: {
     label: 'company rule',
     table: 'company_rules',
-    minLevel: 3,
+    // Anyone may SUGGEST a rule; only an admin approves one (arnie-config).
+    minLevel: 0,
+    approveLevel: 3,
     verb: 'Teach',
     button: 'Teach everyone',
     done: 'Taught. Every assistant in the company follows it from the next message; the list is on Arnie → Setup.',

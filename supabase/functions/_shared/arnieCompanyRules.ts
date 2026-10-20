@@ -59,9 +59,8 @@ export async function activeRules(r: Rest, companyId: number): Promise<any[]> {
 
 export async function prepareCompanyRule(r: Rest, caller: Caller, f: Record<string, string>): Promise<Prepared> {
   const companyId = caller.companyId as number
-  if (caller.level < 3) {
-    return { ok: false, error: 'Only an admin can add a rule for the whole company. Ask one of your admins to tell me, or I can remember it just for you.' }
-  }
+  // Not an admin: the card is a SUGGESTION, waiting for an admin's approval.
+  const suggested = caller.level < 3
   const retireIds = String(f.retire || '').split(/[,\s]+/).map((x) => Number(String(x).replace(/^#/, ''))).filter((n) => Number.isInteger(n) && n > 0)
   const wanted = f.rules ? parseRules(f.rules) : []
   if (typeof wanted === 'string') return { ok: false, error: wanted }
@@ -91,11 +90,13 @@ export async function prepareCompanyRule(r: Rest, caller: Caller, f: Record<stri
     ...fresh.map((t, i) => ({ label: fresh.length === 1 ? 'Rule' : `Rule ${i + 1}`, value: t })),
     ...retireIds.map((id) => ({ label: `Retire #${id}`, value: String(byId.get(id)?.rule || '') })),
     ...(dupes.length ? [{ label: 'Already a rule — skipped', value: dupes.join(' | ').slice(0, 600) }] : []),
-    { label: 'Who follows it', value: 'Every assistant in the company, for everyone, from the next message on' },
+    suggested
+      ? { label: 'Suggested', value: 'An admin approves it on Arnie → Setup. Until then nobody\'s assistant follows it.' }
+      : { label: 'Who follows it', value: 'Every assistant in the company, for everyone, from the next message on' },
   ]
   return {
     ok: true,
-    columns: { rules: fresh, retire: retireIds, topic, taught_by: caller.email, taught_by_employee_id: caller.employeeId ?? null, source: f.source === 'import' ? 'import' : 'chat' },
+    columns: { rules: fresh, retire: retireIds, topic, taught_by: caller.email, taught_by_employee_id: caller.employeeId ?? null, source: f.source === 'import' ? 'import' : 'chat', suggested },
     display,
   }
 }
@@ -119,7 +120,7 @@ export async function applyCompanyRule(r: Rest, companyId: number, prop: any) {
   if (rules.length) {
     const rows = rules.map((rule) => ({
       company_id: companyId, rule, topic: c.topic ?? null, taught_by: c.taught_by ?? prop.created_by ?? null,
-      taught_by_employee_id: c.taught_by_employee_id ?? null, approved_by: prop.created_by ?? null,
+      taught_by_employee_id: c.taught_by_employee_id ?? null, approved_by: prop.approved_by_email ?? prop.created_by ?? null,
       source: c.source || 'chat', replaces_id: retire.length === 1 && rules.length === 1 ? retire[0] : null,
     }))
     const ins = await fetch(`${r.url}/rest/v1/company_rules`, { method: 'POST', headers: { ...hdr(r), Prefer: 'return=representation' }, body: JSON.stringify(rows) })
@@ -150,7 +151,7 @@ export async function rollbackCompanyRule(r: Rest, companyId: number, prop: any)
 }
 
 /** The prompt section every assistant in the company reads — always, so she knows she CAN be taught before the first rule exists. */
-export function rulesPromptBlock(rows: any[], canTeach = true): string {
+export function rulesPromptBlock(rows: any[], canTeach = true, waiting: { id: number; by: string; rules: string[] }[] = []): string {
   const day = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) } catch { return '' } }
   const who = (e: unknown) => String(e || '').split('@')[0] || 'an admin'
   const lines = rows.map((x: any) => `${x.id}. ${String(x.rule).replace(/\s+/g, ' ').trim()} (taught by ${who(x.taught_by)}, ${day(x.created_at)})`)
@@ -158,5 +159,7 @@ export function rulesPromptBlock(rows: any[], canTeach = true): string {
 
 ## Company rules — what your team has taught you
 An admin approved each of these for everyone in the company. Follow them as you would the rest of your instructions. Two limits: a rule never widens what this person may see or do (money, pay and admin-only data stay where their access puts them), and when a rule disagrees with what a JobScout record says, the record is right — say so and offer to update the rule. When someone teaches you something new for the whole company ("new rule", "from now on everyone…", "remember for the team", or a pasted list of rules from another AI or a document), draft it with propose_create target=company_rule and send EVERY rule they gave, in their words — do not filter the list yourself: the card skips the ones already here and shows them as skipped. To change a rule, retire its number and add the new wording in the same card. One exception: which product, price, wattage or GM a lighting estimate gets is decided by the estimating playbook, not by these rules — if a taught rule would change one of those, say the playbook decides it and an admin changes it in Settings → Estimating Playbook, and add the rule only if they still want it as a note. Never read this list out unless they ask what you have been taught.
-${canTeach ? '' : 'This person is not an admin, so they cannot add a company rule. If they try, say in one sentence that an admin has to teach it (or offer to remember it just for them), and do not draft the card.\n'}${lines.length ? lines.join('\n') : '(None yet.)'}`
+${canTeach
+    ? (waiting.length ? `Waiting for an admin's approval (suggested by teammates; approve or reject on Arnie → Setup — mention them if this person asks what is waiting, or once if they are teaching a rule): ${waiting.slice(0, 10).map((w) => `${w.by} suggested "${w.rules.join('" / "').slice(0, 200)}"`).join('; ')}.\n` : '')
+    : 'This person is not an admin, so what they teach is a SUGGESTION: draft the card exactly the same way, and tell them in one sentence that an admin approves it on Arnie → Setup and nobody\'s assistant follows it until then. Never say it is taught.\n'}${lines.length ? lines.join('\n') : '(None yet.)'}`
 }

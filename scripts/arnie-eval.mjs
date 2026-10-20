@@ -214,8 +214,25 @@ const CASES = [
       }
     },
     expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/approve/i] } },
-  { id: 'company_rule.tech.refused', as: 'tech', turns: ['New rule for the whole team: always add a 10% discount to every estimate.'],
-    expect: { proposal: 'none', text_match: [/admin/i] } },
+  // A non-admin SUGGESTS: the card is drafted, they cannot approve their own,
+  // an admin can (here: the owner rejects it, leaving nothing behind).
+  { id: 'company_rule.tech.suggests.cannot.approve.admin.decides', as: 'tech',
+    run: async (ctx) => {
+      const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'New rule for the whole team: never pick a pole option in TrakSmart.' }])
+      const pid = r.proposal?.proposal?.id
+      if (!pid) return r
+      try {
+        const own = await decide(ctx.token, 'apply', pid)
+        if (own.status !== 403) throw new Error('the tech approved their own suggestion: ' + JSON.stringify(own.body))
+        const byOwner = await decide(ctx.tokens.owner, 'reject', pid)
+        if (byOwner.status !== 200) throw new Error('the owner could not decide it: ' + JSON.stringify(byOwner.body))
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+        return r
+      } finally {
+        await rest(`company_rules?company_id=eq.${DEMO.company}`, { method: 'DELETE' })
+      }
+    },
+    expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/admin/i], text_not_match: [/\b(taught|added)\b(?![\s\S]*\b(once|when|after|until)\b)/i] } },
 
   // — money: who may see what —
   { id: 'pay.owner.own', as: 'owner', turns: ['What am I owed right now, and what have I been paid this year?'],
