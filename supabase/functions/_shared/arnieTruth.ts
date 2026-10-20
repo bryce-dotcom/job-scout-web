@@ -139,13 +139,97 @@ export function blamesTheApp(text: string): boolean {
     || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)
 }
 
-export type Fabrication = 'computer' | 'card'
+export type Fabrication = 'computer' | 'card' | 'figures'
+
+// ── Figures nobody looked up ────────────────────────────────────────────
+//
+// London, 2026-10-20: "how many jobs in Arizona … how much rev do we have to
+// install still" → "18 jobs … Chillin 11 jobs, $88,450 … Scheduled 4, $34,200".
+// None of it was real (27 jobs, 12 open, $80,060.28): the tool he needed could
+// not filter by place, so the model wrote plausible numbers instead. A claim
+// of WORK is caught above; a claim of FACT was not.
+//
+// A dollar amount or a "<n> jobs"-style count in the reply must be traceable
+// to something in front of the model this turn — a tool result, the person's
+// own words, an earlier message, or the data in its instructions — allowing
+// for rounding ("$80,060" for 80060.28, "$80k") and for the sum of two figures
+// it was given. Anything else is a figure it made up.
+
+const COUNT_NOUN = '(?:jobs?|estimates?|quotes?|invoices?|leads?|customers?|appointments?|employees?|payments?|bids?|routines?|tickets?)'
+
+/** Dollar amounts and noun counts quoted in a reply, as numbers. */
+export function figuresIn(text: string): { money: number[]; counts: number[] } {
+  const t = String(text || '')
+  const money: number[] = []
+  for (const m of t.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)\s*([kKmM])?\b/g)) {
+    let v = parseFloat(m[1].replace(/,/g, ''))
+    if (!Number.isFinite(v)) continue
+    if (m[2] && /k/i.test(m[2])) v *= 1000
+    if (m[2] && /m/i.test(m[2])) v *= 1e6
+    money.push(v)
+  }
+  const counts: number[] = []
+  const re = new RegExp(`\\b(\\d[\\d,]*)\\s+(?:[a-z-]+\\s+){0,2}${COUNT_NOUN}\\b`, 'gi')
+  for (const m of t.matchAll(re)) {
+    const v = parseInt(m[1].replace(/,/g, ''), 10)
+    if (Number.isFinite(v)) counts.push(v)
+  }
+  return { money, counts }
+}
+
+/** Every number in the material the model had, for the trace. */
+export function numbersIn(context: string): number[] {
+  const out: number[] = []
+  for (const m of String(context || '').matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
+    const v = parseFloat(m[0].replace(/,/g, ''))
+    if (Number.isFinite(v)) out.push(Math.abs(v))
+  }
+  return out
+}
+
+const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.abs(b) * 0.005)
+
+/**
+ * The figures in `text` that cannot be traced to `context` (everything the
+ * model was given this turn) or to `toolContext` sums. [] = all traced.
+ * Small counts (under 30) are not checked: they appear by coincidence in any
+ * long context, so a "miss" would be noise, not evidence.
+ */
+export function untracedFigures(text: string, context: string, toolContext = ''): string[] {
+  const { money, counts } = figuresIn(text)
+  if (!money.length && !counts.length) return []
+  const all = numbersIn(context)
+  const set = new Set(all.map((n) => Math.round(n)))
+  const tool = numbersIn(toolContext).filter((n) => n >= 1).slice(0, 400)
+  // Quantities in the reply itself ("Four cobras at $417 is $1,668"): a
+  // figure that is a given number times one of them is arithmetic, not a guess.
+  const WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, twenty: 20 }
+  const qty = [...new Set([
+    ...numbersIn(text).filter((n) => Number.isInteger(n) && n >= 2 && n <= 1000),
+    ...[...String(text).toLowerCase().matchAll(/\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty)\b/g)].map((m) => WORDS[m[1]]),
+  ])].slice(0, 40)
+  const traced = (v: number) => {
+    if (set.has(Math.round(v))) return true
+    if (all.some((n) => near(v, n))) return true
+    if (qty.some((k) => all.some((n) => near(v, n * k)))) return true
+    // The sum of two figures it was handed (a total of two groups).
+    // …or the gap between two ("customer pays $490.22" = subtotal − rebate).
+    for (let i = 0; i < tool.length; i++) for (let j = i + 1; j < tool.length; j++) {
+      if (near(v, tool[i] + tool[j]) || near(v, Math.abs(tool[i] - tool[j]))) return true
+    }
+    return false
+  }
+  const out: string[] = []
+  for (const v of money) if (v >= 10 && !traced(v)) out.push(`$${v.toLocaleString('en-US')}`)
+  for (const v of counts) if (v >= 30 && !traced(v)) out.push(String(v))
+  return out
+}
 
 /**
  * What to put in front of him. Short, factual, and it offers the way out that
  * is actually useful — do it now — before the way out that is merely honest.
  */
-export function correctionFor(kind: Fabrication, seen = false): string {
+export function correctionFor(kind: Fabrication, seen = false, detail: string[] = []): string {
   // Whether they have already READ the false sentence changes what is owed.
   //
   // Streaming puts every word on screen as it is written, so by the time this
@@ -157,6 +241,15 @@ export function correctionFor(kind: Fabrication, seen = false): string {
     ? ['They have ALREADY READ what you just said — it is on their screen. So you MUST take it back in your first sentence, plainly and without ceremony, before anything else.']
     : ['They have not seen that message yet; it is being replaced by what you write now. Do not apologise for it or refer to it — just do the right thing.']
 
+  if (kind === 'figures') {
+    return [
+      `STOP. These figures in your reply did not come from any tool result, anything they said, or anything in your instructions: ${detail.slice(0, 8).join(', ')}. You made them up.`,
+      ...opensWith,
+      'Then do one of these two things, and nothing else:',
+      '1. CALL the query tool that answers it and give the real figures from its result.',
+      '2. If no tool you have can answer it, say so in one line — never estimate, round up from a guess, or fill a breakdown with plausible numbers.',
+    ].join('\n')
+  }
   if (kind === 'computer') {
     return [
       'STOP. You just told them you were working on their computer, and you did not call use_my_computer in this turn, so NOTHING was sent to their machine. Nothing is on their screen. They may be sitting there watching it.',

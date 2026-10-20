@@ -73,7 +73,7 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
     expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\r?\n\s+else \{\s+send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)\s+shownAny = true/)
   })
   it('a held claim is never shown — he is corrected out of sight, as unseen', () => {
-    expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false\)[\s\S]{0,120}continue/)
+    expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false, untraced\)[\s\S]{0,120}continue/)
   })
   it('a round that acts is shown as it acts, and a passed answer is shown at the end', () => {
     expect(s).toMatch(/\/\/ A round that acts: its words go out now, as the action runs\.\n\s+flush\(\)/)

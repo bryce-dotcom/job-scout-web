@@ -145,7 +145,7 @@ describe('what happens when it fires', () => {
     // Rewriting model output turns one wrong sentence into a mangled
     // paragraph. The reply stands; one more round follows it.
     expect(chat).not.toMatch(/text\.replace\(.*fabricat/i)
-    expect(chat).toMatch(/convo\.push\(\{ role: 'user', content: correctionFor\(claim\) \}\)/)
+    expect(chat).toMatch(/convo\.push\(\{ role: 'user', content: correctionFor\(claim, false, untraced\) \}\)/)
   })
 
   it('it offers doing the job before confessing to not having done it', () => {
@@ -195,8 +195,8 @@ describe('whether they already read it changes what is owed', () => {
   })
 
   it('the streaming loop says the words were seen, and the other does not', () => {
-    expect(chat).toMatch(/correctionFor\(claim, true\) \}\)/)   // streamed
-    expect(chat).toMatch(/correctionFor\(claim\) \}\)/)          // replaced wholesale
+    expect(chat).toMatch(/correctionFor\(claim, true, untraced\) \}\)/)   // streamed
+    expect(chat).toMatch(/correctionFor\(claim, false, untraced\) \}\)/)  // replaced wholesale
   })
 })
 
