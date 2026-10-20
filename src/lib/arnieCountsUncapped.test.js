@@ -111,3 +111,11 @@ describe('London, 2026-10-20: "how many jobs in Arizona" and a misspelt screensh
     expect(chat).toMatch(/forceComputer = false \/\/ one forced round, never more/)
   })
 })
+
+describe('job counts and dollars come totalled from the tool', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('a place or open-only question is grouped by status and carries the grand total', () => {
+    expect(chat).toMatch(/const filtered = !!\(input\.state \|\| input\.open_only \|\| input\.address_contains\)/)
+    expect(chat).toMatch(/out\.total_job_total = Math\.round\(got\.rows\.reduce/)
+  })
+})

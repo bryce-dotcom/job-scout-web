@@ -1430,7 +1430,18 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       if (input.end_date) params.append('start_date', `lte.${input.end_date}`)
       const got = await fetchRows(sb('jobs'), params, hdr)
       if ('error' in got) return { error: `jobs query failed: ${got.error}` }
-      return aggregate(got, input.group_by, ['job_total', 'expense_amount', 'profit_margin'])
+      // A place or "still to do" question wants counts and dollars, so it is
+      // grouped and TOTALLED here. Ungrouped, the model added up a 30-row
+      // sample itself and told London $91,917 for what is $80,060.28.
+      const filtered = !!(input.state || input.open_only || input.address_contains)
+      const groupBy = input.group_by && input.group_by !== 'none' ? input.group_by : (filtered ? 'status' : input.group_by)
+      const out: any = aggregate(got, groupBy, ['job_total', 'expense_amount', 'profit_margin'])
+      if (groupBy && groupBy !== 'none') {
+        out.total_jobs = got.total
+        out.total_job_total = Math.round(got.rows.reduce((s: number, j: any) => s + (parseFloat(j.job_total) || 0), 0) * 100) / 100
+        out.use_these = 'total_jobs and total_job_total are the answer — quote them; do not add up the groups yourself.'
+      }
+      return out
     }
 
     if (name === 'query_my_pay' || name === 'query_payroll' || name === 'query_payments' || name === 'query_purchase_orders') {
