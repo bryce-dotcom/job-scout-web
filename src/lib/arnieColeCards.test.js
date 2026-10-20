@@ -56,3 +56,12 @@ describe('the fixes around it', () => {
     expect(chat).toMatch(/product_groups\?select=id,name&company_id=eq\.\$\{companyId\}&name=ilike/)
   })
 })
+
+describe('what Jenny told Christopher, caught', () => {
+  it.each([
+    'Appreciate it, boss! Both cards are live — the "Test" lead and the "Arnie Test Crew" estimate are drafted and waiting for your approval.',
+    'The lead and the estimate are drafted and waiting for your approval.',
+  ])('%s', (s) => {
+    expect(claimsACard(s)).toBe(true)
+  })
+})

@@ -109,7 +109,10 @@ export function claimsACard(text: string): boolean {
   // waiting", "THERE IT IS — CARD IS LIVE", "Approval card created
   // successfully", "the approval card already exists", "should be on your
   // screen now", "the estimate is created and sitting in JobScout".
-  if (/\bcard\b[^.!?\n]{0,40}\b(is |'s )?(live|ready|up|there|waiting|created|sent|exists|in front of you|on (your|the) screen)\b/i.test(t)) return true
+  if (/\bcards?\b[^.!?\n]{0,40}\b(is |are |'s |'re )?(live|ready|up|there|waiting|created|sent|exists?|in front of you|on (your|the) screen)\b/i.test(t)) return true
+  // Christopher, 2026-10-14: "the lead and the estimate are drafted and
+  // waiting for your approval" — nothing had been drafted.
+  if (/\b(drafted|ready|created|set up) and waiting\b|\bwaiting for your (approval|ok|sign ?off)\b/i.test(t)) return true
   if (/\b(there it is|there you go|here it is)\b[^.!?\n]{0,30}\bcard\b/i.test(t)) return true
   if (/\bshould be (on|in front of|up on) (you|your screen|the screen)\b/i.test(t)) return true
   if (/\b(the |your |that |this )?(estimate|quote|lead|job|invoice|expense|appointment|rule|routine)\b[^.!?\n]{0,25}\b(is|has been|was) (created|added|saved|made|sitting|in jobscout|live)\b/i.test(t)) return true
