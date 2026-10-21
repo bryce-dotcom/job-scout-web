@@ -58,7 +58,7 @@ describe('a step on their computer reports back, and he keeps going', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
     expect(s).toMatch(/const outOfSteps = \(round: number\) => used\.has\('use_my_computer'\) && round === 11/)
     expect(s).toMatch(/system: \(systemPrompt \|\| ''\) \+ \(outOfSteps\(round\) \? LAST_STEP_NOTE : ''\)/)
-    expect(s).toMatch(/tools: setup\.tools, \.\.\.\(outOfSteps\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : forceComputer \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \} : \{\}\)/)
+    expect(s).toMatch(/tools: setup\.tools, \.\.\.\(outOfSteps\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : forceComputer && !isNewModel\(setup\.model\) \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \} : \{\}\)/)
     expect(chat).toMatch(/Never say the job is done unless a screenshot showed it done\./)
   })
   it('a computer task gets 12 tool rounds, everything else 5', () => {

@@ -106,7 +106,7 @@ describe('London, 2026-10-20: "how many jobs in Arizona" and a misspelt screensh
     for (const t of ['how many jobs in arizona', 'the screen door job']) expect(re.test(t), t).toBe(false)
   })
   it('after a caught claim of computer work they asked for, the retry must USE the tool, once', () => {
-    expect(chat).toMatch(/forceComputer \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \}/)
+    expect(chat).toMatch(/forceComputer && !isNewModel\(setup\.model\) \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \}/)
     expect((chat.match(/forceComputer = claim === 'computer' && computerAsk/g) || []).length).toBe(2)
     expect(chat).toMatch(/forceComputer = false \/\/ one forced round, never more/)
   })

@@ -38,6 +38,10 @@ if (!U || !ANON || !SR) { console.error('arnie:eval — .env is missing VITE_SUP
 
 const args = process.argv.slice(2)
 const ONLY = args.includes('--only') ? args[args.indexOf('--only') + 1] : null
+// Model comparison (2026-10-21): --model sonnet-4-5|sonnet-5-5|opus-5-5, --effort low|medium|high.
+// arnie-chat honours these only for the demo company, which is where this runs.
+const EVAL_MODEL = args.includes('--model') ? args[args.indexOf('--model') + 1] : null
+const EVAL_EFFORT = args.includes('--effort') ? args[args.indexOf('--effort') + 1] : null
 const VERBOSE = args.includes('--verbose')
 
 // ─── the tenant this runs against ───────────────────────────────────────────
@@ -114,7 +118,7 @@ async function login(email, password) {
 }
 async function chat(token, roleLabel, messages) {
   const res = await fetch(`${U}/functions/v1/arnie-chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, apikey: ANON },
-    body: JSON.stringify({ messages, systemPrompt: prompt(roleLabel), stream: true, supports: ['config', 'record', 'bulk', 'create'] }) })
+    body: JSON.stringify({ messages, systemPrompt: prompt(roleLabel), stream: true, supports: ['config', 'record', 'bulk', 'create'], ...(EVAL_MODEL ? { eval_model: EVAL_MODEL } : {}), ...(EVAL_EFFORT ? { eval_effort: EVAL_EFFORT } : {}) }) })
   if (!res.ok || !res.body) throw new Error(`arnie-chat ${res.status} ${(await res.text()).slice(0, 200)}`)
   let text = '', proposal = null; const tools = []
   const rd = res.body.getReader(); const dec = new TextDecoder(); let buf = '', ev = ''

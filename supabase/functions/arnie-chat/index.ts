@@ -37,6 +37,20 @@ import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } f
 // model and his own usage line. Anything else is Arnie.
 type Agent = 'arnie' | 'frankie'
 const ARNIE_MODEL = 'claude-sonnet-4-5-20250929'
+
+// THE MODEL COMPARISON (Bryce, 2026-10-21: "why is arnie inventing all this
+// shit"). A test may ask for another model — only the demo company (25) or
+// the internal test path, never a live tenant's chat. Production stays on
+// ARNIE_MODEL until the comparison says otherwise.
+const EVAL_MODELS: Record<string, string> = {
+  'sonnet-4-5': 'claude-sonnet-4-5-20250929',
+  'sonnet-5-5': 'claude-sonnet-5-5',
+  'opus-5-5': 'claude-opus-5-5',
+}
+const EVAL_EFFORTS = new Set(['low', 'medium', 'high'])
+const evalChoice = new WeakMap<object, { model: string; effort?: string }>()
+/** Models from the 4.6+ generation: adaptive thinking, effort, no forced tool_choice. */
+const isNewModel = (m: string) => !/sonnet-4-5|haiku-4-5/.test(m)
 function agentFor(body: Record<string, unknown>): Agent {
   return body.agent === 'frankie' ? 'frankie' : 'arnie'
 }
@@ -2074,6 +2088,13 @@ Deno.serve(async (req) => {
     // this never widens a real user's session — it only fills the gap where
     // there was no user at all. The employee must still be ACTIVE.
     if (!caller) caller = await internalCaller(req, body, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    // Test-only model choice: the demo company, or our own server's test path.
+    if (caller && EVAL_MODELS[String(body?.eval_model || '')] && (caller.companyId === 25 || !inTheApp)) {
+      evalChoice.set(caller as unknown as object, {
+        model: EVAL_MODELS[String(body.eval_model)],
+        effort: EVAL_EFFORTS.has(String(body?.eval_effort || '')) ? String(body.eval_effort) : undefined,
+      })
+    }
 
     // No user token at all (anon key, or none) — refuse rather than burn
     // model spend for an unauthenticated caller.
@@ -2248,8 +2269,10 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
       tangled: "I ran out of lookups on that one. Ask me in smaller pieces and I'll get you the number.",
     }
   }
+  const chosen = evalChoice.get(caller as unknown as object)
   return {
-    model: ARNIE_MODEL,
+    model: chosen?.model || ARNIE_MODEL,
+    effort: chosen?.effort,
     maxTokens: 4096,
     feature: 'arnie-chat',
     tools: toolsFor(caller.role, cards, { ownSession: !!bearer }),
@@ -2856,6 +2879,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
       {
         model: setup.model,
         max_tokens: setup.maxTokens,
+        ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
         system: systemPrompt || '',
         ...(includeTools ? { tools: setup.tools } : {}),
         messages: convo,
@@ -2969,7 +2993,10 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
               system: (systemPrompt || '') + (outOfSteps(round) ? LAST_STEP_NOTE : ''),
-              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
+              // Newer models refuse a forced tool_choice (400); there the
+              // correction message itself is the instruction to call it.
+              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
+              ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
               messages: convo,
               stream: true,
             }),
