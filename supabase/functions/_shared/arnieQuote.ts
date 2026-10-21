@@ -263,6 +263,13 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
     if (!hits.length) {
       const words = String(w.item).toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length >= 3)
       if (words.length >= 2) hits = products.filter((p: any) => { const n = squash(p.name); return words.every((x) => n.includes(x)) })
+      // The same, singular: "store front exterior windows" is the Window
+      // Cleaning product, not a miss for Benny to price at $450 a window
+      // (model comparison replay, 2026-10-21).
+      if (!hits.length && words.length >= 2) {
+        const one = words.map((x) => (x.length > 3 && /[^s]s$/.test(x) ? x.slice(0, -1) : x))
+        hits = products.filter((p: any) => { const n = squash(p.name); return one.every((x) => n.includes(x)) })
+      }
     }
     if (!hits.length && want.length >= 6) hits = products.filter((p: any) => want.includes(squash(p.name)) && squash(p.name).length >= 6)
     if (hits.length > 1) {
