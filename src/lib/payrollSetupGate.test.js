@@ -92,3 +92,25 @@ describe('a missing W-4 asks the employee first', () => {
     expect(w4Rows([{ ...aidan, id: 99, tax_classification: '1099' }])).toHaveLength(0)
   })
 })
+
+describe('a person with nothing to pay cannot block the run', () => {
+  // HHH, 2026-10-20: "Tony HVAC: no pay type" — a row added on 15 Oct with no
+  // hours, no salary, nothing queued — stopped Process cold, and Alayda ran
+  // the payroll in Gusto instead. The gate is for the people being paid.
+  const company = { ein: '1', legal_name: 'x', entity_type: 'LLC', state_employer_id_state: 'UT', federal_deposit_schedule: 'monthly', state_employer_id: 'a', sui_account_number: 'b', sui_rate_pct: 0.2 }
+  const payrollConfig = { pay_frequency: 'semimonthly' }
+  const paid = { id: 1, name: 'Paid Person', is_hourly: true, hourly_rate: 20, w4_filing_status: 'single', active: true }
+  const ghost = { id: 2, name: 'Tony HVAC', active: true }
+  it('skips the row with nothing to pay when told who is payable', () => {
+    const out = payrollSetupProblems({ company, payrollConfig, employees: [paid, ghost], payableIds: new Set([1]) })
+    expect(out).toEqual([])
+  })
+  it('still names them when nobody says who is payable (the setup page)', () => {
+    const out = payrollSetupProblems({ company, payrollConfig, employees: [paid, ghost] })
+    expect(out.map(p => p.key)).toEqual(['pay_type:2', 'w4:2'])
+  })
+  it('a paid person with no W-4 still blocks', () => {
+    const out = payrollSetupProblems({ company, payrollConfig, employees: [{ ...paid, w4_filing_status: null }, ghost], payableIds: new Set([1]) })
+    expect(out.map(p => p.key)).toEqual(['w4:1'])
+  })
+})

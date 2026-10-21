@@ -1810,9 +1810,17 @@ export default function Payroll() {
   // Plain calls, not hooks (this sits after the access early-return).
   // setupProblems: what the company is missing — nothing runs until empty.
   // runGuards:     what looks wrong about THIS run — blocks and warnings.
+  // Only the people with something to pay this period can block the run. A
+  // row with no pay type and no hours (a login, a vendor typed in as a
+  // person) is listed on the Payroll setup page, not in front of Process.
+  const payableIds = new Set(activeEmployees.filter(e => {
+    const d = employeePayData[e.id]
+    return d && ((d.grossPay || 0) > 0 || ((d.regularHours || 0) + (d.overtimeHours || 0) + (d.ptoHours || 0)) > 0)
+  }).map(e => e.id))
   const setupProblems = payrollSetupProblems({
     company, payrollConfig, employees: activeEmployees,
     w4Acknowledged: payrollConfig.w4_acknowledged || {},
+    payableIds,
   })
   const periodStartStr = localDateStr(periodStart), periodEndStr = localDateStr(periodEnd)
   const runGuards = payrollRunGuards({

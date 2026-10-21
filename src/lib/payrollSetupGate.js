@@ -21,7 +21,15 @@ const blank = (v) => v == null || String(v).trim() === ''
  *   fix: where it is fixed. company = Settings, Company tab; tax = Settings,
  *   Payroll Tax tab; payroll = Payroll, Settings; employee = their card.
  */
-export function payrollSetupProblems({ company = {}, payrollConfig = {}, employees = [], w4Acknowledged = {} } = {}) {
+/**
+ * payableIds: the employees who have anything to pay THIS period (hours,
+ * salary, PTO, queued commission or bonus). When given, a person with
+ * nothing to pay cannot block the run — "Tony HVAC: no pay type" stopped
+ * HHH's Oct 20 payroll cold, Alayda ran it in Gusto instead, and Tony
+ * HVAC is a row somebody added on 15 Oct that was never going to be paid.
+ * Without it (older callers, the setup page) everyone is checked.
+ */
+export function payrollSetupProblems({ company = {}, payrollConfig = {}, employees = [], w4Acknowledged = {}, payableIds = null } = {}) {
   const out = []
   const c = company || {}
   const state = String(c.state_employer_id_state || c.state || '').toUpperCase()
@@ -40,6 +48,8 @@ export function payrollSetupProblems({ company = {}, payrollConfig = {}, employe
     if (!e || e.active === false) continue
     const name = e.name || `Employee ${e.id}`
     if (e.tax_classification === '1099') continue
+    // Nothing to pay this period means nothing this run can get wrong for them.
+    if (payableIds && !payableIds.has(e.id)) continue
     const paid = e.is_hourly || e.is_salary
     if (!paid) out.push({ key: `pay_type:${e.id}`, label: `${name}: no pay type`, detail: 'Not hourly and not salary, so hours are counted and nothing is paid.', fix: 'employee', employeeId: e.id, employeeName: name })
     else if (e.is_hourly && !(Number(e.hourly_rate) > 0)) out.push({ key: `rate:${e.id}`, label: `${name}: hourly with no rate`, detail: 'Hourly pay at $0.', fix: 'employee', employeeId: e.id, employeeName: name })
