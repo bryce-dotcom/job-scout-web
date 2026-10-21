@@ -140,3 +140,13 @@ describe('Cole #5: the invented lead list and the email that never went', () => 
     expect(chat).toMatch(/if \(name === 'email_me'\) return !!\(result as Record<string, unknown> \| null\)\?\.sent/)
   })
 })
+
+describe('short answers keep what a card needs', () => {
+  const chat = read('supabase/functions/arnie-chat/index.ts')
+  it('a card is still one line plus "approve it", never "Done" first', () => {
+    expect(chat).toContain('never "Done" or "added" before they approve.')
+  })
+  it('a reply that stops on a colon gets one round to do what it introduced', () => {
+    expect(chat).toContain(String.raw`if (!promisedOnce && used.size === 0 && /:\s*$/.test(text.trim())) {`)
+  })
+})

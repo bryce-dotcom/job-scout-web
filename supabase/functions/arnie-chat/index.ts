@@ -2299,7 +2299,7 @@ They like to see the work. As you go, say in a few words what you are checking a
     : `
 
 ## How much to say — SHORT (their setting, and the default)
-Answer the question first, in as few words as it takes: the figure, the name, the yes or no. No "Let me check…", "I'll pull…", "Here's what I found" or recap of what you looked at. No greeting, no sign-off, and no "want me to…?" offer unless something needs their decision. One or two sentences, or a tight list when they asked for several things. Keep your voice to a word at most. Never cut a card, a warning about money or safety, or anything they must act on. If they ask you to explain, walk them through it, or give the details, do that for that answer.`
+Answer the question first, in as few words as it takes: the figure, the name, the yes or no. No "Let me check…", "I'll pull…", "Here's what I found" or recap of what you looked at. No greeting, no sign-off, and no "want me to…?" offer unless something needs their decision. One or two sentences, or a tight list when they asked for several things. Keep your voice to a word at most. Never cut a card, a warning about money or safety, or anything they must act on. When you draft a card, say in one line what it will do and that they approve it ("Jordan on the canopy bays Thursday — approve it") — never "Done" or "added" before they approve. If they ask you to explain, walk them through it, or give the details, do that for that answer.`
 }
 
 /**
@@ -3102,6 +3102,16 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
             // claim of having done it, so the truth check let it through. When
             // they asked for computer work, she said she would, and no computer
             // tool ran this turn, she gets ONE more round that must use it.
+            // A reply that STOPS ON A COLON with nothing done: "Here's the expense for
+            // the Westside Auto Wash job:" — and no card (the nightly eval, 2026-10-20).
+            // One more round to do what the sentence was introducing.
+            if (!promisedOnce && used.size === 0 && /:\s*$/.test(text.trim())) {
+              promisedOnce = true
+              flush()
+              convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
+              convo.push({ role: 'user', content: '(From the system, not the person.) Your reply stopped at a colon and nothing was done. Do what it was introducing now — call the tool — or finish the sentence.' })
+              continue
+            }
             if (computerAsk && !promisedOnce && !used.has('use_my_computer') && PROMISE_TO_ACT.test(text)) {
               promisedOnce = true
               flush()
