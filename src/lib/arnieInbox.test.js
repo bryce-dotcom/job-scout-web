@@ -91,6 +91,12 @@ describe('booking from an email', () => {
     const r = await prepareBooking(R, CHRIS, { customer_name: 'Ana Rivera', email: 'ana@riveradental.com' })
     expect(r.error).toMatch(/already a lead: Rivera Dental/)
   })
+  it('the same person already on a waiting card is not drafted twice (the noon check after the 7am one)', async () => {
+    globalThis.fetch = fakeDb({ leads: [], customers: [], arnie_proposals: [{ id: 2011, company_id: 3, payload: { columns: { new_lead: { email: 'sam@ortiz.com', phone: '801-555-0199' } } } }] })
+    const r = await prepareBooking(R, CHRIS, { customer_name: 'Sam Ortiz', email: 'SAM@ortiz.com' })
+    expect(r.error).toMatch(/already waiting for approval \(#2011\)/)
+    expect(read('supabase/functions/_shared/arniePrompt.ts')).toMatch(/A drafted card IS the handling/)
+  })
   it('a new lead goes under the person drafting it, at their next opening, with no setter fee', async () => {
     globalThis.fetch = fakeDb({ leads: [], customers: [], appointments: [], employees: [{ id: 14, name: 'Christopher Lyman' }] })
     const r = await prepareBooking(R, CHRIS, { customer_name: 'Sam Ortiz', business_name: 'Ortiz Dental', email: 'sam@ortiz.com', service_type: 'Window cleaning' })

@@ -59,6 +59,16 @@ export async function prepareBooking(r: Rest, caller: Caller, f: Record<string, 
       const [cust] = await readRecordList(r, `customers?select=id,name,business_name&company_id=eq.${companyId}&or=(${ors.join(',')})&limit=1`)
       if (cust) return { ok: false, error: `That is already a customer: ${cust.business_name || cust.name}. Call again with customer set to them instead of making a lead.` }
     }
+    // The same person already on a card nobody has decided: the 7am check
+    // drafted it and the noon check must not draft it again.
+    const waiting = await readRecordList(r, `arnie_proposals?select=id,payload&company_id=eq.${companyId}&target=eq.booking&status=eq.pending&limit=50`)
+    const same = waiting.find((p: any) => {
+      const n = p?.payload?.columns?.new_lead || {}
+      const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '').slice(-7)
+      return (f.email && String(n.email || '').toLowerCase() === String(f.email).toLowerCase())
+        || (f.phone && digits(f.phone).length === 7 && digits(n.phone) === digits(f.phone))
+    })
+    if (same) return { ok: false, error: `A booking card for ${f.business_name || f.customer_name} is already waiting for approval (#${same.id}). Leave it — mark this email done.` }
   }
 
   // Who takes it: named, or the person drafting it ("under my name").
