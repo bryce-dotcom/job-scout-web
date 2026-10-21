@@ -42,7 +42,9 @@ export type ReceiptCall = { name: string; result: any }
 
 /** The one line for this turn, from what really ran. */
 export function receiptFor(calls: ReceiptCall[]): string {
-  const looked = new Map<string, { n: number; rows: number | null; failed: boolean }>()
+  // Each lookup's own count, never a sum: two reads of the same 18 open jobs
+  // showed as "jobs (36)" — a number nobody had (live test, 2026-10-21).
+  const looked = new Map<string, { n: number; rows: number[]; failed: boolean }>()
   let cards = 0, refused = 0, asked = 0, steps = 0
   const extra: string[] = []
   for (const { name, result } of calls) {
@@ -55,17 +57,21 @@ export function receiptFor(calls: ReceiptCall[]): string {
     if (name === 'email_me') { extra.push(result?.sent ? 'Emailed you' : 'Email NOT sent'); continue }
     if (name === 'use_my_computer') { steps++; continue }
     const word = WORDS[name] || name.replace(/^query_/, '').replace(/_/g, ' ')
-    const was = looked.get(word) || { n: 0, rows: null, failed: false }
+    const was = looked.get(word) || { n: 0, rows: [], failed: false }
     const rows = countOf(result)
     was.n++
-    if (rows != null) was.rows = (was.rows ?? 0) + rows
+    if (rows != null) was.rows.push(rows)
     if (result?.error || result?.restricted) was.failed = true
     looked.set(word, was)
   }
   const parts: string[] = []
   if (looked.size) {
-    parts.push('Looked up: ' + [...looked.entries()].map(([w, x]) =>
-      `${w}${x.failed && x.rows == null ? ' (failed)' : x.rows != null ? ` (${x.rows})` : ''}`).join(', '))
+    parts.push('Looked up: ' + [...looked.entries()].map(([w, x]) => {
+      if (x.failed && !x.rows.length) return `${w} (failed)`
+      if (!x.rows.length) return x.n > 1 ? `${w} ×${x.n}` : w
+      const shown = x.rows.length > 3 ? [...x.rows.slice(0, 3), '…'] : x.rows
+      return `${w} (${shown.join(', ')})`
+    }).join(', '))
   }
   if (steps) parts.push(`${steps} step${steps === 1 ? '' : 's'} on your computer`)
   if (cards) parts.push(`Drafted ${cards} card${cards === 1 ? '' : 's'}`)

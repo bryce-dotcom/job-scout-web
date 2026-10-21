@@ -17,8 +17,10 @@ describe('the line, from what really ran', () => {
       { name: 'query_jobs', result: { total_jobs: 12, total_job_total: 80060.28 } },
     ])).toBe('Looked up: leads (5), jobs (12)')
   })
-  it('the same lookup twice is one entry, rows added', () => {
-    expect(receiptFor([{ name: 'query_jobs', result: { count: 3 } }, { name: 'query_jobs', result: { count: 2 } }])).toBe('Looked up: jobs (5)')
+  it('the same lookup twice is one entry with each count — never a sum nobody had', () => {
+    expect(receiptFor([{ name: 'query_jobs', result: { total_jobs: 18 } }, { name: 'query_jobs', result: { total_jobs: 18 } }])).toBe('Looked up: jobs (18, 18)')
+    expect(receiptFor([1, 2, 3, 4].map((n) => ({ name: 'query_leads', result: { count: n } })))).toBe('Looked up: leads (1, 2, 3, …)')
+    expect(receiptFor([{ name: 'where_i_am', result: {} }, { name: 'where_i_am', result: {} }])).toBe('Looked up: your location ×2')
   })
   it('cards: drafted, asked which, refused — counted apart', () => {
     expect(receiptFor([
