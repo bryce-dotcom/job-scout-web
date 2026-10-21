@@ -11,8 +11,8 @@ import {
   calculateInvoiceCommissions,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
-import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel, payableBonusTotal } from '../lib/bonusLedger'
-import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
+import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
+import { computeEmployeePay } from '../lib/payrollEngine'
 import { paycheckDetail } from '../lib/payHistory'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
@@ -20,11 +20,9 @@ import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '..
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
 import { localDateStr } from '../lib/localDate'
-import { ptoDaysInPeriod, ptoPayForPeriod, ptoAccrualPerPeriod, ptoBalanceDays } from '../lib/ptoThisPeriod'
-import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
+import { ptoAccrualPerPeriod, ptoBalanceDays } from '../lib/ptoThisPeriod'
 import { payDateForPeriod } from '../lib/payDate'
 import PlaidLink from '../components/PlaidLink'
-import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const BENEFIT_LABELS = { health: 'Health', dental: 'Dental', vision: 'Vision', life: 'Life', disability: 'Disability', retirement_401k: '401(k)', hsa: 'HSA', fsa: 'FSA', other: 'Other' }
@@ -168,6 +166,10 @@ export default function MyPay() {
   // gate. Scoped to company.
   const [allPayments, setAllPayments] = useState([])
   const [timeEntries, setTimeEntries] = useState([])
+  // Job-level hours and this period's adjustments: the two engine inputs this
+  // page never loaded, so its hours and its net could not match the cheque.
+  const [timeLogEntries, setTimeLogEntries] = useState([])
+  const [adjustments, setAdjustments] = useState([])
   const [utilityInvoices, setUtilityInvoices] = useState([])
   const [myPtoRequests, setMyPtoRequests] = useState([])
   // Persistent efficiency-bonus ledger (job_bonuses) — what the tech has
@@ -274,7 +276,7 @@ export default function MyPay() {
       const [ps, bf, rc, lc, co, dd] = await Promise.all([
         supabase.from('paystubs')
           // payroll_run_id: which cheque a commission belongs to (lib/payHistory).
-          .select('id, payroll_run_id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions')
+          .select('id, payroll_run_id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions, taxable_wages')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
           .order('pay_date', { ascending: false }).limit(24),
         supabase.from('employee_benefits')
@@ -286,7 +288,10 @@ export default function MyPay() {
         // so anyone paid as a setter saw $0 here no matter what Payroll owed
         // them — two commission tables, one surface reading one of them.
         supabase.from('lead_commissions')
-          .select('id, lead_id, commission_type, amount, payment_status, created_at, lead:leads!lead_id(id, customer_name)')
+          // employee_id: lib/setterCommissions keeps only rows carrying the
+          // viewer's id, so without the column every setter read $0 here.
+          // queued_for_payroll: the engine pays a run only what was added to it.
+          .select('id, lead_id, employee_id, commission_type, amount, payment_status, queued_for_payroll, created_at, lead:leads!lead_id(id, customer_name)')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId),
         // The qualification rule lives on the company row and decides whether
         // a booked appointment is payable yet.
@@ -447,7 +452,7 @@ export default function MyPay() {
           // commission_min_job_total: the floor the live calc applies. Left
           // out, this page would read undefined, show no floor, and promise a
           // commission the ledger will not pay.
-          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, pay_greater_of_salary_commission, is_hourly, is_salary, hourly_rate, annual_salary, tax_classification, w4_filing_status, w4_multiple_jobs, w4_dependents_amount, w4_other_income, w4_deductions, w4_extra_withholding, pto_accrued, pto_used, pto_days_per_year')
+          .select('id, name, email, is_commission, commission_services_rate, commission_services_type, commission_goods_rate, commission_goods_type, commission_processor_rate, commission_processor_type, commission_min_job_total, pay_greater_of_salary_commission, is_hourly, is_salary, hourly_rate, annual_salary, tax_classification, w4_filing_status, w4_multiple_jobs, w4_dependents_amount, w4_other_income, w4_deductions, w4_extra_withholding, pto_accrued, pto_used, pto_days_per_year, overtime_mode, active, state_withholding_rate_pct, state_extra_withholding')
           .eq('id', effectiveUserId).maybeSingle()
 
         // Utility invoices on jobs the user might own — we fetch them all
@@ -467,10 +472,28 @@ export default function MyPay() {
           .order('created_at', { ascending: false })
           .limit(20)
 
-        const [jr, lr, ir, pr, tr, er, ur, apr, ptr] = await Promise.all([
+        // Job-level hours (time_log) and this period's adjustments, loaded the
+        // way Payroll loads them (same window, same legacy period-end match),
+        // so the engine sees here exactly what it sees there.
+        const timeLogPromise = supabase
+          .from('time_log')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('employee_id', effectiveUserId)
+          .gte('created_at', periodStart.toISOString())
+          .lte('created_at', periodEnd.toISOString())
+        const legacyPeriodEndStr = localDateStr(new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() + 1))
+        const adjustmentsPromise = supabase
+          .from('payroll_adjustments')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('employee_id', effectiveUserId)
+          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.in.(${periodEndStr},${legacyPeriodEndStr})),recurring.eq.true`)
+
+        const [jr, lr, ir, pr, tr, er, ur, apr, ptr, tlr, adr] = await Promise.all([
           jobsPromise, leadsPromise, invoicesPromise, paymentsPromise,
           timePromise, empPromise, utilPromise,
-          allPaymentsPromise, ptoPromise,
+          allPaymentsPromise, ptoPromise, timeLogPromise, adjustmentsPromise,
         ])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
@@ -481,6 +504,10 @@ export default function MyPay() {
         setUtilityInvoices(ur?.data || [])
         setAllPayments(apr?.data || [])
         setMyPtoRequests(ptr?.data || [])
+        if (tlr?.error) console.warn('[MyPay] time_log:', tlr.error.message)
+        if (adr?.error) console.warn('[MyPay] adjustments:', adr.error.message)
+        setTimeLogEntries(tlr?.data || [])
+        setAdjustments(adr?.data || [])
       } finally {
         setLoading(false)
       }
@@ -564,23 +591,56 @@ export default function MyPay() {
   // (loaded into ledgerBonuses above), not a live per-period recompute —
   // that's what stopped bonuses from vanishing across pay periods.
 
-  const totalHours = timeEntries.reduce((s, e) => {
-    let h = e.total_hours
-    if (!h && e.clock_in && e.clock_out) h = (new Date(e.clock_out) - new Date(e.clock_in)) / 36e5
-    return s + (h || 0)
-  }, 0)
-
-  // Calculate expected hourly/salary pay (own-view only, no HR access needed)
-  const periodsPerYear = PERIODS_PER_YEAR[payrollConfig.pay_frequency] || 26
+  // ── This period's pay, from the one engine Payroll runs ──────────────
+  // docs/PAYROLL_PLAN.md step 2. This page used to do its own arithmetic:
+  // hours × rate with no overtime, every commission earned whether or not it
+  // was on the run, no adjustments, its own tax call. So it disagreed with
+  // the cheque Payroll cut, and the office heard about it. It now hands the
+  // same inputs to computeEmployeePay (lib/payrollEngine) and shows what
+  // comes back. Still an estimate until payroll runs: a commission or bonus
+  // waiting on an admin changes it.
   const me = empRow || user || {}
-  const hourlyPay = (me.is_hourly && me.hourly_rate) ? totalHours * parseFloat(me.hourly_rate) : 0
-  const salaryPay = (me.is_salary && me.annual_salary) ? parseFloat(me.annual_salary) / periodsPerYear : 0
-  // Approved PTO inside this period, priced the same way Payroll prices it
-  // (lib/ptoThisPeriod: eight hours a day at the card's hourly rate; salary
-  // already covers it). The own-view fetch has no employee_id column, so it
-  // is stamped on before counting.
-  const ptoDays = ptoDaysInPeriod(myPtoRequests.map(r => ({ ...r, employee_id: effectiveUserId })), effectiveUserId, periodStart, periodEnd)
-  const { hours: ptoHours, pay: ptoPay } = ptoPayForPeriod(me, ptoDays)
+  const periodsPerYear = PERIODS_PER_YEAR[payrollConfig.pay_frequency] || 26
+  const is1099 = me.tax_classification === '1099'
+  const thisYear = String(new Date().getFullYear())
+  const stubsThisYear = paystubs.filter(p => String(p.pay_date || '').slice(0, 4) === thisYear)
+  const ytd = stubsThisYear.reduce((a, p) => {
+    a.gross += Number(p.gross_pay) || 0
+    a.net += Number(p.net_pay) || 0
+    a.taxes += (Number(p.federal_income_tax) || 0) + (Number(p.state_income_tax) || 0) + (Number(p.social_security_employee) || 0) + (Number(p.medicare_employee) || 0) + (Number(p.additional_medicare) || 0)
+    // Social Security / Medicare wages: taxable_wages, gross on legacy stubs
+    // (the same proxy Payroll's year-to-date uses).
+    a.ssWages += Number(p.taxable_wages) || Number(p.gross_pay) || 0
+    return a
+  }, { gross: 0, net: 0, taxes: 0, ssWages: 0, checks: stubsThisYear.length })
+  const storeEmployees = useStore.getState().employees || []
+  let pay = null
+  try {
+    pay = computeEmployeePay({
+      employee: me,
+      employees: storeEmployees.length ? storeEmployees : [me],
+      timeEntries, timeLogEntries, payrollConfig,
+      period: { start: periodStart, end: periodEnd },
+      payDate: payDateForPeriod(periodEnd, payrollConfig) || localDateStr(new Date()),
+      repCommissions,
+      leadCommissionSummary: setterComm,
+      invoiceCommissions: commData,
+      bonusRows: ledgerBonuses,
+      // The own-view fetch has no employee_id column; stamp it on before counting.
+      periodTimeOff: myPtoRequests.map(r => ({ ...r, employee_id: effectiveUserId })),
+      adjustments, benefits,
+      ytd: { gross: ytd.gross, ssWages: ytd.ssWages, medicareWages: ytd.ssWages },
+      taxCompany: taxCompany || {},
+    })
+  } catch (err) {
+    console.warn('[MyPay] pay estimate:', err?.message || err)
+  }
+  const totalHours = pay ? pay.regularHours + pay.overtimeHours : 0
+  const hourlyPay = pay?.hourlyPay || 0
+  const salaryPay = pay?.salaryPay || 0
+  const ptoDays = pay?.ptoDays || 0
+  const ptoHours = pay?.ptoHours || 0
+  const ptoPay = pay?.ptoPay || 0
   // ── Bonus ledger groupings (persistent, not period-scoped) ───────────
   // accrued = money came in, OWED now (counts toward this paycheck's gross).
   // pending = earned by saved hours but the job's money hasn't landed yet.
@@ -627,53 +687,34 @@ export default function MyPay() {
   // its own card further down. It has not gone anywhere — it is just not
   // this cheque, and saying so is the difference between a tech reading
   // their pay and a tech filing a ticket.
-  const payableBonus = payableBonusTotal(ledgerBonuses)
+  // Bonus on this run: the engine applies lib/bonusLedger's isPayableNow.
+  const payableBonus = pay?.bonusOwed || 0
   const owedNotOnThisRun = accruedBonusTotal - payableBonus
   // Salary or commission, whichever is more (lib/payBasis) — the one pay type
-  // that does NOT add up. Without this the page promised both halves to the
-  // two people on that arrangement.
-  const myPayBasis = greaterOfPay({ salaryPay, commissionPay: commAvailable + setterComm.total, enabled: paysGreaterOf(me) })
-  const grossPay = hourlyPay + myPayBasis.salaryPaid + ptoPay + myPayBasis.commissionPaid + payableBonus
+  // that does NOT add up. The engine decides it; this page only says so.
+  const myPayBasis = pay?.payBasis || { enabled: false, basis: 'both', salaryPaid: 0, commissionPaid: 0, salaryConsidered: 0 }
+  const grossPay = pay?.grossPay || 0
+  // Commission earned this period that no admin has added to the run yet.
+  // Same rule as the bonus line: gross is what this cheque pays, and the rest
+  // has not gone anywhere. (On the greater-of arrangement the whole period is
+  // weighed, staged or not, so there is no remainder to report.)
+  const commissionNotOnRun = myPayBasis.enabled ? 0
+    : Math.max(0, Math.round((commAvailable + setterComm.total - (pay?.commissionPay || 0)) * 100) / 100)
 
   // ── Take-home, year to date, PTO bank ───────────────────────────────
   // Bryce, 2026-10-09: "do all 5" — the page headlined gross, and gross is
-  // not what lands in the account. The same engine Payroll runs, with this
-  // person's own W-4, on the gross shown above. An estimate until payroll
-  // runs: a commission or bonus still waiting on an admin changes it.
-  const thisYear = String(new Date().getFullYear())
-  const stubsThisYear = paystubs.filter(p => String(p.pay_date || '').slice(0, 4) === thisYear)
-  const ytd = stubsThisYear.reduce((a, p) => {
-    a.gross += Number(p.gross_pay) || 0
-    a.net += Number(p.net_pay) || 0
-    a.taxes += (Number(p.federal_income_tax) || 0) + (Number(p.state_income_tax) || 0) + (Number(p.social_security_employee) || 0) + (Number(p.medicare_employee) || 0) + (Number(p.additional_medicare) || 0)
-    return a
-  }, { gross: 0, net: 0, taxes: 0, checks: stubsThisYear.length })
-  const is1099 = me.tax_classification === '1099'
-  const w2Count = (useStore.getState().employees || []).filter(e => e.active !== false && e.tax_classification !== '1099').length || null
-  // The same recurring deductions Payroll takes (lib/benefitDeductions), so
-  // the estimate here and the stub agree to the cent.
-  const benefitDed = (!is1099 && grossPay > 0)
-    ? benefitDeductionsForPeriod(benefits, effectiveUserId, normalizePayFrequency(payrollConfig.pay_frequency))
-    : { section125: 0, retirement: 0, postTax: 0, preTaxTotal: 0, lines: [] }
-  let takeHomeEst = null
-  if (!is1099 && grossPay > 0 && empRow) {
-    try {
-      takeHomeEst = calcPaystubTax({
-        employee: empRow,
-        company: taxCompany || {},
-        gross: grossPay,
-        ytd: { gross: ytd.gross, ssWages: ytd.gross, medicareWages: ytd.gross },
-        payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
-        preTaxDeductions: Math.min(benefitDed.section125, grossPay),
-        preTaxRetirement: Math.min(benefitDed.retirement, Math.max(0, grossPay - benefitDed.section125)),
-        postTaxDeductions: benefitDed.postTax,
-        payDate: payDateForPeriod(periodEnd, payrollConfig) || localDateStr(new Date()),
-        employeeCount: w2Count,
-      })
-    } catch { takeHomeEst = null }
-  }
+  // not what lands in the account. pay.tax is the engine's withholding on the
+  // gross above with this person's own W-4; null for a contractor.
+  const takeHomeEst = (!is1099 && grossPay > 0 && empRow && pay) ? pay.tax : null
+  const benefitLines = pay?.benefitLines || []
+  const deductionLabels = [
+    ...benefitLines.map(l => l.label),
+    ...(pay?.adjustments || []).filter(a => a.type === 'deduction').map(a => a.reason || 'adjustment'),
+  ]
+  const additionLabels = (pay?.adjustments || []).filter(a => a.type === 'addition').map(a => a.reason || 'adjustment')
   const estDeductions = takeHomeEst ? (takeHomeEst.preTaxDeductions || 0) + (takeHomeEst.postTaxDeductions || 0) : 0
-  const takeHome = is1099 ? grossPay : (takeHomeEst ? takeHomeEst.netPay : null)
+  // A contractor's net is the gross plus or minus this period's adjustments.
+  const takeHome = is1099 ? (pay ? pay.netPay : grossPay) : (takeHomeEst ? takeHomeEst.netPay : null)
   const ptoBank = ptoBalanceDays(me)
   const ptoAccruing = ptoAccrualPerPeriod(me, payrollConfig.pay_frequency)
 
@@ -889,13 +930,23 @@ export default function MyPay() {
                 {fmt(owedNotOnThisRun)} in bonuses owed, not on this run
               </div>
             )}
+            {commissionNotOnRun > 0.005 && (
+              <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '2px', lineHeight: 1.35 }}>
+                {fmt(commissionNotOnRun)} in commission earned, not yet added to this run
+              </div>
+            )}
+            {(pay?.totalAdditions || 0) > 0.005 && (
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', lineHeight: 1.35 }}>
+                plus {fmt(pay.totalAdditions)} in additions ({additionLabels.join(', ')})
+              </div>
+            )}
           </div>
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{is1099 ? 'You receive' : 'Take-home (est.)'}</div>
             <div style={{ fontSize: '22px', fontWeight: '700', color: '#16a34a', marginTop: '2px' }}>{takeHome == null ? '—' : fmt(takeHome)}</div>
             <div style={{ fontSize: '11px', color: theme.textMuted }}>
               {is1099 ? 'no tax withheld, you file your own'
-                : takeHomeEst ? `after ${fmt(takeHomeEst.federalIncomeTax + takeHomeEst.stateIncomeTax + takeHomeEst.socialSecurityEmployee + takeHomeEst.medicareEmployee + takeHomeEst.additionalMedicare + (takeHomeEst.famliEmployee || 0))} in taxes${estDeductions > 0 ? ` and ${fmt(estDeductions)} in deductions (${benefitDed.lines.map(l => l.label).join(', ')})` : ''}`
+                : takeHomeEst ? `after ${fmt(takeHomeEst.federalIncomeTax + takeHomeEst.stateIncomeTax + takeHomeEst.socialSecurityEmployee + takeHomeEst.medicareEmployee + takeHomeEst.additionalMedicare + (takeHomeEst.famliEmployee || 0))} in taxes${estDeductions > 0 ? ` and ${fmt(estDeductions)} in deductions (${deductionLabels.join(', ')})` : ''}`
                 : 'estimated when there is pay this period'}
             </div>
           </div>

@@ -121,9 +121,22 @@ describe('the wiring', () => {
     expect(engine).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
   })
 
-  it('My Pay stops adding both halves together', () => {
+  it('My Pay runs the same engine as Payroll, on the same inputs', () => {
     const myPay = read('src/pages/MyPay.jsx')
-    expect(myPay).toMatch(/myPayBasis\.salaryPaid \+ ptoPay \+ myPayBasis\.commissionPaid/)
+    // docs/PAYROLL_PLAN.md step 2: one engine, two screens. My Pay no longer
+    // adds up its own gross or calls the tax engine on its own.
+    expect(myPay).toMatch(/computeEmployeePay\(\{/)
+    expect(myPay).not.toMatch(/calcPaystubTax\(/)
+    expect(myPay).not.toMatch(/greaterOfPay\(/)
+    // Every input Payroll's calculateFullPay passes, My Pay passes too.
+    for (const key of ['timeEntries', 'timeLogEntries', 'payrollConfig', 'period:', 'payDate:', 'repCommissions', 'leadCommissionSummary:', 'invoiceCommissions:', 'bonusRows:', 'periodTimeOff:', 'adjustments', 'benefits', 'ytd:', 'taxCompany:']) {
+      expect(myPay, `My Pay passes ${key} to the engine`).toMatch(new RegExp(`computeEmployeePay\\(\\{[\\s\\S]{0,1400}${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
+    }
+    // and it loads the two inputs it used to leave out
+    expect(myPay).toMatch(/from\('time_log'\)[\s\S]{0,200}\.eq\('employee_id', effectiveUserId\)/)
+    expect(myPay).toMatch(/from\('payroll_adjustments'\)[\s\S]{0,200}\.eq\('employee_id', effectiveUserId\)/)
+    // lib/setterCommissions keeps only rows carrying the viewer's id
+    expect(myPay).toMatch(/from\('lead_commissions'\)[\s\S]{0,400}select\('[^']*employee_id[^']*queued_for_payroll/)
     expect(myPay).toMatch(/pay_greater_of_salary_commission/)   // and selects the column
   })
 
