@@ -20,6 +20,7 @@
 
 import { resolveCaller } from '../_shared/auth.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
+import { ARNIE_MODEL, textOf } from '../_shared/arnieModel.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -136,8 +137,11 @@ Deno.serve(async (req) => {
     const ai = await callAnthropic(
       { feature: 'arnie-teach', companyId: caller.companyId },
       {
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 2000,
+        // Writing up a demonstration is real reading: medium effort, and room
+        // for the thinking as well as the write-up.
+        model: ARNIE_MODEL,
+        max_tokens: 12000,
+        output_config: { effort: 'medium' },
         system: SYSTEM,
         messages: [{ role: 'user', content }],
       },
@@ -153,7 +157,8 @@ Deno.serve(async (req) => {
       }, 503)
     }
 
-    const text = String(ai.data?.content?.[0]?.text || '').trim()
+    // By type: on Sonnet 5.5 the first block can be thinking, not text.
+    const text = textOf(ai.data)
     if (!text) return json({ error: 'Arnie could not make anything of that recording.' }, 502)
 
     const cut = text.search(/what i am not sure about/i)

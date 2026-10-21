@@ -16,6 +16,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { callAnthropic } from '../_shared/anthropic.ts'
+import { quickCall, textOf } from '../_shared/arnieModel.ts'
 import { callerFor, type Caller } from '../_shared/auth.ts'
 import { dailyBrief } from '../_shared/arnieBrief.ts'
 import { tzOffsetMinutes } from '../_shared/arnieTime.ts'
@@ -46,10 +47,10 @@ Lead with what needs ACTION, in this order: a job today with nobody on it, a shi
 Warm, direct, a little salty. No emojis. No tool names. No markdown asterisks or pound signs — this is plain text. ${limit}
 Everything you say comes from the brief below. Do not add or guess. The my_day section is about ${first} — say "you", never a third person. Any person you name must appear by name in the brief; if no name is there, there is no person.`
   const ai = await callAnthropic({ feature: 'arnie-brief-push', companyId: brief.company_id ?? null }, {
-    model: 'claude-sonnet-4-5-20250929', max_tokens: 700, system,
+    ...quickCall(4000), system,
     messages: [{ role: 'user', content: JSON.stringify(brief) }],
   })
-  const text = ai.ok ? String((ai.data?.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')).trim() : ''
+  const text = ai.ok ? textOf(ai.data) : ''
   if (text) return { text, byModel: true }
   return { text: plainBrief(brief, first), byModel: false }
 }

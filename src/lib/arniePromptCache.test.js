@@ -67,11 +67,32 @@ describe('prompt caching', () => {
     expect(chat).not.toMatch(/messages: convo,/)
   })
   it('Arnie runs on Sonnet 5.5, with room to think', () => {
-    expect(chat).toMatch(/const ARNIE_MODEL = 'claude-sonnet-5-5'\n/)
+    const m = readFileSync(new URL('../../supabase/functions/_shared/arnieModel.ts', import.meta.url), 'utf8')
+    expect(m).toMatch(/export const ARNIE_MODEL = 'claude-sonnet-5-5'/)
+    expect(chat).toMatch(/import \{ ARNIE_MODEL \} from '\.\.\/_shared\/arnieModel\.ts'/)
+    expect(chat).not.toMatch(/const ARNIE_MODEL = /)
     expect(chat).toMatch(/maxTokens: isNewModel\(model\) \? 16000 : 4096,/)
     const c = readFileSync(new URL('../../supabase/functions/_shared/computeConfig.ts', import.meta.url), 'utf8')
     expect(c.indexOf("m.includes('sonnet-5-5')")).toBeLessThan(c.indexOf("return { in: 3, out: 15"))
     expect(c).toMatch(/if \(m\.includes\('sonnet-5-5'\)\) return \{ in: 2, out: 10, cacheRead: 0\.2 \}/)
+  })
+  it('the brief push, teach and the settings parser run on the same model, read text by type, with room to think', () => {
+    const f = (p) => readFileSync(new URL(`../../supabase/functions/${p}`, import.meta.url), 'utf8')
+    const brief = f('arnie-brief-push/index.ts'), teach = f('arnie-teach/index.ts'), config = f('_shared/arnieConfig.ts')
+    for (const src of [brief, teach, config]) {
+      expect(src).not.toMatch(/claude-sonnet-4-5/)
+      expect(src).toMatch(/textOf\(ai\.data\)/)
+    }
+    expect(brief).toMatch(/\.\.\.quickCall\(4000\)/)
+    expect(config).toMatch(/\.\.\.quickCall\(2000\)/)
+    expect(teach).toMatch(/model: ARNIE_MODEL,\s+max_tokens: 12000,/)
+    expect(teach).not.toMatch(/content\?\.\[0\]\?\.text/)   // the first block can be thinking
+  })
+  it('textOf skips thinking blocks', async () => {
+    const { textOf, quickCall } = await import('../../supabase/functions/_shared/arnieModel.ts')
+    expect(textOf({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'Morning Bryce.' }] })).toBe('Morning Bryce.')
+    expect(textOf({})).toBe('')
+    expect(quickCall(2000)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low' } })
   })
   it('the meter prices Sonnet 5.5 at $2/$10, ahead of the generic Sonnet line', () => {
     const a = readFileSync(new URL('../../supabase/functions/_shared/anthropic.ts', import.meta.url), 'utf8')

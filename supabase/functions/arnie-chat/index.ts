@@ -12,6 +12,7 @@ import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { receiptFor, unmarked, type ReceiptCall } from '../_shared/arnieReceipt.ts'
+import { ARNIE_MODEL } from '../_shared/arnieModel.ts'
 import { playbookFor, parseTakeoff, planEstimate } from '../_shared/lightingPlaybook.ts'
 import { activeRules, rulesPromptBlock } from '../_shared/arnieCompanyRules.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
@@ -41,8 +42,8 @@ type Agent = 'arnie' | 'frankie'
 // scored 79/80 to Sonnet 4.5's 75/80, answered the question asked ("what did
 // I close" = theirs, not the company's) and re-checked an invented lead list
 // instead of emailing it. It thinks before answering, so maxTokens is sized
-// for that, and it refuses a forced tool_choice (see isNewModel).
-const ARNIE_MODEL = 'claude-sonnet-5-5'
+// for that, and it refuses a forced tool_choice (see isNewModel). The name
+// lives in _shared/arnieModel.ts, shared with the brief, teach and config.
 
 // THE MODEL COMPARISON (Bryce, 2026-10-21: "why is arnie inventing all this
 // shit"). A test may ask for another model — only the demo company (25) or

@@ -11,6 +11,7 @@
 // apply arithmetic have to be identical in both, so they are the same code.
 
 import { callAnthropic } from './anthropic.ts'
+import { quickCall, textOf } from './arnieModel.ts'
 import { mentionedInRequest } from './requestMentions.ts'
 
 export const ALLOWED_TARGETS = ['business_units', 'lead_sources', 'service_types', 'upsells'] as const
@@ -147,11 +148,11 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
 
   const ai = await callAnthropic(
     { feature: 'arnie-config', companyId },
-    { model: 'claude-sonnet-4-5-20250929', max_tokens: 400, system: sys, messages: [{ role: 'user', content: request }] },
+    { ...quickCall(2000), system: sys, messages: [{ role: 'user', content: request }] },
   )
   if (!ai.ok) return { error: ai.friendly || 'Arnie is unavailable right now.', ai_unavailable: ai.unavailable === true }
 
-  const txt = (ai.data?.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('')
+  const txt = textOf(ai.data)
   let parsed: any
   try {
     parsed = JSON.parse((txt.match(/\{[\s\S]*\}/) || [txt])[0])
