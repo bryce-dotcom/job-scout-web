@@ -190,6 +190,34 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
     searchCols: [], selectCols: 'id,job_id,item_id,item_name,description,notes', labelOf: (r) => r._label || `job line #${r.id}`,
     findRow: findJobLineRow, checkValue: checkDescription,
   },
+  // "Make the Azalea job recurring" (Christopher, 2026-10-14) — Arnie had no
+  // way to, and said he would anyway. The repeat is ONE column: when a visit is
+  // marked Completed, the database (spawn_next_recurring_job) books the next.
+  // Only the values that trigger understands; "None" turns it off.
+  job_recurrence: {
+    label: 'job repeat', table: 'jobs', field: 'recurrence', mode: 'set', minLevel: 2,
+    searchCols: JOB_SEARCH, selectCols: `${JOB_SELECT},recurrence`, labelOf: jobLabel, checkValue: checkRecurrence,
+  },
+  // Who is on the job — the Job Board's crew field, names as the page writes
+  // them ("Dusty Sensabaugh" or "Gage Baughman, Logan Munson").
+  job_crew: {
+    label: 'job crew', table: 'jobs', field: 'assigned_team', mode: 'set', minLevel: 2,
+    searchCols: JOB_SEARCH, selectCols: `${JOB_SELECT},assigned_team`, labelOf: jobLabel, checkValue: checkCrew,
+  },
+}
+
+/** The repeats spawn_next_recurring_job knows. Anything else would never repeat. */
+export const RECURRENCES = ['None', 'Daily', 'Weekly', 'Bi-Weekly', 'Every 6 Weeks', 'Monthly', 'Bi-Monthly', 'Quarterly', 'Bi-Annually', 'Annually']
+function checkRecurrence(value: string): string | null {
+  return RECURRENCES.includes(String(value).trim())
+    ? null
+    : `"${value}" is not a repeat the schedule knows. Use exactly one of: ${RECURRENCES.join(', ')} ("None" stops it).`
+}
+function checkCrew(value: string): string | null {
+  const v = String(value ?? '').trim()
+  if (!v) return 'Name who goes on the job.'
+  if (v.length > 200) return 'That is too long for a crew — names only, separated by commas.'
+  return null
 }
 
 /** job_line_note: the job (as said, or record_id = the job), then one of its lines. */
