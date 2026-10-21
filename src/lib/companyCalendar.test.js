@@ -7,6 +7,7 @@ import {
   expandDateRange,
   monthGrid,
   labelForTimeOff,
+  KINDS,
 } from './companyCalendar'
 
 const employees = [{ id: 7, name: 'Cole Westcott' }, { id: 9, name: 'Doug Webb' }]
@@ -373,5 +374,69 @@ describe('routes and fleet', () => {
     const before = buildCalendarEvents({ jobs: [{ id: 1, start_date: '2026-09-05T15:00:00Z', job_title: 'X' }] })
     const after = buildCalendarEvents({ jobs: [{ id: 1, start_date: '2026-09-05T15:00:00Z', job_title: 'X' }], routes: [], fleet: [], fleetRentals: [] })
     expect(after).toEqual(before)
+  })
+})
+
+describe('work that is already done', () => {
+  // Christopher, 16 Oct: "Jobs disappear from Calendar once completed.
+  // Monthly work often gets moved around and is not done the same time every
+  // month. Our client will be very unhappy if we do the windows the last week
+  // of the month and then show up a week later at the first week of the
+  // month."
+  //
+  // They were never filtered out HERE — the store drops status 'Archived' and
+  // archiving overwrites the status, so the page never received them. HHH has
+  // 6,196 archived jobs, 6,187 of them dated, against ~975 that are not: the
+  // calendar was drawing about one job in eight.
+  const done = (over = {}) => ({ id: 9, job_title: 'Windows', completed_at: '2026-09-28T16:00:00Z', ...over })
+
+  it('draws a finished job on the day it was finished', () => {
+    const ev = buildCalendarEvents({ completedJobs: [done()] }).find(e => e.kind === 'completed')
+    expect(ev).toBeTruthy()
+    expect(ev.dayKeys).toEqual(['2026-09-28'])
+    expect(ev.link).toBe('/jobs/9')
+  })
+
+  it('uses completed_at, not the day it was booked for', () => {
+    // A job that slipped was not done on the day it was scheduled, and "when
+    // did we last do this one" is the whole question being asked.
+    const ev = buildCalendarEvents({
+      completedJobs: [done({ start_date: '2026-09-01', completed_at: '2026-09-28T16:00:00Z' })],
+    }).find(e => e.kind === 'completed')
+    expect(ev.dayKeys).toEqual(['2026-09-28'])
+  })
+
+  it('does NOT draw an archived job that was never completed', () => {
+    // 326 of HHH's archived jobs have no completed_at — the cancelled and the
+    // duplicated. Drawing those as finished work is a lie somebody schedules
+    // around.
+    const evs = buildCalendarEvents({ completedJobs: [done({ completed_at: null, status: 'Archived' })] })
+    expect(evs.filter(e => e.kind === 'completed')).toHaveLength(0)
+  })
+
+  it('never doubles a job the calendar already draws', () => {
+    const live = { id: 9, job_title: 'Windows', start_date: '2026-09-28', status: 'Completed' }
+    const evs = buildCalendarEvents({ jobs: [live], completedJobs: [done()] })
+    expect(evs.filter(e => String(e.id).startsWith('job-') && e.title === 'Windows')).toHaveLength(1)
+    expect(evs.find(e => e.title === 'Windows').kind).toBe('delivery')
+  })
+
+  it('moves nothing that was on the calendar before', () => {
+    // The ONLY change for an existing row is that there may now be more rows.
+    const before = buildCalendarEvents({ jobs: [{ id: 1, job_title: 'A', start_date: '2026-09-02' }] })
+    const after = buildCalendarEvents({ jobs: [{ id: 1, job_title: 'A', start_date: '2026-09-02' }], completedJobs: [done()] })
+    expect(after.filter(e => e.kind === 'delivery')).toEqual(before.filter(e => e.kind === 'delivery'))
+  })
+
+  it('can be switched off on its own', () => {
+    const evs = buildCalendarEvents({ jobs: [{ id: 1, job_title: 'A', start_date: '2026-09-02' }], completedJobs: [done()] })
+    const shown = filterCalendarEvents(evs, { kinds: { completed: false } })
+    expect(shown.some(e => e.kind === 'completed')).toBe(false)
+    expect(shown.some(e => e.kind === 'delivery')).toBe(true)
+  })
+
+  it('is a kind the chip row knows about', () => {
+    expect(KINDS.completed).toBeTruthy()
+    expect(KINDS.completed.label).toBe('Completed')
   })
 })

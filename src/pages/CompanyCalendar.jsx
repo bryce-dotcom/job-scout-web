@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck, CheckCircle2 } from 'lucide-react'
 import {
   buildCalendarEvents,
   filterCalendarEvents,
@@ -22,7 +22,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck }
+const KIND_ICON = { sales: Users, delivery: Briefcase, completed: CheckCircle2, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -44,7 +44,7 @@ export default function CompanyCalendar() {
 
   const [cursor, setCursor] = useState(() => new Date())
   const [timeOff, setTimeOff] = useState([])
-  const [kinds, setKinds] = useState({ sales: true, delivery: true, timeoff: true, service: true, projected: true, route: true, fleet: true })
+  const [kinds, setKinds] = useState({ sales: true, delivery: true, completed: true, timeoff: true, service: true, projected: true, route: true, fleet: true })
   const [units, setUnits] = useState({})
 
   // Time off is a small table and isn't in the store — fetch it directly.
@@ -62,6 +62,40 @@ export default function CompanyCalendar() {
     return () => { cancelled = true }
   }, [companyId])
 
+  // Work that is already finished, fetched a month at a time.
+  //
+  // Christopher, 16 Oct: "Jobs disappear from Calendar once completed."
+  // The store drops `status = 'Archived'` and archiving overwrites the
+  // status, so 6,196 of HHH's jobs — 6,187 of them dated — never reach this
+  // page. That is the whole history of the company against the ~975 that are
+  // not archived.
+  //
+  // Fetched here rather than un-filtering the store: the store feeds every
+  // page in the app, and putting six thousand finished jobs into it to draw
+  // one month of them would cost every other screen. One month is a small
+  // query and it is thrown away when you page past it.
+  const [completedJobs, setCompletedJobs] = useState([])
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
+    const last = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)
+    const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, job_id, job_title, business_unit, assigned_team, status, completed_at, customer:customers!customer_id(name)')
+        .eq('company_id', companyId)
+        .not('completed_at', 'is', null)
+        .gte('completed_at', `${key(first)}T00:00:00`)
+        .lte('completed_at', `${key(last)}T23:59:59`)
+        .limit(1000)
+      if (error) { console.warn('[CompanyCalendar] finished work fetch failed:', error.message); return }
+      if (!cancelled) setCompletedJobs(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [companyId, cursor])
+
   const unitNames = useMemo(
     () => (businessUnits || []).map((b) => (typeof b === 'string' ? b : b?.name)).filter(Boolean),
     [businessUnits],
@@ -78,10 +112,10 @@ export default function CompanyCalendar() {
 
   const events = useMemo(
     () => buildCalendarEvents(
-      { appointments, jobs, timeOff, employees, routes, fleet, fleetRentals },
+      { appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals },
       { projectRecurringThrough: projectThrough },
     ),
-    [appointments, jobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough],
+    [appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough],
   )
 
   const visible = useMemo(() => filterCalendarEvents(events, { kinds, units }), [events, kinds, units])

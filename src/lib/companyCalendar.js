@@ -61,6 +61,29 @@ export const KINDS = {
     color: '#a855f7',
     writes: { source: 'Time Off Requests', bookedIn: 'Team', appearsWhen: 'a request is approved' },
   },
+  // WORK THAT IS ALREADY DONE.
+  //
+  // Christopher, 16 Oct: "Jobs disappear from Calendar once completed. Monthly
+  // work often gets moved around and is not done the same time every month.
+  // Our client will be very unhappy if we do the windows the last week of the
+  // month and then show up a week later at the first week of the month. A
+  // quick look at the calendar can help you [see when] jobs were done last and
+  // schedule accordingly."
+  //
+  // They were not hidden by this calendar — the store drops `status =
+  // 'Archived'` so the page never saw them, and archiving OVERWRITES the
+  // status. HHH has 6,196 archived jobs, 6,187 of them dated: the entire
+  // history of the company, against the ~975 that are not archived. So the
+  // calendar was showing about one job in eight.
+  //
+  // Its own kind, and its own chip, so a month full of finished work can be
+  // switched off when you are looking at what is coming.
+  completed: {
+    id: 'completed',
+    label: 'Completed',
+    color: '#7d8a7f',
+    writes: { source: 'Jobs', bookedIn: 'Job Board', appearsWhen: 'the work was finished' },
+  },
   // A visit that is OWED but not yet booked. It is on the books in exactly the
   // sense this calendar promises — the customer is expecting it — and it was
   // the one thing missing that people were already tracking elsewhere.
@@ -153,7 +176,7 @@ export function expandDateRange(start, end) {
  * Normalize the three sources into one event list.
  * Each event: { id, kind, dayKeys[], title, subtitle, businessUnit, link, status }
  */
-export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
+export function buildCalendarEvents({ appointments = [], jobs = [], completedJobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
   const empName = new Map((employees || []).map((e) => [String(e.id), e.name]))
   const events = []
 
@@ -177,6 +200,34 @@ export function buildCalendarEvents({ appointments = [], jobs = [], timeOff = []
       status: a.status || null,
       link: a.lead_id ? `/leads/${a.lead_id}` : '/appointments',
       time: a.start_time,
+    })
+  }
+
+  // Finished work, on the day it was finished.
+  //
+  // completed_at, not start_date: the question is "when did we last do this
+  // one", and a job that slipped was not done on the day it was booked. A row
+  // with no completed_at is NOT drawn here even if it is archived — 326 of
+  // HHH's archived jobs have none, and they are the cancelled and duplicated
+  // ones. Putting those on the calendar as finished work would be a lie that
+  // someone then schedules around.
+  //
+  // Nothing that was already on this calendar moves. These are rows the page
+  // never received, so `delivery` keeps every job it drew before.
+  const drawn = new Set((jobs || []).map((j) => String(j?.id)))
+  for (const j of completedJobs || []) {
+    if (!j || !j.completed_at) continue
+    if (drawn.has(String(j.id))) continue
+    events.push({
+      id: `job-done-${j.id}`,
+      kind: 'completed',
+      dayKeys: [zonedDayKey(j.completed_at, tz)],
+      title: j.job_title || j.job_id || 'Job',
+      subtitle: j.customer?.name || j.assigned_team || '',
+      businessUnit: j.business_unit || null,
+      status: j.status || null,
+      link: `/jobs/${j.id}`,
+      time: j.completed_at,
     })
   }
 
