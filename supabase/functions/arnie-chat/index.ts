@@ -51,6 +51,32 @@ const EVAL_EFFORTS = new Set(['low', 'medium', 'high'])
 const evalChoice = new WeakMap<object, { model: string; effort?: string }>()
 /** Models from the 4.6+ generation: adaptive thinking, effort, no forced tool_choice. */
 const isNewModel = (m: string) => !/sonnet-4-5|haiku-4-5/.test(m)
+
+// PROMPT CACHING (Bryce, 2026-10-21). ai_usage showed zero cached tokens: every
+// round of every turn re-sent ~40-50k tokens of tools and rules at full price.
+// Three markers — the last tool, the rules, the newest message — so a turn's
+// second round onwards, and the next turn within five minutes, read them back
+// at a tenth of the price. A copy is marked; convo itself is never touched,
+// or old markers would pile past the four the API allows.
+const CACHE = { type: 'ephemeral' } as const
+function cachedTools(tools: any[]): any[] {
+  if (!tools.length) return tools
+  return [...tools.slice(0, -1), { ...tools[tools.length - 1], cache_control: CACHE }]
+}
+/** The rules, cached; anything round-specific (the last-step note) goes after the marker. */
+function cachedSystem(prompt: string, after = ''): any {
+  if (!prompt) return after
+  return [{ type: 'text', text: prompt, cache_control: CACHE }, ...(after ? [{ type: 'text', text: after }] : [])]
+}
+function cachedMessages(convo: any[]): any[] {
+  const last = convo[convo.length - 1]
+  if (!last) return convo
+  const content = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...(last.content || [])]
+  const i = content.length - 1
+  if (i < 0 || /thinking/.test(String(content[i]?.type))) return convo
+  content[i] = { ...content[i], cache_control: CACHE }
+  return [...convo.slice(0, -1), { ...last, content }]
+}
 function agentFor(body: Record<string, unknown>): Agent {
   return body.agent === 'frankie' ? 'frankie' : 'arnie'
 }
@@ -2880,9 +2906,9 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: setup.model,
         max_tokens: setup.maxTokens,
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-        system: systemPrompt || '',
-        ...(includeTools ? { tools: setup.tools } : {}),
-        messages: convo,
+        system: cachedSystem(systemPrompt || ''),
+        ...(includeTools ? { tools: cachedTools(setup.tools) } : {}),
+        messages: cachedMessages(convo),
       },
     )
     if (!ai.ok) {
@@ -2992,12 +3018,12 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // used to end mid-sentence — "Let me try clicking in the search
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
-              system: (systemPrompt || '') + (outOfSteps(round) ? LAST_STEP_NOTE : ''),
+              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : ''),
               // Newer models refuse a forced tool_choice (400); there the
               // correction message itself is the instruction to call it.
-              ...(includeTools ? { tools: setup.tools, ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
+              ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-              messages: convo,
+              messages: cachedMessages(convo),
               stream: true,
             }),
           })

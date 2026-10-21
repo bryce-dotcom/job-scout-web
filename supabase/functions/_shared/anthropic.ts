@@ -51,6 +51,8 @@ const PRICES: Array<{ match: RegExp; inPerM: number; outPerM: number }> = [
   // Most specific first — Opus 5.5 is cheaper than the Opus line before it.
   { match: /opus-5-5/i, inPerM: 4, outPerM: 20 },
   { match: /opus/i, inPerM: 5, outPerM: 25 },
+  // Sonnet 5.5 is cheaper than the Sonnet line before it.
+  { match: /sonnet-5-5/i, inPerM: 2, outPerM: 10 },
   { match: /haiku/i, inPerM: 1, outPerM: 5 },
   { match: /sonnet/i, inPerM: 3, outPerM: 15 },
 ]
