@@ -61,6 +61,17 @@ describe('the fixes around it', () => {
     expect(names.filter((n) => one.every((x) => squash(n).includes(x)))).toEqual(['Store Front/Commercial Exterior Window Cleaning'])
     expect(one).toEqual(['store', 'front', 'exterior', 'window'])
   })
+  it('"commercial interior windows" fits two products both ways, so she asks which', () => {
+    const q = read('supabase/functions/_shared/arnieQuote.ts')
+    expect(q).toMatch(/return one\.every\(\(x\) => n\.includes\(x\)\) && !hits\.includes\(p\) \}\)\n\s+hits = \[\.\.\.hits, \.\.\.more\]/)
+    const squash = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const names = ['Commercial Interior Ladder Windows', 'Commercial Interior Window Cleaning', 'Residential Interior Windows']
+    const words = 'commercial interior windows'.split(/[^a-z0-9]+/).filter((x) => x.length >= 3)
+    const exact = names.filter((n) => words.every((x) => squash(n).includes(x)))
+    const one = words.map((x) => (x.length > 3 && /[^s]s$/.test(x) ? x.slice(0, -1) : x))
+    const both = [...exact, ...names.filter((n) => one.every((x) => squash(n).includes(x)) && !exact.includes(n))]
+    expect(both).toEqual(['Commercial Interior Ladder Windows', 'Commercial Interior Window Cleaning'])
+  })
   it('products can be read by the page section ("Commercial Windows")', () => {
     const chat = read('supabase/functions/arnie-chat/index.ts')
     expect(chat).toMatch(/section: \{ type: 'string', description: 'A section of the Products & Services page/)
