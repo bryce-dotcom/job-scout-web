@@ -75,5 +75,7 @@ export function receiptFor(calls: ReceiptCall[]): string {
   return parts.length ? parts.join(' · ') : 'No lookups this reply'
 }
 
-/** The model may not write a receipt of its own: its brackets are removed from what it says. */
-export const unmarked = (s: string) => String(s ?? '').replace(/[⟦⟧]/g, '')
+/** The model may not write a receipt of its own. One that copies the style
+ *  ("⟦receipt⟧ Looked up: leads (1), email sent" — Sonnet 4.5, live test) is
+ *  dropped whole; a stray bracket left by a split stream chunk is dropped too. */
+export const unmarked = (s: string) => String(s ?? '').replace(/\n*⟦receipt⟧[^\n]*/g, '').replace(/[⟦⟧]/g, '')

@@ -39,8 +39,10 @@ describe('the line, from what really ran', () => {
   it('computer steps are counted', () => {
     expect(receiptFor([{ name: 'use_my_computer', result: {} }, { name: 'use_my_computer', result: {} }])).toBe('2 steps on your computer')
   })
-  it('he cannot write a receipt of his own', () => {
-    expect(unmarked('⟦receipt⟧ Looked up: leads (17)')).toBe('receipt Looked up: leads (17)')
+  it('he cannot write a receipt of his own — a copied one is dropped whole', () => {
+    expect(unmarked('Sent to demo@jobscout.app.\n\n⟦receipt⟧ Looked up: leads (1), email sent')).toBe('Sent to demo@jobscout.app.')
+    expect(unmarked('a stray ⟦ bracket')).toBe('a stray  bracket')   // a split stream chunk
+    expect(unmarked('no receipt here')).toBe('no receipt here')
   })
 })
 
