@@ -271,11 +271,16 @@ export function untracedFigures(text: string, context: string, toolContext = '')
  * Cole, 2026-10-20: "Email sent, boss … check your inbox" three times, then a
  * made-up tool result ("sent": true) when he said it never came.
  */
+// A sentence that says it was NOT sent, or that it will be once something
+// happens, is not a claim. Without this, "No email has been sent, and saying it
+// would be false" was caught as a claim and rewritten (live test, 2026-10-21).
+const NOT_A_SEND = /\b(no|not|never|nothing|cannot|once|when|if|after|until|before|unless|will|would|should i)\b|n['’]t\b/i
+
 export function claimsAnEmail(text: string): boolean {
-  const t = String(text || '')
-  return /\b(e-?mail|list|report|it)\b[^.!?\n]{0,25}\b(has been |was |is |'s )?sent\b(?! to the customer when)/i.test(t)
-    || /\bsent (it|the list|the report|that|this|you|an e-?mail)\b[^.!?\n]{0,20}\b(to your|your) (e-?mail|inbox)\b/i.test(t)
-    || /\bcheck your (inbox|e-?mail)\b/i.test(t)
+  return String(text || '').split(/(?<=[.!?\n])\s+/).some((s) => !NOT_A_SEND.test(s) && (
+    /\b(e-?mail|list|report|it)\b[^.!?\n]{0,25}\b(has been |was |is |'s )?sent\b(?! to the customer when)/i.test(s)
+    || /\bsent (it|the list|the report|that|this|you|an e-?mail)\b[^.!?\n]{0,20}\b(to your|your) (e-?mail|inbox)\b/i.test(s)
+    || /\bcheck your (inbox|e-?mail)\b/i.test(s)))
 }
 export const EMAIL_TOOLS = ['email_me']
 

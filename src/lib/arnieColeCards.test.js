@@ -171,6 +171,18 @@ describe('Cole #5: the invented lead list and the email that never went', () => 
     expect(T.claimsAnEmail('Want me to email you the list?')).toBe(false)
     expect(T.correctionFor('email', true)).toMatch(/CALL email_me with the real content/)
   })
+  it('saying it was NOT sent, or will be once approved, is not a claim (live test, 2026-10-21)', async () => {
+    const T = await import('../../supabase/functions/_shared/arnieTruth.ts')
+    for (const honest of [
+      "I can't say that. No email has been sent, and saying it would be false.",
+      "I haven't sent any email, and there's no content to send yet.",
+      'Once it is sent, check your inbox.',
+      "I didn't actually send the email.",
+      'If you approve it, the email will be sent to Ben.',
+    ]) expect(T.claimsAnEmail(honest), honest).toBe(false)
+    for (const claim of ['Email sent, boss.', 'Done — the list was sent. Check your inbox.', "I've sent it to your inbox."])
+      expect(T.claimsAnEmail(claim), claim).toBe(true)
+  })
   it('her own earlier replies are not a source, and a failed send is not a send', () => {
     const chat = read('supabase/functions/arnie-chat/index.ts')
     expect(chat).toMatch(/const theirs = convo\.filter\(\(m: any\) => m\?\.role === 'user'\)/)
