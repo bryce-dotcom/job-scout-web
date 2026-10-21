@@ -72,6 +72,21 @@ describe('the fixes around it', () => {
     const both = [...exact, ...names.filter((n) => one.every((x) => squash(n).includes(x)) && !exact.includes(n))]
     expect(both).toEqual(['Commercial Interior Ladder Windows', 'Commercial Interior Window Cleaning'])
   })
+  it('"LED wall pack" finds the book\'s "Exterior Wall Pack 80W" — LED names no product', () => {
+    const q = read('supabase/functions/_shared/arnieQuote.ts')
+    expect(q).toMatch(/const plain = one\.filter\(\(x\) => !\/\^\(led\|leds\|light\|lite\|fixture\|new\|replacement\)\$\/\.test\(x\)\)/)
+    expect(q).toMatch(/if \(!hits\.length && plain\.length >= 2 && plain\.length < one\.length\)/)
+    const squash = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const names = ['Exterior Wall Pack 80W', 'LED High Bay 150W']
+    const one = ['led', 'wall', 'pack']
+    const plain = one.filter((x) => !/^(led|leds|light|lite|fixture|new|replacement)$/.test(x))
+    expect(names.filter((n) => one.every((x) => squash(n).includes(x)))).toEqual([])
+    expect(names.filter((n) => plain.every((x) => squash(n).includes(x)))).toEqual(['Exterior Wall Pack 80W'])
+    expect(['led', 'tubes'].filter((x) => !/^(led|leds|light|lite|fixture|new|replacement)$/.test(x))).toHaveLength(1) // one word left: too loose, not tried
+  })
+  it('an unreadable receipt total is not worked out from the lines', () => {
+    expect(read('supabase/functions/_shared/arniePrompt.ts')).toMatch(/Do not multiply gallons by price, add up lines or estimate tax/)
+  })
   it('products can be read by the page section ("Commercial Windows")', () => {
     const chat = read('supabase/functions/arnie-chat/index.ts')
     expect(chat).toMatch(/section: \{ type: 'string', description: 'A section of the Products & Services page/)

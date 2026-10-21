@@ -108,3 +108,23 @@ describe('when storage misbehaves', () => {
     expect(getLastSessionId()).toBeNull()
   })
 })
+
+describe('a fresh conversation each day (2026-10-21)', () => {
+  it('resumes today\'s conversation, not yesterday\'s', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 9, 20, 16, 0))
+      rememberLastSession('yesterdays-chat')
+      expect(getLastSessionId()).toBe('yesterdays-chat')
+      vi.setSystemTime(new Date(2026, 9, 21, 8, 0))
+      expect(getLastSessionId()).toBeNull()
+      rememberLastSession('todays-chat')
+      expect(getLastSessionId()).toBe('todays-chat')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('a record saved before days were kept starts fresh once', () => {
+    window.localStorage.setItem('arnie:lastSession', JSON.stringify({ email: 'alayda@hhh.services', sessionId: 'old-shape' }))
+    expect(getLastSessionId()).toBeNull()
+  })
+})

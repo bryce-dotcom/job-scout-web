@@ -89,10 +89,17 @@
     {
       "path": "/api/cron/sign-in-alerts",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/arnie-review",
+      "schedule": "0 14 * * 1"
     }
   ],
   "functions": {
     "api/cron/drain-migrations.js": {
+      "maxDuration": 300
+    },
+    "api/cron/arnie-review.js": {
       "maxDuration": 300
     },
     "api/cron/stripe-sync-books.js": {

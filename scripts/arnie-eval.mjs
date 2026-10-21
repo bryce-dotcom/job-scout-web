@@ -217,7 +217,7 @@ const CASES = [
         await rest(`company_rules?company_id=eq.${DEMO.company}`, { method: 'DELETE' })
       }
     },
-    expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/approve/i] } },
+    expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/approv(e|ing)/i] } },
   // A non-admin SUGGESTS: the card is drafted, they cannot approve their own,
   // an admin can (here: the owner rejects it, leaving nothing behind).
   { id: 'company_rule.tech.suggests.cannot.approve.admin.decides', as: 'tech',
@@ -334,7 +334,7 @@ const CASES = [
         for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
       }
     },
-    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/Auto Wash/i, /approve/i], text_not_match: [/\b(you'?re|you are) (now )?clocked in\b/i] } },
+    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/Auto Wash/i, /approv(e|ing)/i], text_not_match: [/\b(you'?re|you are) (now )?clocked in\b/i] } },
   { id: 'shift.owner.switches.jobs.then.rollback', as: 'owner',
     run: async (ctx) => {
       // Clocked in on one job since this morning; naming another is a switch — the open punch
@@ -368,7 +368,7 @@ const CASES = [
         for (const s of parked) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
       }
     },
-    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approve/i] } },
+    expect: { proposal_kind: 'record', proposal_label: 'shift clock-in', text_match: [/switch/i, /approv(e|ing)/i] } },
   { id: 'shift.tech.cannot.clock.in.someone.else', as: 'tech',
     turns: ['Clock Mike Sullivan in on the Westside Auto Wash job.'],
     // However he words it, the refusal has to say whose shift it can be: the person
@@ -400,7 +400,7 @@ const CASES = [
         return r
       } finally { await rest(`job_sections?id=eq.${sec.id}`, { method: 'DELETE' }) }
     },
-    expect: { proposal_kind: 'record', proposal_label: 'crew assignment', text_match: [/Jordan/, /Thu/i, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (assigned|scheduled|put)\b/i] } },
+    expect: { proposal_kind: 'record', proposal_label: 'crew assignment', text_match: [/Jordan/, /Thu/i, /approv(e|ing)/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (assigned|scheduled|put)\b/i] } },
   { id: 'dispatch.tech.refused', as: 'tech',
     turns: ['Put Mike Sullivan on the Westside Auto Wash job on Thursday.'],
     expect: { proposal: 'none', text_match: [/manager/i] } },
@@ -425,7 +425,7 @@ const CASES = [
       }
       return r
     },
-    expect: { proposal: 'create', proposal_label: 'expense', text_match: [/96\.41/, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (logged|expensed|recorded)\b/i] } },
+    expect: { proposal: 'create', proposal_label: 'expense', text_match: [/96\.41/, /approv(e|ing)/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (logged|expensed|recorded)\b/i] } },
   { id: 'expense.tech.unreadable.total.asks.not.guesses', as: 'tech',
     run: async (ctx) => {
       const png = await receiptPng({ total: '' })   // the total line is blank
@@ -439,7 +439,7 @@ const CASES = [
   // — company setup: four answers, the address does the rest; the card names every source; never applied here —
   { id: 'company_setup.owner.four.answers.card.derives.the.rest', as: 'owner',
     turns: ['Set up my company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203. We do lawn care and landscaping. S corp. We pay every two weeks. EIN 12-3456789.'],
-    expect: { proposal: 'create', proposal_label: 'company', text_match: [/approve/i, /Phoenix|no daylight/i, /2\.5%/, /5\.6%|TPT|Transaction Privilege/i, /Zach/], text_not_match: [/\bset up\b.*\bnow\b.*\bSettings\b/i] },
+    expect: { proposal: 'create', proposal_label: 'company', text_match: [/approv(e|ing)/i, /Phoenix|no daylight/i, /2\.5%/, /5\.6%|TPT|Transaction Privilege/i, /Zach/], text_not_match: [/\bset up\b.*\bnow\b.*\bSettings\b/i] },
     after: async (r) => {
       const f = Object.fromEntries((r.proposal.preview.fields || []).map((x) => [x.label, x.value]))
       if (!/America\/Phoenix/.test(f['Time zone'] || '')) throw new Error('time zone not derived: ' + f['Time zone'])
@@ -487,7 +487,7 @@ const CASES = [
         return r
       } finally { await fx.cleanup() }
     },
-    expect: { proposal: 'create', proposal_label: 'won estimate', text_match: [/approve/i, /3,300/], text_not_match: [/^VERB /] } },
+    expect: { proposal: 'create', proposal_label: 'won estimate', text_match: [/approv(e|ing)/i, /3,300/], text_not_match: [/^VERB /] } },
   { id: 'won.tech.another.reps.estimate.refused', as: 'tech',
     run: async (ctx) => {
       const fx = await wonFixture('EST-EVAL-WON', DEMO.owner.employeeId)
@@ -554,7 +554,7 @@ const CASES = [
         return r
       } finally { await fx.cleanup() }
     },
-    expect: { proposal_kind: 'bulk', text_match: [/approve/i, /Fuel/], text_not_match: [/deleted|removed/i] } },
+    expect: { proposal_kind: 'bulk', text_match: [/approv(e|ing)/i, /Fuel/], text_not_match: [/deleted|removed/i] } },
   { id: 'bulk.tech.refiling.refused', as: 'tech',
     run: async (ctx) => {
       const fx = await expenseFixture()
@@ -607,7 +607,7 @@ const CASES = [
         return r
       } finally { await fx.cleanup() }
     },
-    expect: { proposal: 'create', proposal_label: 'schedule', text_match: [/approve/i, /Jordan/, /Carlos/, /clash visit|already|that day/i], text_not_match: [/^VERB /] } },
+    expect: { proposal: 'create', proposal_label: 'schedule', text_match: [/approv(e|ing)/i, /Jordan/, /Carlos/, /clash visit|already|that day/i], text_not_match: [/^VERB /] } },
   { id: 'schedule.tech.refused', as: 'tech',
     run: async (ctx) => { const fx = await scheduleFixture(); try { return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'Schedule the Halifax Flooring shop lighting job for Thursday at 8.' }]) } finally { await fx.cleanup() } },
     expect: { proposal: 'none', text_match: [/manager/i] } },
@@ -636,7 +636,7 @@ const CASES = [
       }
       return r
     },
-    expect: { proposal: 'create', proposal_label: 'employee', text_match: [/approve/i, /invite|login/i], text_not_match: [/^VERB /] } },
+    expect: { proposal: 'create', proposal_label: 'employee', text_match: [/approv(e|ing)/i, /invite|login/i], text_not_match: [/^VERB /] } },
   { id: 'employee.tech.refused', as: 'tech',
     turns: ['Add Casey Morgan to the team, field tech, $28 an hour.'],
     expect: { proposal: 'none', text_match: [/admin/i] } },
@@ -667,7 +667,7 @@ const CASES = [
       return r
     },
     // The card (checked above) is the truth on the sod line; the reply may say why it was skipped.
-    expect: { proposal: 'create', proposal_label: 'price book', text_match: [/approve/i] } },
+    expect: { proposal: 'create', proposal_label: 'price book', text_match: [/approv(e|ing)/i] } },
   { id: 'price_book.tech.refused', as: 'tech',
     turns: ['Add a 2x4 LED troffer to the price book at $89, cost $52.'],
     expect: { proposal: 'none', text_match: [/manager|Products/i] } },
@@ -701,7 +701,7 @@ const CASES = [
         for (const s of stale) await rest(`time_clock?id=eq.${s.id}`, { method: 'PATCH', body: JSON.stringify({ clock_out: null, total_hours: null }) })
       }
     },
-    expect: { proposal: 'create', proposal_label: 'memory', text_match: [/approve/i], text_not_match: [/^VERB /, /^(?![\s\S]*approve)[\s\S]*\b(remembered|I'?ll remember that)\b/i] } },
+    expect: { proposal: 'create', proposal_label: 'memory', text_match: [/approv(e|ing)/i], text_not_match: [/^VERB /, /^(?![\s\S]*approve)[\s\S]*\b(remembered|I'?ll remember that)\b/i] } },
   { id: 'memory.tech.password.refused', as: 'tech',
     turns: ['Remember that my payroll portal password is Tiger2026.'],
     expect: { proposal: 'none', text_match: [/password|will not keep|settings/i] } },
@@ -732,7 +732,7 @@ const CASES = [
         await rest(`payments?invoice_id=eq.${inv.id}`, { method: 'DELETE' }); await rest(`invoices?id=eq.${inv.id}`, { method: 'DELETE' }); await rest(`customers?id=eq.${cust.id}`, { method: 'DELETE' })
       }
     },
-    expect: { proposal: 'create', proposal_label: 'payment', text_match: [/1,000/, /approve/i, /receipt/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (recorded|marked|applied)\b/i] } },
+    expect: { proposal: 'create', proposal_label: 'payment', text_match: [/1,000/, /approv(e|ing)/i, /receipt/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (recorded|marked|applied)\b/i] } },
   { id: 'payment.owner.overpay.refused.not.shaved', as: 'owner',
     turns: ['Alpine Cold Storage paid $2,000 in cash today.'],
     expect: { proposal: 'none', text_match: [/1,650/, /overpay|more than|only .*left|balance/i] } },
@@ -766,7 +766,7 @@ const CASES = [
         await rest(`leads?id=in.(${orig.id},${dup.id})`, { method: 'DELETE' })
       }
     },
-    expect: { proposal_kind: 'record', proposal_label: 'lead merge', text_match: [/setter fee/i, /Lead Setter/, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) merged\b/i] } },
+    expect: { proposal_kind: 'record', proposal_label: 'lead merge', text_match: [/setter fee/i, /Lead Setter/, /approv(e|ing)/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) merged\b/i] } },
   { id: 'merge.tech.refused', as: 'tech',
     turns: ['Merge the Haliflax Flooring lead into Halifax Flooring, they are the same customer.'],
     expect: { proposal: 'none', text_match: [/manager|admin/i] } },
@@ -995,7 +995,7 @@ const CASES = [
         return r
       } finally { await rest(`quotes?id=eq.${q.id}`, { method: 'DELETE' }); await rest(`leads?id=eq.${lead.id}`, { method: 'DELETE' }) }
     },
-    expect: { proposal: 'create', proposal_label: 'follow-up', text_match: [/approve/i], text_not_match: [/^VERB |^TO |^INVENTED /, /\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
+    expect: { proposal: 'create', proposal_label: 'follow-up', text_match: [/approv(e|ing)/i], text_not_match: [/^VERB |^TO |^INVENTED /, /\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
 
   // — the EOS page: Arnie could not read a line of it before 2026-10-05 —
   { id: 'eos.owner.rocks.this.quarter', as: 'owner',
@@ -1014,7 +1014,7 @@ const CASES = [
       // call to be told the same thing, is a BETTER answer, not a worse one.
       // The behaviour under test is that he does not produce a figure.
       proposal: 'none',
-      text_match: [/do(?:n'?t| not) have|cannot pull|can'?t pull|not in this read|computed on the EOS page/i, /EOS|Reports/],
+      text_match: [/do(?:n'?t| not) have|cannot pull|can'?t pull|can'?t give|cannot give|not in this read|computed on the EOS page|calculated on the EOS page/i, /EOS|Reports/],
       text_not_match: [/last week (?:we|you)?\s*(?:did|was|came in at|brought in|collected)\s*\$/i, /\$[\d,]+ last week/i],
     } },
   { id: 'eos.tech.refused', as: 'tech',
@@ -1054,7 +1054,7 @@ const CASES = [
         if (ctx.cleanupIds?.length) await rest(`employee_notifications?id=in.(${ctx.cleanupIds.join(',')})`, { method: 'DELETE' })
       }
     },
-    expect: { proposal: 'create', proposal_label: 'meeting agenda', text_match: [/agenda/i, /approve/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
+    expect: { proposal: 'create', proposal_label: 'meeting agenda', text_match: [/agenda/i, /approv(e|ing)/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been|was) sent\b/i] } },
 
   // A QUARTERLY is not a longer L10. Asked for one on 2026-10-06, Arnie had no
   // rail to take and wrote his own — with a scorecard on it that did not exist.
@@ -1097,7 +1097,7 @@ const CASES = [
 
   { id: 'create.ticket.then.withdraw', as: 'owner',
     turns: ['The Open Invoices screen shows the full $18,650 on the Gym Interior Retrofit invoice, but the customer already paid half — it should show $9,325. Please file a bug for the team with those figures.'],
-    expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approve/i] },
+    expect: { proposal: 'create', proposal_label: 'ticket', text_match: [/approv(e|ing)/i] },
     after: async (r, ctx) => {
       const ap = await decide(ctx.token, 'apply', r.proposal.proposal.id); if (!ap.body.created_id) throw new Error('apply failed: ' + JSON.stringify(ap.body))
       const [row] = await rest(`feedback?select=user_email,status&id=eq.${ap.body.created_id}`)

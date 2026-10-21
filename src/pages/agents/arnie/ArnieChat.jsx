@@ -18,6 +18,7 @@ import AssistantAvatar, { useAssistant } from '../../../components/AssistantAvat
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
+import { splitReceipt, withReceipt } from '../../../lib/arnieReceipt'
 import ArniePresence from './ArniePresence'
 import { startsTakeoff, endsTakeoff, joinSegments, takeoffHint } from '../../../lib/takeoffMode'
 import { isStopCommand, bargeInAllowed } from '../../../lib/bargeIn'
@@ -387,7 +388,10 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       setSessionId(externalSessionId)
       rememberLastSession(externalSessionId)
       loadSessionMessages(externalSessionId).then(msgs => {
-        setMessages(msgs.map(m => ({ id: m.id, role: m.role, content: m.content })))
+        setMessages(msgs.map(m => {
+          const { text, receipt } = m.role === 'assistant' ? splitReceipt(m.content) : { text: m.content, receipt: null }
+          return { id: m.id, role: m.role, content: text, ...(receipt ? { receipt } : {}) }
+        }))
       })
     }
   }, [externalSessionId])
@@ -850,7 +854,9 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
       await saveMessage(sid, 'user', savedText)
 
       // Use messagesRef.current to avoid stale closure over `messages`
-      const history = messagesRef.current.map(m => ({ role: m.role, content: m.content, attachments: m.attachments }))
+      // Each earlier reply goes back WITH its receipt, so he can tell an answer
+      // he looked up from one he did not (see lib/arnieReceipt).
+      const history = messagesRef.current.map(m => ({ role: m.role, content: withReceipt(m.content, m.receipt), attachments: m.attachments }))
 
       // Stream response — text appears in real-time. A config request is no
       // longer a separate branch: Arnie reaches for propose_change himself,
@@ -866,6 +872,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
               // the card reads the row so it can never show a question that
               // was already answered on the Computer tab.
               ...(meta?.offerId ? { offerId: meta.offerId } : {}),
+              ...(meta?.receipt ? { receipt: meta.receipt } : {}),
             }
             : m
         ))
@@ -883,7 +890,7 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
 
       // Whatever is left after the last full stop — usually nothing, because
       // he has been talking the whole way down.
-      speakAsItArrives(fullResponse, true)
+      speakAsItArrives(splitReceipt(fullResponse).text, true)
 
       if (messagesRef.current.length <= 1) {
         await updateSessionTitle(sid, title)
@@ -1247,6 +1254,15 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                 {msg.role === 'assistant' ? (
                   <div className="arnie-markdown" style={{ overflow: 'auto' }}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    {/* What the server saw him do — not his own account of it. */}
+                    {msg.receipt && (
+                      <div data-receipt title="What Arnie actually looked up and drafted for this reply, recorded by JobScout" style={{
+                        marginTop: 8, paddingTop: 6, borderTop: `1px solid ${dark.borderLight}`,
+                        fontSize: 11, lineHeight: 1.4, color: dark.textMuted,
+                      }}>
+                        {msg.receipt}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>

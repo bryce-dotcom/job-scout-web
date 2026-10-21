@@ -441,7 +441,7 @@ describe('he talks while he thinks', () => {
     // Half a sentence read aloud and continued a second later sounds broken,
     // and "Dr" and "$1.5" both look like the end of one until the next word.
     expect(chat).toMatch(/for \(const m of fresh\.matchAll\(/)
-    expect(chat).toMatch(/speakAsItArrives\(fullResponse, true\)/)
+    expect(chat).toMatch(/speakAsItArrives\(splitReceipt\(fullResponse\)\.text, true\)/)
   })
 
   it('stopping stops all of it, not just the sentence playing', () => {

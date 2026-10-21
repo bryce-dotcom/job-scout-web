@@ -43,7 +43,7 @@ describe('prompt caching', () => {
   it('the last lookup round must answer, and a reply is never blank (live test, 2026-10-21)', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
     expect(s).toMatch(/const lastLookup = \(round: number\) => !used\.has\('use_my_computer'\) && round === 4/)
-    expect(s).toMatch(/if \(!shownAny\) send\('text', \{ delta: setup\.tangled \}\)\n\s+send\('done', \{\}\)/)
+    expect(s).toMatch(/if \(!shownAny\) send\('text', \{ delta: setup\.tangled \}\)\n\s+send\('receipt', \{ text: receiptFor\(turnCalls\) \}\)\n\s+send\('done', \{\}\)/)
     expect(chat).toMatch(/i === 4 && !used\.has\('use_my_computer'\) \? \{ tool_choice: \{ type: 'none' \} \}/)
     expect(chat).toMatch(/never fill it in\.'/)
   })

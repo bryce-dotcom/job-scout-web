@@ -11,6 +11,7 @@ import { fabricationIn, correctionFor, untracedFigures, CARD_TOOLS as PROPOSE_TO
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
+import { receiptFor, unmarked, type ReceiptCall } from '../_shared/arnieReceipt.ts'
 import { playbookFor, parseTakeoff, planEstimate } from '../_shared/lightingPlaybook.ts'
 import { activeRules, rulesPromptBlock } from '../_shared/arnieCompanyRules.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
@@ -2918,8 +2919,14 @@ function untracedFiguresOf(text: string, systemPrompt: string, convo: any[]): st
   } catch { return [] }
 }
 
-function logFabrication(kind: Fabrication, caller: Caller) {
+function logFabrication(kind: Fabrication, caller: Caller, said = '', reply = '', shown = false) {
   console.warn(`[arnie-truth] caught a ${kind} claim with no tool call — company ${caller.companyId}, ${caller.email}`)
+  // Kept for the weekly review (api/cron/arnie-review.js). Never blocks the reply.
+  fetch(`${SUPABASE_URL}/rest/v1/arnie_review_events`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ company_id: caller.companyId ?? null, employee_email: caller.email || null, kind, shown, said: String(said).slice(0, 1000), reply: String(reply).slice(0, 2000) }),
+  }).catch(() => {})
 }
 
 async function callWithTools(messages: any[], systemPrompt: string, caller: Caller, cards: string[], agent: Agent = 'arnie', bearer = '', coords: Coords = null): Promise<string> {
@@ -2966,7 +2973,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         if (!claim && untraced.length) claim = 'figures'
         if (claim) {
           corrections++
-          logFabrication(claim, caller)
+          logFabrication(claim, caller, lastUserText(messages), text, false)
           convo.push({ role: 'assistant', content: blocks })
           convo.push({ role: 'user', content: correctionFor(claim, false, untraced) })
           continue
@@ -3002,6 +3009,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const aiMeta = { feature: setup.feature, companyId: companyId ?? null }
         const used = new Set<string>()
         let corrections = 0 // up to two a turn: a retraction can repeat the claim (Cole, 2026-10-20)
+        // What really ran this turn — the receipt under the reply is built from it.
+        const turnCalls: ReceiptCall[] = []
         // After "you said you did it on their computer and did not": when they
         // really ASKED for computer work, the next round must use the tool, not
         // promise to. London, 2026-10-20: "take a screenshto fo whats infront" →
@@ -3037,7 +3046,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           let roundShown = false
           const flush = () => {
             if (!pending) return
-            send('text', { delta: (shownAny ? '\n\n' : '') + pending.replace(/^\s+/, '') })
+            send('text', { delta: (shownAny ? '\n\n' : '') + unmarked(pending.replace(/^\s+/, '')) })
             shownAny = true
             pending = ''
           }
@@ -3108,7 +3117,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                     b.text = (b.text || '') + evt.delta.text
                     if (hold) pending += evt.delta.text
                     else {
-                      send('text', { delta: (shownAny && !roundShown ? '\n\n' : '') + evt.delta.text })
+                      send('text', { delta: (shownAny && !roundShown ? '\n\n' : '') + unmarked(evt.delta.text) })
                       shownAny = true
                       roundShown = true
                     }
@@ -3161,7 +3170,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 // Held, so never shown: it is replaced by what he writes next,
                 // and there is nothing for him to take back.
                 corrections++
-                logFabrication(claim, caller)
+                logFabrication(claim, caller, lastUserText(messages), text, false)
                 pending = ''
                 convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
                 convo.push({ role: 'user', content: correctionFor(claim, false, untraced) })
@@ -3170,7 +3179,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               }
               if (claim) {
                 corrections++
-                logFabrication(claim, caller)
+                logFabrication(claim, caller, lastUserText(messages), text, true)
                 // Tells the client a correction follows. Unknown events are
                 // ignored by older bundles, so this is safe to send to a phone
                 // running last week's build.
@@ -3213,6 +3222,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               continue
             }
             flush()
+            send('receipt', { text: receiptFor(turnCalls) })
             send('done', {})
             controller.close()
             return
@@ -3231,6 +3241,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           const toolResults = []
           for (const tu of toolUses) {
             const result = await setup.exec(tu.name, tu.input)
+            turnCalls.push({ name: tu.name, result })
             if (madeItsCard(tu.name, result)) used.add(tu.name)
             // A drafted change has to reach the UI as a card, not as prose —
             // the model describing a diff is not the same as the admin seeing
@@ -3252,6 +3263,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         }
         // Never a blank reply: if every round was held and dropped, say so.
         if (!shownAny) send('text', { delta: setup.tangled })
+        send('receipt', { text: receiptFor(turnCalls) })
         send('done', {})
         controller.close()
       } catch (e: any) {

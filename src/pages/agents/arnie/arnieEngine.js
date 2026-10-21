@@ -3,6 +3,8 @@ import { supabase } from '../../../lib/supabase'
 import { useStore } from '../../../lib/store'
 import { wantsLocationNow, getPosition } from '../../../lib/arnieLocation'
 import { toApiMessages, withCurrentTurn } from '../../../lib/chatAttachments'
+import { withReceipt } from '../../../lib/arnieReceipt'
+import { localDateStr } from '../../../lib/localDate'
 
 /**
  * The approval-card types this build can render, declared to the server on
@@ -247,6 +249,7 @@ async function callClaude(conversationHistory, dataContext, onChunk, coords = nu
   let buf = ''
   let full = ''
   let currentEvent = ''
+  let receipt = null
 
   while (true) {
     const { value, done } = await reader.read()
@@ -276,6 +279,11 @@ async function callClaude(conversationHistory, dataContext, onChunk, coords = nu
             // never press. Only the id travels: the card reads the row, so it
             // cannot show a stale question that was answered somewhere else.
             onChunk(full, { offerId: payload.action_id })
+          } else if (currentEvent === 'receipt') {
+            // What the server saw him look up and draft — drawn under the
+            // reply, and saved with it so it goes back as history.
+            receipt = payload.text || null
+            onChunk(full, { receipt })
           } else if (currentEvent === 'error') {
             throw new Error(payload.message || 'stream error')
           }
@@ -288,7 +296,9 @@ async function callClaude(conversationHistory, dataContext, onChunk, coords = nu
 
   // Final clean send (without the "looking that up" hint)
   if (full) onChunk(full)
-  return full
+  // Returned WITH the receipt: this is what gets saved. The bubble already has
+  // the words and the receipt separately.
+  return withReceipt(full, receipt)
 }
 
 // Send a message through the full pipeline with streaming.
@@ -496,12 +506,16 @@ const lastSessionStore = () => {
   try { return window.localStorage } catch { return null }  // Safari private mode
 }
 
+// A FRESH CONVERSATION EACH DAY (Bryce, 2026-10-21). Resuming is for the same
+// day's thread. Yesterday's chat — 275 messages in one of Alayda's — went back
+// to him as history every turn, invented answers included, and taught him
+// to repeat them. It stays in History; the panel just starts a new one.
 export function rememberLastSession(sessionId) {
   const store = lastSessionStore()
   const email = useStore.getState().user?.email
   if (!store || !email || !sessionId) return
   try {
-    store.setItem(LAST_SESSION_KEY, JSON.stringify({ email, sessionId }))
+    store.setItem(LAST_SESSION_KEY, JSON.stringify({ email, sessionId, day: localDateStr(new Date()) }))
   } catch { /* quota or disabled storage — resuming is a convenience, not a promise */ }
 }
 
@@ -511,7 +525,8 @@ export function getLastSessionId() {
   if (!store || !email) return null
   try {
     const saved = JSON.parse(store.getItem(LAST_SESSION_KEY) || 'null')
-    return saved?.email === email ? saved.sessionId || null : null
+    if (saved?.email !== email) return null
+    return saved.day === localDateStr(new Date()) ? saved.sessionId || null : null
   } catch { return null }
 }
 

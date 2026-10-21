@@ -70,14 +70,14 @@ describe('on their computer, the words wait for the work (Bryce, 2026-10-15)', (
   const s = chat.slice(chat.indexOf('async function streamWithTools'))
   it('held only for computer work; ordinary chat still streams word by word', () => {
     expect(s).toMatch(/const hold = computerAsk \|\| used\.has\('use_my_computer'\)/)
-    expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\r?\n\s+else \{\s+send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)\s+shownAny = true/)
+    expect(s).toMatch(/if \(hold\) pending \+= evt\.delta\.text\r?\n\s+else \{\s+send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ unmarked\(evt\.delta\.text\) \}\)\s+shownAny = true/)
   })
   it('a held claim is never shown — he is corrected out of sight, as unseen', () => {
     expect(s).toMatch(/if \(claim && hold\) \{[\s\S]{0,400}pending = ''[\s\S]{0,200}correctionFor\(claim, false, untraced\)[\s\S]{0,120}continue/)
   })
   it('a round that acts is shown as it acts, and a passed answer is shown at the end', () => {
     expect(s).toMatch(/if \(brief && !onComputer\) pending = ''\n\s+else flush\(\)/)
-    expect(s).toMatch(/flush\(\)\n\s+send\('done', \{\}\)/)
+    expect(s).toMatch(/flush\(\)\n\s+send\('receipt', \{ text: receiptFor\(turnCalls\) \}\)\n\s+send\('done', \{\}\)/)
   })
   it('short answers by default: every round held, a lookup round\'s narration dropped, computer steps kept', () => {
     expect(s).toMatch(/const brief = agent === 'arnie' && caller\.employeeId != null && \(await detailFor\(caller\.employeeId\)\) !== 'detailed'/)

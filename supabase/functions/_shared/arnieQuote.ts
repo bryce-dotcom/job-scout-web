@@ -273,6 +273,14 @@ export async function prepareQuote(r: Rest, caller: Caller, f: Record<string, st
         const one = words.map((x) => (x.length > 3 && /[^s]s$/.test(x) ? x.slice(0, -1) : x))
         const more = products.filter((p: any) => { const n = squash(p.name); return one.every((x) => n.includes(x)) && !hits.includes(p) })
         hits = [...hits, ...more]
+        // Still nothing: "LED wall pack" is the book's "Exterior Wall Pack 80W".
+        // At a lighting company LED, light and fixture name no product, so the
+        // rest are tried alone — two words at least, or it is too loose to trust
+        // (production eval, 2026-10-21: priced at $99 by Benny beside a $164 book item).
+        const plain = one.filter((x) => !/^(led|leds|light|lite|fixture|new|replacement)$/.test(x))
+        if (!hits.length && plain.length >= 2 && plain.length < one.length) {
+          hits = products.filter((p: any) => { const n = squash(p.name); return plain.every((x) => n.includes(x)) })
+        }
       }
     }
     if (!hits.length && want.length >= 6) hits = products.filter((p: any) => want.includes(squash(p.name)) && squash(p.name).length >= 6)

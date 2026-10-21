@@ -66,7 +66,7 @@ describe('a reply that calls a tool mid-way reads as two paragraphs', () => {
   const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
   it('a new round\'s first streamed words start a new paragraph', () => {
     expect(chat).toMatch(/let roundShown = false/)
-    expect(chat).toMatch(/send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ evt\.delta\.text \}\)/)
+    expect(chat).toMatch(/send\('text', \{ delta: \(shownAny && !roundShown \? '\\n\\n' : ''\) \+ unmarked\(evt\.delta\.text\) \}\)/)
   })
 })
 
