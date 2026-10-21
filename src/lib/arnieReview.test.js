@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { buildReview, PUSHBACK } = require('../../api/cron/arnie-review.js')
+const { buildReview, PUSHBACK, isPushback } = require('../../api/cron/arnie-review.js')
 
 const since = '2026-10-14T14:00:00Z'
 const msg = (session_id, role, content, created_at, email = 'alayda@hhh.services') => ({ session_id, role, content, created_at, email })
@@ -71,6 +71,11 @@ describe('pushback, as people actually say it', () => {
   })
   it.each(['yes', 'what jobs did I close', 'thanks', 'add the part numbers', 'send it to me'])('not: %s', (s) => {
     expect(PUSHBACK.test(s)).toBe(false)
+  })
+  it('a condition is not pushback (Cole\'s plan for the day, 2026-10-19)', () => {
+    expect(isPushback("Get the Little Wedges general app, if it didn't happen Friday 4 PM rep follow-up")).toBe(false)
+    expect(isPushback("that's wrong, if you look again")).toBe(true)
+    expect(isPushback("you didn't send it")).toBe(true)
   })
 })
 

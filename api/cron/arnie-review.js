@@ -26,6 +26,17 @@ function splitReceipt(content) {
 
 /** Someone telling him he is wrong, or that what he said happened did not. */
 const PUSHBACK = /\b(that'?s (wrong|not right|not true|incorrect)|that (is|was) (wrong|not right|not true|incorrect)|you('re| are) wrong|not correct|incorrect|you (didn'?t|did not|never)|didn'?t (work|happen|go through|send|come)|i (don'?t|do not|can'?t|cannot) see|not there|doesn'?t exist|does not exist|made (that|it|this) up|where is (it|the card|that)|still (don'?t|do not|can'?t) see|never (got|received|came)|wrong (number|job|customer|price|amount))\b/i
+/** Pushback, unless it is a condition: Cole's plan for the day said "if it
+ *  didn't happen Friday", which is not telling Arnie he was wrong. */
+function isPushback(s) {
+  const t = String(s || '')
+  const re = new RegExp(PUSHBACK.source, 'gi')
+  let m
+  while ((m = re.exec(t))) {
+    if (!/\b(if|unless|in case|whether)\b[^.!?\n]{0,12}$/i.test(t.slice(Math.max(0, m.index - 14), m.index))) return true
+  }
+  return false
+}
 /** A figure a person would act on: money, a phone number, a count of 3+ digits. */
 const FIGURE = /\$\s?\d[\d,]*(\.\d+)?|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}|\b\d{1,3}(,\d{3})+\b|\b\d{3,}\b/
 const GAVE_UP = /got tangled up trying to look that up|ran out of lookups on that one/i
@@ -57,7 +68,7 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
         const { text, receipt } = splitReceipt(m.content)
         if (!text.trim() || GAVE_UP.test(text)) gaveUp.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
         else if (receipt === 'No lookups this reply' && FIGURE.test(text)) unverified.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
-      } else if (m.role === 'user' && PUSHBACK.test(String(m.content || '')) && i > 0) {
+      } else if (m.role === 'user' && isPushback(m.content) && i > 0) {
         const prev = turns.slice(0, i).reverse().find((t) => t.role === 'assistant')
         const { text, receipt } = splitReceipt(prev?.content)
         pushback.push({ when: m.created_at, who: m.email, said: m.content, prevText: text, prevReceipt: receipt })
@@ -159,3 +170,4 @@ async function handler(req, res) {
 module.exports = handler
 module.exports.buildReview = buildReview
 module.exports.PUSHBACK = PUSHBACK
+module.exports.isPushback = isPushback
