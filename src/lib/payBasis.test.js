@@ -93,10 +93,15 @@ const read = (p) => readFileSync(resolve(here, '../..', p), 'utf8')
 
 describe('the wiring', () => {
   const payroll = read('src/pages/Payroll.jsx')
+  // The pay math moved out of the page into lib/payrollEngine (docs/PAYROLL_PLAN.md
+  // step 2); the page gathers inputs and the engine decides. The decision lines
+  // are therefore in the engine, the settle lines still in the page's run.
+  const engine = read('src/lib/payrollEngine.js')
 
   it('Payroll pays the decision, not the sum', () => {
-    expect(payroll).toMatch(/salaryPay = payBasis\.salaryPaid/)
-    expect(payroll).toMatch(/const commissionPay = payBasis\.commissionPaid/)
+    expect(engine).toMatch(/salaryPay = payBasis\.salaryPaid/)
+    expect(engine).toMatch(/const commissionPay = payBasis\.commissionPaid/)
+    expect(payroll).toMatch(/computeEmployeePay\(/)
   })
 
   it('Payroll shows the comparison in the review', () => {
@@ -113,7 +118,7 @@ describe('the wiring', () => {
     expect(payroll).toMatch(/from\('rep_commissions'\)[\s\S]{0,300}covered_by_salary/)
     expect(payroll).toMatch(/from\('lead_commissions'\)[\s\S]{0,300}covered_by_salary/)
     // and the whole period counts for them, staged or not
-    expect(payroll).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
+    expect(engine).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
   })
 
   it('My Pay stops adding both halves together', () => {

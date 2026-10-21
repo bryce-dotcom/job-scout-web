@@ -33,6 +33,7 @@ import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
 import { fetchIdentity, mergeIdentityOne } from '../lib/employeeIdentity'
 import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
 import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
+import { employeeHours, computeEmployeePay } from '../lib/payrollEngine'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -1116,84 +1117,12 @@ export default function Payroll() {
   // Rule: for each (employee, day), use time_clock total if any
   // time_clock entry exists. Otherwise fall back to the sum of time_log
   // entries (covers older imports / setups where only time_log was used).
-  const calculateEmployeeHours = (employeeId) => {
-    const empEntries = timeEntries.filter(e => e.employee_id === employeeId)
-    const empTimeLogs = timeLogEntries.filter(e => e.employee_id === employeeId)
-    let regularHours = 0
-    let overtimeHours = 0
-
-    // Build per-(week × day) buckets so we can pick the right source per day.
-    const dayKey = (d) => new Date(d).toISOString().slice(0, 10)
-    const weekKey = (d) => {
-      const w = new Date(d)
-      w.setDate(w.getDate() - w.getDay())
-      return w.toISOString().slice(0, 10)
-    }
-    const dayMap = {}  // dayKey → { week, clockHours, logHours }
-    const ensureDay = (d) => {
-      const dk = dayKey(d)
-      if (!dayMap[dk]) dayMap[dk] = { week: weekKey(d), clockHours: 0, logHours: 0 }
-      return dayMap[dk]
-    }
-
-    empEntries.forEach(entry => {
-      let hours = entry.total_hours
-      if (!hours && entry.clock_in && entry.clock_out) {
-        hours = Math.round((new Date(entry.clock_out) - new Date(entry.clock_in)) / 36e5 * 100) / 100
-      }
-      if (!hours || !entry.clock_in) return
-      ensureDay(entry.clock_in).clockHours += hours
-    })
-    empTimeLogs.forEach(entry => {
-      if (!entry.hours) return
-      const dt = entry.date || entry.clock_in_time || entry.created_at
-      if (!dt) return
-      ensureDay(dt).logHours += entry.hours
-    })
-
-    // Per day: prefer time_clock when present (the authoritative workday),
-    // else fall back to time_log. Never sum both.
-    const weeklyHours = {}
-    Object.values(dayMap).forEach(({ week, clockHours, logHours }) => {
-      const hrs = clockHours > 0 ? clockHours : logHours
-      weeklyHours[week] = (weeklyHours[week] || 0) + hrs
-    })
-
-    const otThreshold = payrollConfig.overtime_threshold || 40
-    // Resolve the OT mode for THIS employee: per-employee override wins
-    // over the company-wide default. Energy Scout employees get bonus
-    // mode (no OT premium); standard W2 employees get overtime.
-    const empRow = employees.find(e => e.id === employeeId)
-    const empMode = empRow?.overtime_mode || payrollConfig.overtime_mode || 'overtime'
-    Object.values(weeklyHours).forEach(hours => {
-      if (empMode === 'none') {
-        // No OT distinction — all hours pay at base rate
-        regularHours += hours
-      } else if (empMode === 'bonus') {
-        // Energy Scout model: cap regular at threshold, count rest as
-        // bonus hours (NOT overtime — paid at base rate or zero, the
-        // bonus structure is separate via bonusCalc).
-        if (hours <= otThreshold) {
-          regularHours += hours
-        } else {
-          regularHours += otThreshold
-          // Tracked as overtimeHours for display + storage but with
-          // multiplier 1.0 in the pay calc downstream (handled there).
-          overtimeHours += hours - otThreshold
-        }
-      } else {
-        // 'overtime' (legal default) — 1.5x over threshold
-        if (hours <= otThreshold) {
-          regularHours += hours
-        } else {
-          regularHours += otThreshold
-          overtimeHours += hours - otThreshold
-        }
-      }
-    })
-
-    return { regularHours, overtimeHours, totalHours: regularHours + overtimeHours, otMode: empMode }
-  }
+  // Hours and pay are the engine's now (lib/payrollEngine, docs/PAYROLL_PLAN.md
+  // step 2): pure functions the page, My Pay and the golden replays all call
+  // with the same inputs. These two wrappers only gather the page's state.
+  const calculateEmployeeHours = (employeeId) => employeeHours({
+    employee: employees.find(e => e.id === employeeId) || { id: employeeId }, employees, timeEntries, timeLogEntries, payrollConfig,
+  })
 
   // Invoice-based commissions — delegates to bonusCalc.calculateInvoiceCommissions
   // so MyPay (rep self-view) and Payroll (admin) stay in sync.
@@ -1746,187 +1675,21 @@ export default function Payroll() {
   }, [ytdPaystubs])
 
   const calculateFullPay = (employee) => {
-    const { regularHours, overtimeHours, otMode } = calculateEmployeeHours(employee.id)
-    const hourlyRate = employee.hourly_rate || 0
-    const annualSalary = employee.annual_salary || 0
-    // OT multiplier depends on the resolved mode for this employee.
-    // 'overtime' = 1.5x (legal default). 'bonus' = 1.0x (Energy Scout
-    // model — over-threshold hours pay at base rate; the bonus pool
-    // gets calculated separately by bonusCalc). 'none' = 1.0x.
-    const otMultiplier = otMode === 'overtime'
-      ? (payrollConfig.overtime_multiplier || 1.5)
-      : 1.0
-
-    let hourlyPay = 0
-    let salaryPay = 0
-
-    // Hourly pay
-    if (employee.is_hourly) {
-      hourlyPay = (regularHours * hourlyRate) + (overtimeHours * hourlyRate * otMultiplier)
-    }
-
-    // Salary pay
-    if (employee.is_salary) {
-      const periodsPerYear = payrollConfig.pay_frequency === 'weekly' ? 52 :
-        payrollConfig.pay_frequency === 'bi-weekly' ? 26 :
-          payrollConfig.pay_frequency === 'semi-monthly' ? 24 : 12
-      salaryPay = annualSalary / periodsPerYear
-    }
-
-    // Commissions. A run pays only what was ADDED to this payroll (queued) —
-    // explicit staging. Setter + rep-invoice commissions are queueable rows;
-    // utility/processor commissions stay on the live calc and auto-include
-    // (they aren't row-staged yet).
-    const invoiceComm = calculateInvoiceCommissions(employee.id) // still drives the pending/waiting display
-    const leadComm = calculateLeadCommissions(employee.id)
     const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
-    const cfpS = localDateStr(cfpStart), cfpE = localDateStr(cfpEnd)
-    // ALL rep commissions (invoice + utility + processor) are frozen rows now,
-    // so the whole commission is queued-driven — no live component in the gross.
-    const queuedSetter = (leadComm.details || []).filter(c => c.queued_for_payroll).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
-    const queuedRep = repCommissions
-      .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
-      .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    // Salary or commission, whichever is more — for the employees on that
-    // arrangement (Doug, Christopher). Every other pay type adds up; this one
-    // is a floor the commission has to beat. lib/payBasis is the rule, and it
-    // also hands back the sentence every surface shows, so the Payroll review,
-    // the paystub and My Pay cannot drift into three different explanations.
-    //
-    // The comparison counts the period's WHOLE commission, staged or not.
-    // Everyone else is queue-driven on purpose — an admin stages the money
-    // that a run pays — but here the commission is not money being added, it
-    // is a number being weighed against the salary. Counted queued-only, a
-    // commission nobody staged would lose to the salary, stay "earned", and
-    // then pay on top of a later period's salary: the same money twice.
-    const greaterOf = paysGreaterOf(employee)
-    const earnedSetterRows = (leadComm.details || []).filter(c => c.id)
-    const earnedRepRows = repCommissions
-      .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
-    const earnedSetter = earnedSetterRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
-    const earnedRep = earnedRepRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    const commissionEarnedThisPeriod = greaterOf ? earnedSetter + earnedRep : queuedSetter + queuedRep
-
-    const payBasis = greaterOfPay({
-      salaryPay,
-      commissionPay: commissionEarnedThisPeriod,
-      enabled: greaterOf,
+    return computeEmployeePay({
+      employee, employees, timeEntries, timeLogEntries, payrollConfig,
+      period: { start: cfpStart, end: cfpEnd },
+      // The payday this period is paid on decides which tax tables apply.
+      payDate: payDateForPeriod(cfpEnd, payrollConfig) || localDateStr(new Date()),
+      repCommissions,
+      leadCommissionSummary: calculateLeadCommissions(employee.id),
+      invoiceCommissions: calculateInvoiceCommissions(employee.id),   // display only
+      efficiencyBonus: calculateEfficiencyBonus(employee.id),         // display only
+      bonusRows: bonusesByEmployee.get(employee.id) || [],
+      periodTimeOff, adjustments, benefits,
+      ytd: ytdPaystubsByEmployee?.[employee.id] || null,
+      taxCompany,
     })
-    salaryPay = payBasis.salaryPaid
-    const commissionPay = payBasis.commissionPaid
-
-    // Efficiency bonus. The live calc still drives the per-job breakdown UI
-    // (what was saved on each job, verification state), but the dollar amount
-    // that's actually PAID comes from the persistent ledger: the OWED total
-    // (accrued = the job's money has come in). That's the number that shows in
-    // the tech's My Pay, so paying it here keeps the two in lockstep and stops
-    // the old "bonus showed then vanished" drift.
-    const efficiencyBonus = calculateEfficiencyBonus(employee.id)
-    // Only bonuses ADDED to this payroll (queued + eligible) are paid by a run.
-    // ONE rule, shared with My Pay (lib/bonusLedger isPayableNow), because a
-    // tech reading their own pay and the office running it have to see the
-    // same number. They did not — My Pay added every accrued bonus instead.
-    const bonusOwed = payableBonusTotal(bonusesByEmployee.get(employee.id) || [])
-
-    // PTO this period, from approved requests inside it. The employee card
-    // dictates the rate: an hourly PTO day pays eight hours at hourly_rate;
-    // a salaried one is already in the salary and only draws on the bank.
-    const ptoDays = ptoDaysInPeriod(periodTimeOff, employee.id, cfpStart, cfpEnd)
-    const { hours: ptoHours, pay: ptoPay } = ptoPayForPeriod(employee, ptoDays)
-
-    const grossPay = hourlyPay + salaryPay + ptoPay + commissionPay + bonusOwed
-
-    // Payroll adjustments. Exclude legacy 'bonus_override' additions — those
-    // were the old way to release a blocked bonus, but bonuses now pay in full
-    // from the ledger via bonusOwed, so counting an override addition too would
-    // double-pay.
-    const empAdjustments = adjustments.filter(a => a.employee_id === employee.id && a.category !== 'bonus_override')
-    const totalAdditions = empAdjustments.filter(a => a.type === 'addition').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
-    const totalDeductions = empAdjustments.filter(a => a.type === 'deduction').reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0)
-    // The card's recurring deductions for this paycheck: health off the top
-    // for everything, a 401k off the top for income tax, the rest off the net.
-    // Pre-tax: gross + additions (additions are pre-tax for simplicity in v1).
-    // Post-tax: deductions come off the net.
-    const taxableGross = grossPay + totalAdditions
-    // No pay this period, nothing to deduct from; and a pre-tax deduction
-    // cannot exceed the pay it comes off.
-    const benefitRaw = taxableGross > 0 ? benefitDeductionsForPeriod(benefits, employee.id, normalizePayFrequency(payrollConfig.pay_frequency)) : { section125: 0, retirement: 0, postTax: 0, preTaxTotal: 0, employerCost: 0, lines: [] }
-    const benefitDed = {
-      ...benefitRaw,
-      section125: Math.min(benefitRaw.section125, taxableGross),
-      retirement: Math.min(benefitRaw.retirement, Math.max(0, taxableGross - Math.min(benefitRaw.section125, taxableGross))),
-    }
-    benefitDed.preTaxTotal = Math.round((benefitDed.section125 + benefitDed.retirement) * 100) / 100
-
-    // ── TAX ENGINE ──
-    // 1099 contractors: NO tax withheld — they pay self-employment tax
-    // themselves at filing. We still compute net (= gross + additions -
-    // deductions) so the UI can show what we owe them, but the tax
-    // engine is skipped entirely. is1099 also drives the paystub UI so
-    // it doesn't show the W-4-missing warning to a contractor row.
-    const is1099 = employee.tax_classification === '1099'
-    let tax = null
-    let hasW4 = false
-    if (!is1099) {
-      // Run the per-period tax calculator. YTD totals come from this calendar
-      // year's already-paid paystubs (calculated below). If the employee has
-      // no W-4 on file we still produce a row but flag it — the gross+net will
-      // be the same and Alayda will see the missing-W-4 warning in the UI.
-      const ytdForEmp = ytdPaystubsByEmployee?.[employee.id] || { gross: 0, ssWages: 0, medicareWages: 0 }
-      tax = calcPaystubTax({
-        employee,
-        company: taxCompany,
-        gross: taxableGross,
-        ytd: ytdForEmp,
-        payFrequency: normalizePayFrequency(payrollConfig.pay_frequency),
-        preTaxDeductions: benefitDed.section125,
-        preTaxRetirement: benefitDed.retirement,
-        postTaxDeductions: totalDeductions + benefitDed.postTax,
-        // The payday this period is paid on decides which Utah Pub 14
-        // revision applies (4.5% before 1 June 2026, 4.45% after).
-        payDate: payDateForPeriod(cfpEnd, payrollConfig) || localDateStr(new Date()),
-        // Colorado's FAMLI employer share is waived at 9 or fewer employees.
-        employeeCount: employees.filter(e => e.active !== false && e.tax_classification !== '1099').length,
-      })
-      hasW4 = !!employee.w4_filing_status
-    }
-
-    return {
-      hourlyPay,
-      salaryPay,
-      // The greater-of comparison, for the review line and the run.
-      payBasis,
-      commissionEarnedThisPeriod,
-      // The exact rows the comparison weighed, so the run settles those and
-      // not whatever a date filter happens to catch.
-      weighedCommissionRows: greaterOf ? { rep: earnedRepRows.map(r => r.id).filter(Boolean), lead: earnedSetterRows.map(r => r.id).filter(Boolean) } : null,
-      regularHours,
-      overtimeHours,
-      hourlyRate,
-      ptoDays,
-      ptoHours,
-      ptoPay,
-      commissionPay,
-      invoiceCommissions: invoiceComm,
-      leadCommissions: leadComm,
-      efficiencyBonus,
-      bonusOwed: Math.round(bonusOwed * 100) / 100,
-      grossPay: Math.round(grossPay * 100) / 100,
-      totalAdditions: Math.round(totalAdditions * 100) / 100,
-      totalDeductions: Math.round(totalDeductions * 100) / 100,
-      benefitLines: benefitDed.lines,
-      benefitEmployerCost: benefitDed.employerCost,
-      // netPay below is the OLD pre-tax net (gross + additions - deductions).
-      // Kept under the same key so any place that reads it doesn't break.
-      // The new tax-aware net is exposed under `tax.netPay`.
-      netPay: Math.round((grossPay + totalAdditions - totalDeductions - (is1099 ? 0 : benefitDed.postTax + benefitDed.preTaxTotal)) * 100) / 100,
-      adjustments: empAdjustments,
-      // Tax breakdown — drives the per-employee paystub display + writes
-      // payroll_tax_liabilities rows on payroll save. Null for 1099s.
-      tax,
-      hasW4,
-      is1099,
-    }
   }
 
   // ── Aggregate Data ───────────────────────────────────────
