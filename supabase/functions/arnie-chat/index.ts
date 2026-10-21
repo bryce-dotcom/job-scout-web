@@ -36,7 +36,12 @@ import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } f
 // body says `agent: 'frankie'` and gets his own read-only toolset, his own
 // model and his own usage line. Anything else is Arnie.
 type Agent = 'arnie' | 'frankie'
-const ARNIE_MODEL = 'claude-sonnet-4-5-20250929'
+// Sonnet 5.5 since 2026-10-21 (Bryce: "switch to 5.5"). On the comparison it
+// scored 79/80 to Sonnet 4.5's 75/80, answered the question asked ("what did
+// I close" = theirs, not the company's) and re-checked an invented lead list
+// instead of emailing it. It thinks before answering, so maxTokens is sized
+// for that, and it refuses a forced tool_choice (see isNewModel).
+const ARNIE_MODEL = 'claude-sonnet-5-5'
 
 // THE MODEL COMPARISON (Bryce, 2026-10-21: "why is arnie inventing all this
 // shit"). A test may ask for another model — only the demo company (25) or
@@ -66,11 +71,20 @@ function cachedTools(tools: any[]): any[] {
   if (!tools.length) return tools
   return [...tools.slice(0, -1), { ...tools[tools.length - 1], cache_control: CACHE }]
 }
-/** The rules, cached; anything round-specific (the last-step note) goes after the marker. */
-function cachedSystem(prompt: string, after = '', split = 0): any {
-  if (!prompt) return after
+/** The rules, cached. The same every round of a turn — see withNote. */
+function cachedSystem(prompt: string, split = 0): any {
+  if (!prompt) return ''
   const parts = split > 0 && split < prompt.length ? [prompt.slice(0, split), prompt.slice(split)] : [prompt]
-  return [...parts.map((text) => ({ type: 'text', text, cache_control: CACHE })), ...(after ? [{ type: 'text', text: after }] : [])]
+  return parts.map((text) => ({ type: 'text', text, cache_control: CACHE }))
+}
+/** A last-round note goes after the newest message, never into the system
+ *  prompt: Sonnet 5.5 rejects a turn whose system prompt changed after it
+ *  had thought. Only the final request carries it, so nothing follows it. */
+function withNote(convo: any[], note: string): any[] {
+  const last = convo[convo.length - 1]
+  if (!note || last?.role !== 'user') return convo
+  const content = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...(last.content || [])]
+  return [...convo.slice(0, -1), { ...last, content: [...content, { type: 'text', text: note.trim() }] }]
 }
 function cachedMessages(convo: any[]): any[] {
   const last = convo[convo.length - 1]
@@ -2311,10 +2325,13 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     }
   }
   const chosen = evalChoice.get(caller as unknown as object)
+  const model = chosen?.model || ARNIE_MODEL
   return {
-    model: chosen?.model || ARNIE_MODEL,
+    model,
     effort: chosen?.effort,
-    maxTokens: 4096,
+    // Thinking counts toward max_tokens on the newer models; 4096 could cut
+    // a reply off after a long think.
+    maxTokens: isNewModel(model) ? 16000 : 4096,
     feature: 'arnie-chat',
     tools: toolsFor(caller.role, cards, { ownSession: !!bearer }),
     exec: (name: string, input: any) => execTool(name, input, caller, messages, bearer, coords),
@@ -2921,9 +2938,9 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: setup.model,
         max_tokens: setup.maxTokens,
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-        system: cachedSystem(systemPrompt || '', i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : '', rulesEnd.get(caller as unknown as object)),
+        system: cachedSystem(systemPrompt || '', rulesEnd.get(caller as unknown as object)),
         ...(includeTools ? { tools: cachedTools(setup.tools), ...(i === 4 && !used.has('use_my_computer') ? { tool_choice: { type: 'none' } } : {}) } : {}),
-        messages: cachedMessages(convo),
+        messages: cachedMessages(withNote(convo, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : '')),
       },
     )
     if (!ai.ok) {
@@ -3034,12 +3051,13 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // used to end mid-sentence — "Let me try clicking in the search
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
-              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : '', rulesEnd.get(caller as unknown as object)),
+              // Its note rides on the newest message (withNote), not here.
+              system: cachedSystem(systemPrompt || '', rulesEnd.get(caller as unknown as object)),
               // Newer models refuse a forced tool_choice (400); there the
               // correction message itself is the instruction to call it.
               ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) || lastLookup(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-              messages: cachedMessages(convo),
+              messages: cachedMessages(withNote(convo, outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : '')),
               stream: true,
             }),
           })

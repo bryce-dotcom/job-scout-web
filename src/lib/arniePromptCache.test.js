@@ -16,19 +16,29 @@ describe('prompt caching', () => {
     expect(tools[1].cache_control).toBeUndefined()
     expect(cachedTools([])).toEqual([])
   })
-  it('the rules are cached; the last-step note sits after the marker', () => {
+  it('the rules are cached, and the system prompt never carries a round-specific note', () => {
     expect(cachedSystem('RULES')).toEqual([{ type: 'text', text: 'RULES', cache_control: { type: 'ephemeral' } }])
-    const s = cachedSystem('RULES', 'NOTE')
-    expect(s[1]).toEqual({ type: 'text', text: 'NOTE' })
     expect(cachedSystem('')).toBe('')
+    expect(chat).not.toMatch(/system: cachedSystem\([^)]*NOTE/)
   })
   it('the fixed rules get their own marker, so a new message does not re-send them', () => {
-    const s = cachedSystem('RULESthis-message help', 'NOTE', 5)
-    expect(s.map((b) => b.text)).toEqual(['RULES', 'this-message help', 'NOTE'])
-    expect(s.map((b) => !!b.cache_control)).toEqual([true, true, false])
-    expect(s.map((b) => b.text).join('')).toBe('RULESthis-message helpNOTE')   // the words are unchanged
-    expect(cachedSystem('RULES', '', 5)).toHaveLength(1)        // nothing after the rules: one block
-    expect(cachedSystem('RULES', '', undefined)).toHaveLength(1)
+    const s = cachedSystem('RULESthis-message help', 5)
+    expect(s.map((b) => b.text)).toEqual(['RULES', 'this-message help'])
+    expect(s.map((b) => !!b.cache_control)).toEqual([true, true])
+    expect(s.map((b) => b.text).join('')).toBe('RULESthis-message help')   // the words are unchanged
+    expect(cachedSystem('RULES', 5)).toHaveLength(1)        // nothing after the rules: one block
+    expect(cachedSystem('RULES', undefined)).toHaveLength(1)
+  })
+  it('a last-round note rides after the newest message (Sonnet 5.5 rejects a changed system prompt mid-turn)', () => {
+    const withNote = fn('withNote')
+    const convo = [{ role: 'user', content: 'q' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'x', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: '{}' }] }]
+    const out = withNote(convo, '\n\n## Last lookup\nAnswer.')
+    expect(out[2].content).toEqual([{ type: 'tool_result', tool_use_id: 't', content: '{}' }, { type: 'text', text: '## Last lookup\nAnswer.' }])
+    expect(convo[2].content).toHaveLength(1)   // the conversation itself is untouched
+    expect(withNote(convo, '')).toBe(convo)
+    expect(withNote([{ role: 'user', content: 'fix that' }], 'N')[0].content).toEqual([{ type: 'text', text: 'fix that' }, { type: 'text', text: 'N' }])
+    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)/)
+    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, i === 4 && !used\.has\('use_my_computer'\) \? LAST_LOOKUP_NOTE : ''\)\)/)
   })
   it('the last lookup round must answer, and a reply is never blank (live test, 2026-10-21)', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
@@ -50,11 +60,18 @@ describe('prompt caching', () => {
     expect(out.slice(0, 2)).toEqual(convo.slice(0, 2))
     expect(cachedMessages([{ role: 'user', content: 'hi' }])[0].content).toEqual([{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }])
   })
-  it('both request paths use all three markers — three, under the API limit of four', () => {
+  it('both request paths use every marker — four at most, the API limit', () => {
     expect(chat.match(/system: cachedSystem\(/g).length).toBe(2)
     expect(chat.match(/tools: cachedTools\(setup\.tools\)/g).length).toBe(2)
-    expect(chat.match(/messages: cachedMessages\(convo\)/g).length).toBe(2)
+    expect(chat.match(/messages: cachedMessages\(withNote\(convo,/g).length).toBe(2)
     expect(chat).not.toMatch(/messages: convo,/)
+  })
+  it('Arnie runs on Sonnet 5.5, with room to think', () => {
+    expect(chat).toMatch(/const ARNIE_MODEL = 'claude-sonnet-5-5'\n/)
+    expect(chat).toMatch(/maxTokens: isNewModel\(model\) \? 16000 : 4096,/)
+    const c = readFileSync(new URL('../../supabase/functions/_shared/computeConfig.ts', import.meta.url), 'utf8')
+    expect(c.indexOf("m.includes('sonnet-5-5')")).toBeLessThan(c.indexOf("return { in: 3, out: 15"))
+    expect(c).toMatch(/if \(m\.includes\('sonnet-5-5'\)\) return \{ in: 2, out: 10, cacheRead: 0\.2 \}/)
   })
   it('the meter prices Sonnet 5.5 at $2/$10, ahead of the generic Sonnet line', () => {
     const a = readFileSync(new URL('../../supabase/functions/_shared/anthropic.ts', import.meta.url), 'utf8')

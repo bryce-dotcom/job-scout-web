@@ -64,6 +64,9 @@ export function agentFor(feature: string): string | null {
 // (claude-sonnet-4-20250514, -4-5-..., -4-6) all map correctly.
 export function priceFor(model: string): { in: number; out: number; cacheRead: number } {
   const m = (model || '').toLowerCase()
+  // The 5.5 line is cheaper than the one before it — most specific first.
+  if (m.includes('sonnet-5-5')) return { in: 2, out: 10, cacheRead: 0.2 }
+  if (m.includes('opus-5-5'))   return { in: 4, out: 20, cacheRead: 0.4 }
   if (m.includes('opus'))  return { in: 5, out: 25, cacheRead: 0.5 }
   if (m.includes('haiku')) return { in: 1, out: 5,  cacheRead: 0.1 }
   return { in: 3, out: 15, cacheRead: 0.3 } // sonnet (default)
