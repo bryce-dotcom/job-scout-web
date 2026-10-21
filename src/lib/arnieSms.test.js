@@ -197,7 +197,7 @@ describe('the same Arnie, by email', () => {
 
   it('everything else the webhook does is left alone', () => {
     // The branch returns before any of the filing below it.
-    expect(email.indexOf("kindEarly === 'arnie'")).toBeLessThan(email.indexOf('isAutoReply(mail.subject'))
+    expect(email.indexOf("kindEarly === 'arnie'")).toBeLessThan(email.indexOf("kindEarly !== 'bids' && isAutoReply(mail.subject"))
     expect(email).toMatch(/estimates/)
     expect(email).toMatch(/feedback/)
   })

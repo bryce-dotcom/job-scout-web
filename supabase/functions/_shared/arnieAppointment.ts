@@ -22,6 +22,10 @@ import type { Caller } from './auth.ts'
 import { readRecordList, patchRow } from './arnieRest.ts'
 import { RECORD_TARGETS, resolveEntity } from './arnieRecords.ts'
 import { localToUtc, resolveWhenSaid } from './arnieTime.ts'
+import { nextOpening } from './arnieInbox.ts'
+
+/** "next opening", "next available", "first free slot" — the rep's next free hour tomorrow. */
+export const isNextOpening = (when: unknown) => /\b(next|first)\s+(opening|available|availability|free|open)\b/i.test(String(when ?? ''))
 import type { Prepared } from './arnieCreate.ts'
 
 const H = (r: Rest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' })
@@ -62,15 +66,21 @@ export async function prepareAppointment(r: Rest, caller: Caller, f: Record<stri
   const statusOnly = String(lead.status || '').toLowerCase() === 'appointment set'
 
   // When — as SAID. The model cannot turn "Thursday" into a date inside a
-  // tool call (see resolveDayWord); the server does the calendar.
-  const said = resolveWhenSaid(f.when, tz, 'forward')
-  if (!said) return { ok: false, error: `When? I can take "Thursday at 2", "tomorrow 9:30am", or YYYY-MM-DD HH:MM — I got "${f.when}".` }
-  if (!said.time) return { ok: false, error: `What time on ${said.date}? I have the day but not the hour.` }
-  const start = localToUtc(`${said.date} ${said.time}`, tz)
-  if (!start) return { ok: false, error: `Give me the time as YYYY-MM-DD HH:MM (in ${tz}) — I got "${f.when}".` }
-  if (start.getTime() < Date.now() - 3600000) return { ok: false, error: `${fmt(start, tz)} is in the past.` }
+  // tool call (see resolveDayWord); the server does the calendar. "next
+  // opening" is the rep's first free hour tomorrow, found below once the rep
+  // is known (Christopher, 2026-10-13).
   const minutes = Math.min(Math.max(parseInt(f.duration_minutes || '60', 10) || 60, 15), 480)
-  const end = new Date(start.getTime() + minutes * 60000)
+  const nextFree = isNextOpening(f.when)
+  let start: Date | null = null, end: Date | null = null
+  if (!nextFree) {
+    const said = resolveWhenSaid(f.when, tz, 'forward')
+    if (!said) return { ok: false, error: `When? I can take "Thursday at 2", "tomorrow 9:30am", "next opening", or YYYY-MM-DD HH:MM — I got "${f.when}".` }
+    if (!said.time) return { ok: false, error: `What time on ${said.date}? I have the day but not the hour.` }
+    start = localToUtc(`${said.date} ${said.time}`, tz)
+    if (!start) return { ok: false, error: `Give me the time as YYYY-MM-DD HH:MM (in ${tz}) — I got "${f.when}".` }
+    if (start.getTime() < Date.now() - 3600000) return { ok: false, error: `${fmt(start, tz)} is in the past.` }
+    end = new Date(start.getTime() + minutes * 60000)
+  }
 
   // Who is taking it. Named → looked up; not named → the lead's rep; neither → ask.
   let repId: number | null = null, repName = ''
@@ -85,6 +95,13 @@ export async function prepareAppointment(r: Rest, caller: Caller, f: Record<stri
     if (e) { repId = e.id; repName = e.name + ' (already on the lead)' }
   }
   if (!repId) return { ok: false, error: 'Who is taking the appointment? Give me the rep\'s name.' }
+
+  if (nextFree) {
+    const slot = await nextOpening(r, companyId, repId, tz, { minutes })
+    if (!slot) return { ok: false, error: `${repName.replace(/ \(.*\)$/, '')} has no free hour between 8 and 5 in the next week. Give me a time.` }
+    start = slot.start; end = slot.end
+  }
+  if (!start || !end) return { ok: false, error: 'When? Give me a time.' }
 
   // A clash is worth saying, not worth blocking — a person can decide.
   const clash = await readRecordList(r, `appointments?select=id,title,start_time&company_id=eq.${companyId}&salesperson_id=eq.${repId}&start_time=lt.${end.toISOString()}&end_time=gt.${start.toISOString()}&status=neq.Cancelled&limit=1`)

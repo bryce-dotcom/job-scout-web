@@ -142,7 +142,7 @@ describe('Cole #2 and #3', () => {
     expect(d).toMatch(/snapshot: \{ quote, lines, messages, submissions \}/)
     expect(d).toMatch(/relinks: \{ expenses: /)
     expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/quote_delete: \{\n\s+label: 'estimate delete',/)
-    expect(read('supabase/functions/arnie-chat/index.ts')).toMatch(/'company_rule', 'quote_delete'\]/)
+    expect(read('supabase/functions/arnie-chat/index.ts')).toMatch(/'company_rule', 'quote_delete'(, '[a-z_]+')*\]/)
   })
 })
 

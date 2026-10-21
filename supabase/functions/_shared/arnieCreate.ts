@@ -35,6 +35,8 @@ import { applyWon, prepareWon, rollbackWon } from './arnieWon.ts'
 import { applySchedule, prepareSchedule, rollbackSchedule } from './arnieSchedule.ts'
 import { applyCompanyRule, prepareCompanyRule, rollbackCompanyRule } from './arnieCompanyRules.ts'
 import { applyQuoteDelete, prepareQuoteDelete, rollbackQuoteDelete } from './arnieQuoteDelete.ts'
+import { applyBooking, prepareBooking, rollbackBooking } from './arnieBooking.ts'
+import { applyEmailReply, prepareEmailReply, rollbackEmailReply } from './arnieEmailReply.ts'
 
 interface CreateField {
   /** Column on the table. null = resolved by `prepare`, never written as-is. */
@@ -191,6 +193,58 @@ export const CREATE_TARGETS: Record<string, CreateTarget> = {
     prepare: prepareAppointment,
     applyCustom: applyAppointment,
     rollbackCustom: rollbackAppointment,
+  },
+
+  // From a lead's email (Christopher, 2026-10-13): an existing CUSTOMER on
+  // the calendar, or a NEW lead made and booked in one approval. An existing
+  // LEAD goes through `appointment` above. Default time: their next opening
+  // tomorrow. No setter fee — a customer emailed. See arnieBooking.ts.
+  booking: {
+    label: 'booking',
+    table: 'appointments',
+    minLevel: 0,
+    verb: 'Book',
+    button: 'Book it',
+    done: 'Booked. It is on the calendar, and a new lead is in Lead Setter under the rep.',
+    fields: {
+      customer:         { column: null, label: 'Customer', max: 160 },
+      customer_name:    { column: null, label: 'Contact',  max: 120 },
+      business_name:    { column: null, label: 'Business', max: 120 },
+      phone:            { column: null, label: 'Phone',    max: 40 },
+      email:            { column: null, label: 'Email',    max: 120 },
+      address:          { column: null, label: 'Address',  max: 300 },
+      service_type:     { column: null, label: 'Service',  max: 80 },
+      lead_source:      { column: null, label: 'Source',   max: 80 },
+      when:             { column: null, label: 'When',     max: 40 },
+      timezone:         { column: null, label: 'Zone',     max: 64 },
+      salesperson:      { column: null, label: 'With',     max: 80 },
+      duration_minutes: { column: null, label: 'Length',   max: 4 },
+      location:         { column: null, label: 'Where',    max: 300 },
+      notes:            { column: null, label: 'Notes',    max: 1000 },
+    },
+    labelOf: (f) => `${f.customer || f.business_name || f.customer_name || 'booking'} — ${f.when || 'next opening'}`.slice(0, 120),
+    prepare: prepareBooking,
+    applyCustom: applyBooking,
+    rollbackCustom: rollbackBooking,
+  },
+
+  // A reply to an email in their forwarded inbox — to its sender only, under
+  // their name, sent when they approve. Cannot be unsent. arnieEmailReply.ts.
+  email_reply: {
+    label: 'email reply',
+    table: 'arnie_inbox',
+    minLevel: 0,
+    verb: 'Send',
+    button: 'Send reply',
+    done: 'Sent. Their answer comes to your own inbox.',
+    fields: {
+      inbox_email: { column: null, label: 'Email', required: true, max: 20 },
+      body:        { column: null, label: 'Says',  required: true, max: 5000, raw: true },
+    },
+    labelOf: (f) => `Reply to email #${f.inbox_email}`,
+    prepare: prepareEmailReply,
+    applyCustom: applyEmailReply,
+    rollbackCustom: rollbackEmailReply,
   },
 
   // "Quote Halifax Flooring for 40 high bays and 12 wall packs." Lines come

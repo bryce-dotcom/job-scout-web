@@ -9,6 +9,7 @@ import { verifySvixSignature, htmlToText, isAutoReply, recipientKind, readEmail 
 import { emailRep, repEmailShell, appLink } from "../_shared/notifyRep.ts";
 import { managerIds } from "../_shared/marketing.ts";
 import { arnieByEmail } from "../_shared/arnieSms.ts";
+import { fileInboxMail, inboxTokenIn } from "../_shared/arnieInbox.ts";
 import { employeeByContact } from "../_shared/arnieHeadless.ts";
 
 // Catch customer replies to estimates and put them on the estimate.
@@ -194,6 +195,29 @@ serve(async (req) => {
   // exactly the headers that mark an out-of-office — and every alert would
   // be thrown away as one.
   const kindEarly = recipientKind(mail.to);
+
+  // A person's own mail, auto-forwarded to their private inbox+<token>@
+  // address (see _shared/arnieInbox.ts). Filed, NEVER answered — and before
+  // the auto-reply filter, because Gmail's "confirm forwarding" mail is itself
+  // automated and carries the code they need. Gmail keeps the original To, so
+  // the token is looked for in the forwarding headers too.
+  const inboxToken = inboxTokenIn([mail.to, ...(mail.allRecipients || [])], headers);
+  if (inboxToken) {
+    const restI = { url: Deno.env.get('SUPABASE_URL')!, key: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! };
+    const lowerH: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(headers || {})) lowerH[k.toLowerCase()] = v;
+    const fromHeader = String(lowerH['from'] ?? payload?.data?.from ?? '');
+    const fromName = fromHeader.includes('<') ? fromHeader.split('<')[0].replace(/["']/g, '').trim() : '';
+    const origTo = [mail.to, ...(mail.allRecipients || [])].find((a) => a && !/\binbox\+/i.test(a)) || '';
+    const filed = await fileInboxMail(restI, inboxToken, {
+      from: mail.from, fromName, to: origTo, subject: mail.subject,
+      body: mail.body || (mailHtml ? htmlToText(mailHtml) : ''),
+      emailId: payload?.data?.email_id ? String(payload.data.email_id) : undefined,
+      autoReply: isAutoReply(mail.subject, headers),
+    });
+    console.log('[inbound-email] inbox:', JSON.stringify({ ...filed, code: filed.code ? 'yes' : null }));
+    return json({ ok: true, matched: filed.filed, kind: 'inbox', ...(filed.reason ? { reason: filed.reason } : {}) });
+  }
 
   // Writing TO Arnie. A person asking their assistant something, not a
   // customer replying to a document — so it is answered rather than filed.
