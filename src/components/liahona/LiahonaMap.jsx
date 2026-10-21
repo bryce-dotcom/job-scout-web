@@ -1102,7 +1102,12 @@ export default function LiahonaMap({
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: compact ? 'column' : 'row', minHeight: compact ? 0 : '480px', position: 'relative', overflow: 'hidden' }}>
       {/* ------------------------------------------------------- map column */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* minWidth only while Find Prospects is open: without a floor the map
+          column (flex:1, basis 0) gives ALL its space to the panel and the
+          300px sidebar, and at 1280 it collapsed to 259px — a map too small
+          to prospect against, which is the complaint again in a new shape.
+          Every other layout keeps minWidth 0 exactly as before. */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: (!compact && showFindProspects) ? 340 : 0 }}>
         <LiahonaToolbar
           t={t} compact={compact} mode={mode} onMode={changeMode}
           searchText={searchText} setSearchText={setSearchText} onSearch={runSearch} searching={searching}
@@ -1192,18 +1197,53 @@ export default function LiahonaMap({
         )}
       </div>
 
-      {showFindProspects && (
+      {/* FIND PROSPECTS SITS BESIDE THE MAP, NOT ON TOP OF IT.
+          Tracy, 29 Sep: "the map is right in the way when you're trying to
+          find the decision-maker in prospect finder on the right — it'd be
+          nice to move that map over or slightly shrink it down so you can
+          use the prospect feature." Cole, 20 Oct: "the liahona map stays big
+          when i click overlays and find prospects then i cant see what im
+          doing."
+          Both were looking at the same thing: the drawer threw a 50% black
+          sheet over the whole map and docked a 540px panel on top of it, so
+          the map went dark and unusable at the exact moment you want to
+          watch pins land as you search. The row below is already a flex
+          row — the map column is flex:1 — so handing the panel its own
+          column makes the map shrink to fit instead of disappearing behind
+          it. On a phone there is no room for two columns, so it stays a
+          sheet. */}
+      {showFindProspects && (compact ? (
         <ProspectResearchDrawer
           companyId={companyId}
           employees={employees}
           theme={{ bg: t.bg, bgCard: t.bgCard, border: t.border, text: t.text, textMuted: t.textMuted, textSecondary: t.textSecondary, accent: t.accent }}
-          isMobile={compact}
+          isMobile
           onClose={() => setShowFindProspects(false)}
           onImported={() => onLeadsChanged?.()}
           onResults={list => plotProspects(list)}
           mapArea={mapArea}
         />
-      )}
+      ) : (
+        <div style={{
+          // Yields to the map when the window is tight, down to a width the
+          // search box and a result row can still be read at.
+          flex: '0 1 420px', minWidth: 320,
+          borderLeft: `1px solid ${t.border}`, backgroundColor: t.bg,
+          display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden',
+        }}>
+          <ProspectResearchDrawer
+            inline
+            companyId={companyId}
+            employees={employees}
+            theme={{ bg: t.bg, bgCard: t.bgCard, border: t.border, text: t.text, textMuted: t.textMuted, textSecondary: t.textSecondary, accent: t.accent }}
+            isMobile={false}
+            onClose={() => setShowFindProspects(false)}
+            onImported={() => onLeadsChanged?.()}
+            onResults={list => plotProspects(list)}
+            mapArea={mapArea}
+          />
+        </div>
+      ))}
     </div>
   )
 }

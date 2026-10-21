@@ -214,7 +214,11 @@ export default function ProspectResearchDrawer({ companyId, employees = [], onCl
               )}
             </div>
           </div>
-          {!inline && <button
+          {/* Shown whenever the host gave us a way out — which an overlay
+              always does, and an inline panel does when it is something you
+              open and close (the map's Find Prospects) rather than a tab that
+              is always there (Marketing's Find, which passes no onClose). */}
+          {onClose && <button
             onClick={onClose}
             style={{
               padding: 8, minWidth: 36, minHeight: 36,
