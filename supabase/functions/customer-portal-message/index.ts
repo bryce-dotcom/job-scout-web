@@ -29,7 +29,8 @@ serve(async (req) => {
 
     // For action 'list', body is optional. For default 'send' action, body is required.
     const isList = action === 'list';
-    if (!isList && (!body || !String(body).trim())) {
+    const isConsent = action === 'consent';
+    if (!isList && !isConsent && (!body || !String(body).trim())) {
       return new Response(JSON.stringify({ error: 'body is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

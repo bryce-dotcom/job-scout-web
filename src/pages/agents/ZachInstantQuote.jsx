@@ -19,6 +19,19 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 export default function ZachInstantQuote() {
   const { slug } = useParams()
+  // The company's own name for the consent line, before any quote exists:
+  // the carriers match the disclosure against the brand that registered, so
+  // "this company may text me" is the fallback, not the wording we want.
+  const [cardName, setCardName] = useState('')
+  useEffect(() => {
+    if (!slug) return
+    let live = true
+    fetch(`${SUPABASE_URL}/functions/v1/public-company-card?slug=${encodeURIComponent(slug)}`, { headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live && d?.company_name) setCardName(d.company_name) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [slug])
   const inputRef = useRef(null)
 
   const [address, setAddress] = useState('')
@@ -147,7 +160,7 @@ export default function ZachInstantQuote() {
             {contact.phone.trim() && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '10px 0 0', fontSize: 12, color: '#4d5a52', lineHeight: 1.4, cursor: 'pointer' }}>
                 <input type="checkbox" checked={contact.smsOk} onChange={e => setContact(c => ({ ...c, smsOk: e.target.checked }))} style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0 }} />
-                <span>{consentDisclosure(result?.company_name)}</span>
+                <span>{consentDisclosure(result?.company_name || cardName)}</span>
               </label>
             )}
 
