@@ -10,7 +10,7 @@ import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, untracedFigures, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
-import { serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
+import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { playbookFor, parseTakeoff, planEstimate } from '../_shared/lightingPlaybook.ts'
 import { activeRules, rulesPromptBlock } from '../_shared/arnieCompanyRules.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
@@ -54,19 +54,23 @@ const isNewModel = (m: string) => !/sonnet-4-5|haiku-4-5/.test(m)
 
 // PROMPT CACHING (Bryce, 2026-10-21). ai_usage showed zero cached tokens: every
 // round of every turn re-sent ~40-50k tokens of tools and rules at full price.
-// Three markers — the last tool, the rules, the newest message — so a turn's
-// second round onwards, and the next turn within five minutes, read them back
-// at a tenth of the price. A copy is marked; convo itself is never touched,
-// or old markers would pile past the four the API allows.
+// Four markers — the last tool, the end of the fixed rules, the end of the
+// system prompt, the newest message — so a turn's second round onwards, and
+// the next turn within five minutes, read them back at a tenth of the price.
+// The rules get their own marker because what follows them (this message's
+// help, the phone's data) changes every turn; the live test showed a new
+// turn re-writing 23k tokens without it. A copy is marked; convo itself is
+// never touched, or old markers would pile past the four the API allows.
 const CACHE = { type: 'ephemeral' } as const
 function cachedTools(tools: any[]): any[] {
   if (!tools.length) return tools
   return [...tools.slice(0, -1), { ...tools[tools.length - 1], cache_control: CACHE }]
 }
 /** The rules, cached; anything round-specific (the last-step note) goes after the marker. */
-function cachedSystem(prompt: string, after = ''): any {
+function cachedSystem(prompt: string, after = '', split = 0): any {
   if (!prompt) return after
-  return [{ type: 'text', text: prompt, cache_control: CACHE }, ...(after ? [{ type: 'text', text: after }] : [])]
+  const parts = split > 0 && split < prompt.length ? [prompt.slice(0, split), prompt.slice(split)] : [prompt]
+  return [...parts.map((text) => ({ type: 'text', text, cache_control: CACHE })), ...(after ? [{ type: 'text', text: after }] : [])]
 }
 function cachedMessages(convo: any[]): any[] {
   const last = convo[convo.length - 1]
@@ -2906,7 +2910,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: setup.model,
         max_tokens: setup.maxTokens,
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-        system: cachedSystem(systemPrompt || ''),
+        system: cachedSystem(systemPrompt || '', '', rulesEnd.get(caller as unknown as object)),
         ...(includeTools ? { tools: cachedTools(setup.tools) } : {}),
         messages: cachedMessages(convo),
       },
@@ -3018,7 +3022,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // used to end mid-sentence — "Let me try clicking in the search
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
-              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : ''),
+              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : '', rulesEnd.get(caller as unknown as object)),
               // Newer models refuse a forced tool_choice (400); there the
               // correction message itself is the instruction to call it.
               ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),

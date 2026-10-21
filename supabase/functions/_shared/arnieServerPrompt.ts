@@ -69,6 +69,13 @@ async function one(r: Rest, path: string): Promise<Any | null> {
 }
 
 /**
+ * Where the fixed rules end in this caller's prompt. What follows — the
+ * help for THIS message, the phone's data — changes every turn, so arnie-chat
+ * puts a cache marker here and the rules are read back, not re-sent.
+ */
+export const rulesEnd = new WeakMap<object, number>()
+
+/**
  * The whole system prompt for one Arnie turn.
  *
  * @param caller  from the JWT (resolveCaller / internalCaller) — never the body
@@ -114,5 +121,6 @@ export async function serverArniePrompt(r: Rest, caller: Any, body: Any): Promis
   // an old phone already put them in its data section.
   const data = isNew ? frameData(body.dataContext) : (legacy.data || frameData(''))
   const features = data.includes(FEATURE_MARK) ? '' : featureContextForMessage(lastUserText(body?.messages))
-  return rules + (features ? `\n${features}` : '') + data
+  if (caller && typeof caller === 'object') rulesEnd.set(caller, rules.length)
+  return rules +(features ? `\n${features}` : '') + data
 }

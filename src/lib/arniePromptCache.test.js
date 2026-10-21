@@ -22,6 +22,19 @@ describe('prompt caching', () => {
     expect(s[1]).toEqual({ type: 'text', text: 'NOTE' })
     expect(cachedSystem('')).toBe('')
   })
+  it('the fixed rules get their own marker, so a new message does not re-send them', () => {
+    const s = cachedSystem('RULESthis-message help', 'NOTE', 5)
+    expect(s.map((b) => b.text)).toEqual(['RULES', 'this-message help', 'NOTE'])
+    expect(s.map((b) => !!b.cache_control)).toEqual([true, true, false])
+    expect(s.map((b) => b.text).join('')).toBe('RULESthis-message helpNOTE')   // the words are unchanged
+    expect(cachedSystem('RULES', '', 5)).toHaveLength(1)        // nothing after the rules: one block
+    expect(cachedSystem('RULES', '', undefined)).toHaveLength(1)
+  })
+  it('the prompt builder records where its rules end, and both paths use it', () => {
+    const sp = readFileSync(new URL('../../supabase/functions/_shared/arnieServerPrompt.ts', import.meta.url), 'utf8')
+    expect(sp).toMatch(/rulesEnd\.set\(caller, rules\.length\)\r?\n\s+return rules \+/)
+    expect(chat.match(/rulesEnd\.get\(caller as unknown as object\)/g).length).toBe(2)
+  })
   it('marks a copy of the newest message — never the conversation itself', () => {
     const convo = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'yo' }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: '{}' }] }]
     const out = cachedMessages(convo)
