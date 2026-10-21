@@ -51,6 +51,10 @@ describe('which inbox a forwarded email belongs to', () => {
     expect(gmailForwardingCode('forwarding-noreply@google.com', '(#839201745) Gmail Forwarding Confirmation - Receive Mail from christopher@hhh.services')).toBe('839201745')
     expect(gmailForwardingCode('someone@else.com', '(#839201745) Gmail Forwarding Confirmation')).toBeNull()
   })
+  it('the first real email switches on their email routines that have never run — not the confirmation code', () => {
+    const src = read('supabase/functions/_shared/arnieInbox.ts')
+    expect(src).toMatch(/if \(!code\) \{\n\s+await fetch\(`\$\{r\.url\}\/rest\/v1\/arnie_routines\?employee_id=eq\.\$\{addr\.employee_id\}&company_id=eq\.\$\{addr\.company_id\}&enabled=eq\.false&last_run_on=is\.null&name=like\.Email\*`/)
+  })
   it('the inbox branch files before the auto-reply filter and never answers', () => {
     const e = read('supabase/functions/inbound-email/index.ts')
     const branch = e.slice(e.indexOf('const inboxToken = inboxTokenIn('), e.indexOf("if (kindEarly === 'arnie')"))

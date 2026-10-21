@@ -91,6 +91,16 @@ export async function fileInboxMail(r: Rest, token: string, mail: {
   // 23505 = the same email_id twice (a webhook retry): already filed, fine.
   if (!res.ok && !/23505/.test(await res.text())) return { filed: false, reason: `insert failed ${res.status}` }
 
+  // Their email routines wait, switched off, until mail actually arrives —
+  // four "nothing has arrived" messages a day would be noise. The first real
+  // email turns on the ones that have never run (a routine they switched off
+  // themselves has run, and stays off).
+  if (!code) {
+    await fetch(`${r.url}/rest/v1/arnie_routines?employee_id=eq.${addr.employee_id}&company_id=eq.${addr.company_id}&enabled=eq.false&last_run_on=is.null&name=like.Email*`, {
+      method: 'PATCH', headers: { ...H(r), Prefer: 'return=minimal' }, body: JSON.stringify({ enabled: true }),
+    }).catch(() => {})
+  }
+
   // The forwarding has to be confirmed with a code Google mails to THIS
   // address — so put it where they will see it.
   if (code) {
