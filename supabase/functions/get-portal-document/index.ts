@@ -77,7 +77,7 @@ serve(async (req) => {
     if (tokenRow.customer_id) {
       const { data: c } = await supabase
         .from('customers')
-        .select('id, name, email, phone, address, business_name')
+        .select('id, name, email, phone, address, business_name, sms_consent')
         .eq('id', tokenRow.customer_id)
         .single();
       customer = c;

@@ -10,6 +10,7 @@
 // No auth required. Edge function rate-limits by IP hash.
 
 import { useEffect, useRef, useState } from 'react'
+import { consentDisclosure } from '../../lib/smsConsent'
 import { useParams } from 'react-router-dom'
 import { Sparkles, MapPin, Loader, Check, AlertTriangle, Calculator } from 'lucide-react'
 import { loadGoogleMaps, hasMapsKey, GOOGLE_MAPS_API_KEY, staticMapUrl } from '../../lib/googleMaps'
@@ -22,7 +23,7 @@ export default function ZachInstantQuote() {
 
   const [address, setAddress] = useState('')
   const [coords, setCoords] = useState(null)  // { lat, lng }
-  const [contact, setContact] = useState({ name: '', email: '', phone: '' })
+  const [contact, setContact] = useState({ name: '', email: '', phone: '', smsOk: false })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)  // edge function response
@@ -85,6 +86,10 @@ export default function ZachInstantQuote() {
           contact_name: contact.name || null,
           contact_email: contact.email || null,
           contact_phone: contact.phone || null,
+          // Express consent to texts, given here in the customer's own words
+          // (lib/smsConsent consentDisclosure). Without it the lead's
+          // sms_consent stays false and no campaign text ever reaches them.
+          sms_consent: !!(contact.phone && contact.smsOk),
         }),
       })
       const json = await res.json()
@@ -139,6 +144,12 @@ export default function ZachInstantQuote() {
               <Field label="Phone (optional)" value={contact.phone} onChange={v => setContact(c => ({ ...c, phone: v }))} />
             </div>
             <Field label="Email (optional, to send your quote)" value={contact.email} onChange={v => setContact(c => ({ ...c, email: v }))} />
+            {contact.phone.trim() && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '10px 0 0', fontSize: 12, color: '#4d5a52', lineHeight: 1.4, cursor: 'pointer' }}>
+                <input type="checkbox" checked={contact.smsOk} onChange={e => setContact(c => ({ ...c, smsOk: e.target.checked }))} style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0 }} />
+                <span>{consentDisclosure(result?.company_name)}</span>
+              </label>
+            )}
 
             {error && (
               <div style={{ display: 'flex', gap: 8, padding: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, color: '#b91c1c', fontSize: 13, marginTop: 12 }}>

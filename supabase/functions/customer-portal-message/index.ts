@@ -20,7 +20,7 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { token, action, body, from_name, from_email } = await req.json();
+    const { token, action, body, from_name, from_email, on } = await req.json();
 
     if (!token) {
       return new Response(JSON.stringify({ error: 'token is required' }),
@@ -53,6 +53,27 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'This link has expired' }),
         { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    // The customer ticking (or clearing) "text me" on their own portal page.
+    // Any live link that names a customer will do; the portal is the one
+    // place they can say it in their own words, and the date is the evidence.
+    if (action === 'consent') {
+      if (!tokenRow.customer_id) {
+        return new Response(JSON.stringify({ error: 'This link is not tied to a customer' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const consentOn = on === true;
+      const patch = consentOn
+        ? { sms_consent: true, sms_consent_at: new Date().toISOString(), sms_consent_source: 'portal' }
+        : { sms_consent: false, sms_consent_at: null, sms_consent_source: null };
+      const { error: cErr } = await supabase.from('customers').update(patch).eq('id', tokenRow.customer_id).eq('company_id', tokenRow.company_id);
+      if (cErr) {
+        return new Response(JSON.stringify({ error: cErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: true, sms_consent: consentOn }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     if (tokenRow.document_type !== 'estimate') {
       return new Response(JSON.stringify({ error: 'Replies are only supported on estimate links right now' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

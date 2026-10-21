@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
+import { consentDisclosure } from '../lib/smsConsent'
 import { serviceAddressToShow } from '../lib/serviceAddress'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -510,6 +511,7 @@ export default function CustomerPortal() {
               {customer.address && <p style={{ color: theme.textSecondary, margin: '0 0 4px', fontSize: '14px' }}>{customer.address}</p>}
               {customer.email && <p style={{ color: theme.textSecondary, margin: '0 0 2px', fontSize: '14px' }}>{customer.email}</p>}
               {customer.phone && <p style={{ color: theme.textSecondary, margin: 0, fontSize: '14px' }}>{customer.phone}</p>}
+              {customer.phone && <ConsentLine theme={theme} token={token} customer={customer} companyName={displayName} />}
 
               {/* Which site this was for. An account can have many locations,
                   and a bill addressed to the management company does not say
@@ -1625,4 +1627,29 @@ if (typeof document !== 'undefined') {
     styleEl.textContent = '@keyframes spin { to { transform: rotate(360deg) } }'
     document.head.appendChild(styleEl)
   }
+}
+
+/**
+ * "Text me about my jobs" — the one place a customer can give (or take
+ * back) consent to texts in their own words. Written through
+ * customer-portal-message {action:'consent'} with the portal token; the
+ * date it was ticked is the evidence (customers.sms_consent_at).
+ */
+function ConsentLine({ theme, token, customer, companyName }) {
+  const [on, setOn] = useState(customer?.sms_consent === true)
+  const [busy, setBusy] = useState(false)
+  const toggle = async (next) => {
+    setBusy(true)
+    try {
+      const r = await invokeEdgeFunction('customer-portal-message', { token, action: 'consent', on: next })
+      if (r?.ok) setOn(next)
+    } catch { /* leave the box as it was */ }
+    setBusy(false)
+  }
+  return (
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 10, fontSize: '12px', color: theme.textSecondary, lineHeight: 1.4, cursor: busy ? 'wait' : 'pointer' }}>
+      <input type="checkbox" checked={on} disabled={busy} onChange={(e) => toggle(e.target.checked)} style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0 }} />
+      <span>{consentDisclosure(companyName)}</span>
+    </label>
+  )
 }

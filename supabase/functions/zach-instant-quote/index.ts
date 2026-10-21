@@ -140,7 +140,7 @@ serve(async (req) => {
       company_slug, address, lat, lng,
       image_base64, media_type = 'image/png',
       zoom = 20, image_width = 640, image_height = 640, scale = 2,
-      contact_name, contact_email, contact_phone, notes,
+      contact_name, contact_email, contact_phone, notes, sms_consent,
     } = body || {};
 
     if (!company_slug) return json({ error: 'company_slug required' }, 400);
@@ -220,6 +220,9 @@ serve(async (req) => {
           customer_name: (contact_name && String(contact_name).trim()) || fallbackName,
           email: contact_email || null,
           phone: contact_phone || null,
+          // Consent given on the public form itself (source 'portal' = the
+          // customer ticked it). Only with a phone; never backfilled.
+          ...(sms_consent === true && contact_phone ? { sms_consent: true, sms_consent_at: new Date().toISOString(), sms_consent_source: 'portal' } : {}),
           address,
           service_type: 'Lawn Care',
           lead_source: 'Public Quote',
