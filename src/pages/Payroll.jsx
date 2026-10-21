@@ -39,6 +39,7 @@ import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun 
 import TypedHoursReview from '../components/TypedHoursReview'
 import { syncRepCommissions, fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
+import { strandedSetterFees, strandedTotal, matchSentence } from '../lib/setterOrphans'
 import { commissionConfigIssues } from '../lib/commissionConfigIssues'
 import { calcPaystubTax, normalizePayFrequency } from '../lib/payrollTax'
 import { payDateForPeriod } from '../lib/payDate'
@@ -961,7 +962,13 @@ export default function Payroll() {
         // the case for 97% of jobs).
         supabase
           .from('leads')
-          .select('id, salesperson_id, salesperson_ids')
+          // business_name/customer_name/phone/email/customer_id/quote_id are
+          // what lib/setterOrphans matches a stranded setter fee on. Selected
+          // here or the rule is handed leads with no quote on them, decides
+          // nothing is stranded, and the panel never appears — the same
+          // omission that fed verificationRequiredFor() an undefined business
+          // unit and held 92 bonuses for a check that unit does not do.
+          .select('id, salesperson_id, salesperson_ids, business_name, customer_name, phone, email, customer_id, quote_id')
           .eq('company_id', companyId),
 
         // All payments (any date) — needed to compute lifetime paid per
@@ -1353,6 +1360,15 @@ export default function Payroll() {
     return setterCommissionSummary(leadCommissions, employeeId, setterRule)
   }
 
+  // Fees waiting on a quote that went to a DIFFERENT lead for the same
+  // customer. Tracy found two of these by hand three weeks apart and said
+  // "I have noticed several commissions I should have received did not get
+  // tied to me" — there are twelve, $850. Only meaningful under
+  // quote_created, the rule that makes a fee wait for a quote at all.
+  const strandedFor = (employeeId) => (setterRule === 'quote_created'
+    ? strandedSetterFees({ commissions: leadCommissions.filter(c => c.employee_id === employeeId), leads })
+    : [])
+
   // Manual "Paid" toggle for lead/setter commissions — the control Bryce asked
   // for in efd85146. Marks the given rows paid (or reopens them) so they drop
   // off the payable list without needing a full run. Optimistic local update.
@@ -1676,7 +1692,7 @@ export default function Payroll() {
 
   const calculateFullPay = (employee) => {
     const { periodStart: cfpStart, periodEnd: cfpEnd } = getCurrentPeriod()
-    return computeEmployeePay({
+    const pay = computeEmployeePay({
       employee, employees, timeEntries, timeLogEntries, payrollConfig,
       period: { start: cfpStart, end: cfpEnd },
       // The payday this period is paid on decides which tax tables apply.
@@ -1690,6 +1706,11 @@ export default function Payroll() {
       ytd: ytdPaystubsByEmployee?.[employee.id] || null,
       taxCompany,
     })
+    // A stranded setter fee is PENDING, so it changes no number the engine
+    // works out — it is a thing for a person to go and fix. Attached here
+    // rather than passed in, because computeEmployeePay is pay math with its
+    // own tests. See lib/setterOrphans.
+    return { ...pay, strandedSetter: strandedFor(employee.id) }
   }
 
   // ── Aggregate Data ───────────────────────────────────────
@@ -2841,7 +2862,11 @@ export default function Payroll() {
         )}
 
         {/* Lead Commissions Detail */}
-        {(data.leadCommissions.details.length > 0 || data.leadCommissions.paidCount > 0) && (
+        {/* A stranded fee is PENDING by definition, so it is not in `details`
+            and it has never been paid — a setter whose only problem is that
+            the quote went to the twin lead would have had no card to show it
+            on, which is the whole point of finding them. */}
+        {(data.leadCommissions.details.length > 0 || data.leadCommissions.paidCount > 0 || (data.strandedSetter || []).length > 0) && (
           <div style={{ ...cardStyle, marginBottom: '20px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '600', color: theme.text, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={18} style={{ color: '#3b82f6' }} />
@@ -2874,6 +2899,38 @@ export default function Payroll() {
                 </div>
               )}
             </div>
+
+            {/* THE QUOTE WENT TO THE OTHER LEAD.
+                Tracy, 9 Sep and again 25 Sep: "Noah created a duplicate lead
+                instead of using the one I set. His lead has the quote so that
+                eliminates my setter lead." Relinking the quote already repairs
+                it on its own — the promote trigger fires on update of lead_id
+                since 20260911120000 — but nobody goes looking for a row that
+                is quietly not paying, so she found both of hers by hand.
+                This is the looking. */}
+            {(data.strandedSetter || []).length > 0 && (
+              <div style={{ margin: '0 0 12px', padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(234,179,8,0.45)', backgroundColor: 'rgba(234,179,8,0.09)' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 2 }}>
+                  {data.strandedSetter.length} {data.strandedSetter.length === 1 ? 'fee is' : 'fees are'} waiting on a quote that went somewhere else — {fmt(strandedTotal(data.strandedSetter))}
+                </div>
+                <div style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 8, lineHeight: 1.45 }}>
+                  The appointment was booked on one lead and the work was quoted on a second lead for the same customer, so the fee never qualified. Point the quote at the lead on the left and it pays itself — nothing else to do.
+                </div>
+                {data.strandedSetter.map(r => (
+                  <div key={r.commission.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 6, fontSize: 12, padding: '5px 0', borderTop: `1px solid ${theme.border}` }}>
+                    <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', minWidth: 56 }}>{fmt(parseFloat(r.commission.amount) || 0)}</span>
+                    <button onClick={() => navigate(`/leads/${r.lead.id}`)} style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, cursor: 'pointer', fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}>
+                      {r.lead.business_name || r.lead.customer_name || `Lead ${r.lead.id}`}
+                    </button>
+                    <span style={{ color: theme.textMuted }}>→ quoted on</span>
+                    <button onClick={() => navigate(`/leads/${r.quotedLead.id}`)} style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, cursor: 'pointer', fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}>
+                      {r.quotedLead.business_name || r.quotedLead.customer_name || `Lead ${r.quotedLead.id}`}
+                    </button>
+                    <span style={{ color: theme.textMuted }}>({matchSentence(r.how)})</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {(() => {
               const details = data.leadCommissions.details || []
               const readyRows = details.filter(c => !c.queued_for_payroll)
