@@ -1317,8 +1317,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         params.append('amount', 'gt.0')
         notes.push('Zero-amount invoices excluded (most are migration artefacts); pass exclude_zero=false to include them.')
       }
-      if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
-      if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+      await appendDayRange(params, 'created_at', input.start_date, input.end_date, companyId)
 
       const got = await fetchRows(sb('invoices'), params, hdr)
       if ('error' in got) return { error: `invoices query failed: ${got.error}` }
@@ -1532,8 +1531,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         const bu = String(input.business_unit).replace(/[*,()]/g, '').trim()
         if (bu) params.append('business_unit', `ilike.*${bu}*`)
       }
-      if (input.start_date) params.append('start_date', `gte.${input.start_date}`)
-      if (input.end_date) params.append('start_date', `lte.${input.end_date}`)
+      await appendDayRange(params, 'start_date', input.start_date, input.end_date, companyId)
       const got = await fetchRows(sb('jobs'), params, hdr)
       if ('error' in got) return { error: `jobs query failed: ${got.error}` }
       // A place or "still to do" question wants counts and dollars, so it is
@@ -1606,8 +1604,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         const t = String(input.search).replace(/[*,()]/g, '').trim()
         if (t) params.append('or', `(customer_name.ilike.*${t}*,business_name.ilike.*${t}*,address.ilike.*${t}*)`)
       }
-      if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
-      if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+      await appendDayRange(params, 'created_at', input.start_date, input.end_date, companyId)
       const grouping = input.group_by && input.group_by !== 'none'
       // A list they can work from: who, how to reach them, where it stands —
       // all of them (up to 200), not a 30-row sample.
@@ -1762,8 +1759,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       const params = new URLSearchParams({ company_id: `eq.${companyId}` })
       if (input.status) params.append('status', `eq.${input.status}`)
       if (input.salesperson_id) params.append('salesperson_id', `eq.${input.salesperson_id}`)
-      if (input.start_date) params.append('created_at', `gte.${input.start_date}`)
-      if (input.end_date) params.append('created_at', `lte.${input.end_date}`)
+      await appendDayRange(params, 'created_at', input.start_date, input.end_date, companyId)
       const got = await fetchRows(sb('quotes'), params, hdr)
       if ('error' in got) return { error: `quotes query failed: ${got.error}` }
       return aggregate(got, input.group_by, ['quote_amount', 'job_total'])
@@ -1777,8 +1773,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       if (input.category) params.append('category', `eq.${input.category}`)
       if (input.vendor) params.append('vendor', `ilike.*${input.vendor}*`)
       if (input.job_id) params.append('job_id', `eq.${input.job_id}`)
-      if (input.start_date) params.append('date', `gte.${input.start_date}`)
-      if (input.end_date) params.append('date', `lte.${input.end_date}`)
+      await appendDayRange(params, 'date', input.start_date, input.end_date, companyId)
       const got = await fetchRows(sb('expenses'), params, hdr)
       if ('error' in got) return { error: `expenses query failed: ${got.error}` }
       return {
@@ -1800,8 +1795,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       }
       if (input.status) params.append('status', `eq.${input.status}`)
       if (input.appointment_type) params.append('appointment_type', `eq.${input.appointment_type}`)
-      if (input.start_date) params.append('start_time', `gte.${input.start_date}`)
-      if (input.end_date) params.append('start_time', `lte.${input.end_date}`)
+      await appendDayRange(params, 'start_time', input.start_date, input.end_date, companyId)
       const got = await fetchRows(sb('appointments'), params, hdr)
       if ('error' in got) return { error: `appointments query failed: ${got.error}` }
       return aggregate(got, input.group_by, ['duration_minutes'])
@@ -1816,8 +1810,7 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         params.append('employee_id', `eq.${input.employee_id}`)
       }
       if (input.open_only) params.append('clock_out', 'is.null')
-      if (input.start_date) params.append('clock_in', `gte.${input.start_date}`)
-      if (input.end_date) params.append('clock_in', `lte.${input.end_date}`)
+      await appendDayRange(params, 'clock_in', input.start_date, input.end_date, companyId)
       const got = await fetchRows(sb('time_clock'), params, hdr)
       if ('error' in got) return { error: `time_clock query failed: ${got.error}` }
       const open = got.rows.filter((t: any) => !t.clock_out)
@@ -2602,6 +2595,36 @@ async function companyRulesBlock(companyId: number, canTeach: boolean): Promise<
     }
     return rulesPromptBlock(await activeRules(r, companyId), canTeach, waiting)
   } catch { return '' }
+}
+
+// DATES AGAINST TIMESTAMPS. Every date these lookups filter on — a job's
+// start, a lead's or invoice's created_at, an expense date, an appointment, a
+// clock-in — is a timestamp. "lte.2026-10-21" meant before midnight UTC at the
+// START of the 21st, so the last day of every range was dropped: Christopher
+// was told "no HHH jobs today" with seven on the board (live test,
+// 2026-10-21). One rule for all of them: a plain day is the company's local
+// day, from its first moment to its last.
+const tzOf = new Map<number, string>()
+async function companyTz(companyId: number): Promise<string> {
+  if (tzOf.has(companyId)) return tzOf.get(companyId)!
+  const rows = await fetch(`${SUPABASE_URL}/rest/v1/companies?select=timezone&id=eq.${companyId}&limit=1`,
+    { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` } })
+    .then((x) => x.ok ? x.json() : []).catch(() => [])
+  const tz = String(rows?.[0]?.timezone || 'America/Denver')
+  tzOf.set(companyId, tz)
+  return tz
+}
+async function appendDayRange(params: URLSearchParams, column: string, start: unknown, end: unknown, companyId: number) {
+  if (!start && !end) return
+  const isDay = (d: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(d ?? ''))
+  const tz = isDay(start) || isDay(end) ? await companyTz(companyId) : 'UTC'
+  if (start) params.append(column, `gte.${isDay(start) ? dayStartUtc(String(start), tz).toISOString() : start}`)
+  if (end) {
+    if (isDay(end)) {
+      const next = new Date(Date.parse(`${end}T12:00:00Z`) + 86400000).toISOString().slice(0, 10)
+      params.append(column, `lt.${dayStartUtc(next, tz).toISOString()}`)
+    } else params.append(column, `lte.${end}`)
+  }
 }
 
 async function memoriesBlock(companyId: number, employeeId: number): Promise<string> {
