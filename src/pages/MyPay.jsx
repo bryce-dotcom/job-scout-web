@@ -151,6 +151,7 @@ export default function MyPay() {
   const companyId = useStore((state) => state.companyId)
   const user = useStore((state) => state.user)
 
+  const [myPayNotice, setMyPayNotice] = useState(null)
   const [payrollConfig, setPayrollConfig] = useState({
     pay_frequency: 'bi-weekly',
     pay_day_1: '20',
@@ -326,6 +327,14 @@ export default function MyPay() {
           .eq('company_id', companyId)
           .eq('key', 'payroll_config')
           .maybeSingle()
+        // A notice the office can put at the top of everyone's My Pay
+        // (settings key my_pay_notice: { text, until }). Bryce, 2026-10-21:
+        // "alert the team that My Pay is going to be off until we are done."
+        try {
+          const { data: noticeRow } = await supabase.from('settings').select('value').eq('company_id', companyId).eq('key', 'my_pay_notice').maybeSingle()
+          const n = noticeRow?.value ? JSON.parse(noticeRow.value) : null
+          setMyPayNotice(n && n.text && (!n.until || n.until >= localDateStr(new Date())) ? n : null)
+        } catch { setMyPayNotice(null) }
         let cfg = payrollConfig
         if (cfgRow?.value) {
           try {
@@ -813,6 +822,12 @@ export default function MyPay() {
         </div>
       )}
 
+      {myPayNotice && (
+        <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.45)', color: theme.text, fontSize: '14px', lineHeight: 1.45, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <AlertCircle size={18} style={{ color: '#a16207', flexShrink: 0, marginTop: 1 }} />
+          <div>{myPayNotice.text}</div>
+        </div>
+      )}
       <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: theme.text, margin: 0 }}>
