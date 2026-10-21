@@ -30,6 +30,13 @@ describe('prompt caching', () => {
     expect(cachedSystem('RULES', '', 5)).toHaveLength(1)        // nothing after the rules: one block
     expect(cachedSystem('RULES', '', undefined)).toHaveLength(1)
   })
+  it('the last lookup round must answer, and a reply is never blank (live test, 2026-10-21)', () => {
+    const s = chat.slice(chat.indexOf('async function streamWithTools'))
+    expect(s).toMatch(/const lastLookup = \(round: number\) => !used\.has\('use_my_computer'\) && round === 4/)
+    expect(s).toMatch(/if \(!shownAny\) send\('text', \{ delta: setup\.tangled \}\)\n\s+send\('done', \{\}\)/)
+    expect(chat).toMatch(/i === 4 && !used\.has\('use_my_computer'\) \? \{ tool_choice: \{ type: 'none' \} \}/)
+    expect(chat).toMatch(/never fill it in\.'/)
+  })
   it('the prompt builder records where its rules end, and both paths use it', () => {
     const sp = readFileSync(new URL('../../supabase/functions/_shared/arnieServerPrompt.ts', import.meta.url), 'utf8')
     expect(sp).toMatch(/rulesEnd\.set\(caller, rules\.length\)\r?\n\s+return rules \+/)

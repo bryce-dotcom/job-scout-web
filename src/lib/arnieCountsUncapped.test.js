@@ -120,6 +120,18 @@ describe('job counts and dollars come totalled from the tool', () => {
   })
 })
 
+describe('"which open job is biggest" sees real jobs (2026-10-21)', () => {
+  const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  it('an explicit group_by none is honoured, not turned back into status', () => {
+    expect(chat).toMatch(/const groupBy = input\.group_by \? input\.group_by : \(filtered \? 'status' : undefined\)/)
+    expect(chat).not.toMatch(/input\.group_by && input\.group_by !== 'none' \? input\.group_by : \(filtered/)
+  })
+  it('a filtered answer carries the five biggest by name, and a missing number stays missing', () => {
+    expect(chat).toMatch(/out\.biggest = byTotal\.slice\(0, 5\)\.map\(\(j: any\) => \(\{ job_title: j\.job_title, customer_name: j\.customer_name, job_number: j\.job_id \|\| null/)
+    expect(chat).toMatch(/job_number null means the job has no number — never make one up/)
+  })
+})
+
 describe('a promise to act on their computer is kept, once', () => {
   const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
   const re = new Function(`return ${chat.match(/const PROMISE_TO_ACT = (\/.*\/i)\n/)[1]}`)()

@@ -205,7 +205,7 @@ const TOOLS = [
         open_only: { type: 'boolean', description: 'true = only jobs still to do (the company\'s OPEN statuses — not delivered or closed). Use it for "still to install", "in the pipeline", "not done yet". Answer revenue questions from job_total with group_by status. The result is ONLY the open ones: call them the open jobs, never "all" of them, and say nothing about how many are done unless you also ran it without open_only.' },
         start_date: { type: 'string', description: 'ISO date — only jobs scheduled on/after this date' },
         end_date: { type: 'string', description: 'ISO date — only jobs scheduled on/before this date' },
-        group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'] },
+        group_by: { type: 'string', enum: ['status', 'month', 'employee', 'customer', 'none'], description: 'none = the jobs themselves (with open_only/state: biggest first). A filtered answer also carries "biggest" — the five largest jobs by name.' },
       },
     },
   },
@@ -1513,12 +1513,18 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       // grouped and TOTALLED here. Ungrouped, the model added up a 30-row
       // sample itself and told London $91,917 for what is $80,060.28.
       const filtered = !!(input.state || input.open_only || input.address_contains)
-      const groupBy = input.group_by && input.group_by !== 'none' ? input.group_by : (filtered ? 'status' : input.group_by)
-      const out: any = aggregate(got, groupBy, ['job_total', 'expense_amount', 'profit_margin'])
-      if (groupBy && groupBy !== 'none') {
+      // An explicit 'none' is honoured: it used to be overridden to 'status',
+      // so "which open job is biggest" could never see a single job and the
+      // model named the wrong one with an invented JOB- number (2026-10-21).
+      const groupBy = input.group_by ? input.group_by : (filtered ? 'status' : undefined)
+      const byTotal = [...got.rows].sort((a: any, b: any) => (parseFloat(b.job_total) || 0) - (parseFloat(a.job_total) || 0))
+      const out: any = aggregate(groupBy && groupBy !== 'none' ? got : { ...got, rows: filtered ? byTotal : got.rows }, groupBy, ['job_total', 'expense_amount', 'profit_margin'])
+      if (filtered || (groupBy && groupBy !== 'none')) {
         out.total_jobs = got.total
         out.total_job_total = Math.round(got.rows.reduce((s: number, j: any) => s + (parseFloat(j.job_total) || 0), 0) * 100) / 100
         out.use_these = 'total_jobs and total_job_total are the answer — quote them; do not add up the groups yourself.'
+        out.biggest = byTotal.slice(0, 5).map((j: any) => ({ job_title: j.job_title, customer_name: j.customer_name, job_number: j.job_id || null, job_total: j.job_total, status: j.status }))
+        out.how_to_name = 'Name a job by job_title (and customer). job_number null means the job has no number — never make one up.'
       }
       return out
     }
@@ -2239,6 +2245,11 @@ Deno.serve(async (req) => {
  */
 const LAST_STEP_NOTE = '\n\n## You are out of steps for this reply\nYou have used every action you get in one reply, so you cannot act again now. In two or three plain sentences: say exactly where you got to — only what you actually SAW in a screenshot — and what is still left to do, and that they can say "keep going" for you to carry on. Never say the job is done unless a screenshot showed it done.'
 
+// The same for lookups. Five rounds of query_jobs and no words: in short-answer
+// mode every lookup round's narration is dropped, so the reply came back BLANK
+// (live test, 2026-10-21). The fifth round may not look again; it answers.
+const LAST_LOOKUP_NOTE = '\n\n## Last lookup for this reply\nYou cannot call another tool now. Answer from what the tools already returned. If something they asked is still not in those results, say exactly what is missing — never fill it in.'
+
 /** Is this message asking for work on their computer? Broad on purpose: a
  *  false yes costs a second of streaming, a false no shows an invented step. */
 /** "Let me do it now:", "I'll take a screenshot now" — a promise to act, at the END of a reply. */
@@ -2910,8 +2921,8 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         model: setup.model,
         max_tokens: setup.maxTokens,
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-        system: cachedSystem(systemPrompt || '', '', rulesEnd.get(caller as unknown as object)),
-        ...(includeTools ? { tools: cachedTools(setup.tools) } : {}),
+        system: cachedSystem(systemPrompt || '', i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : '', rulesEnd.get(caller as unknown as object)),
+        ...(includeTools ? { tools: cachedTools(setup.tools), ...(i === 4 && !used.has('use_my_computer') ? { tool_choice: { type: 'none' } } : {}) } : {}),
         messages: cachedMessages(convo),
       },
     )
@@ -2990,6 +3001,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           && COMPUTER_ASK.test(lastUserText(messages))
         let shownAny = false
         const outOfSteps = (round: number) => used.has('use_my_computer') && round === 11
+        const lastLookup = (round: number) => !used.has('use_my_computer') && round === 4
         // SHORT ANSWERS by default (Bryce, 2026-10-20: "most people just want
         // her to haul ass"). In brief mode every round is held, and a round
         // that only looks something up has its "Let me check…" dropped rather
@@ -3022,10 +3034,10 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // used to end mid-sentence — "Let me try clicking in the search
               // box…" — and nothing more, with the job half done (Bryce's
               // Gmail, 2026-10-15). The last round may not act; it reports.
-              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : '', rulesEnd.get(caller as unknown as object)),
+              system: cachedSystem(systemPrompt || '', outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : '', rulesEnd.get(caller as unknown as object)),
               // Newer models refuse a forced tool_choice (400); there the
               // correction message itself is the instruction to call it.
-              ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
+              ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) || lastLookup(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
               messages: cachedMessages(convo),
               stream: true,
@@ -3216,6 +3228,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
           }
           convo.push({ role: 'user', content: toolResults })
         }
+        // Never a blank reply: if every round was held and dropped, say so.
+        if (!shownAny) send('text', { delta: setup.tangled })
         send('done', {})
         controller.close()
       } catch (e: any) {
