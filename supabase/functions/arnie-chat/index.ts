@@ -1402,6 +1402,26 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       for (const r of got.rows) r.overdue = isInvoiceOverdue(r, asOf)
       const overdue = got.rows.filter((r: any) => r.overdue)
 
+      // THE NAMES, FROM THE DATABASE. Rows carried only customer_id, so Tracy's
+      // "names on the overdue report" (2026-10-19) was answered with invented
+      // ones — Leilani Silva, Donna Charbonneau — with invented job numbers and
+      // an invoice that does not exist. Every row now carries its customer's
+      // real name and its job's number and title, looked up here, so there is
+      // nothing left to fill in.
+      const custIds = [...new Set(got.rows.map((r: any) => r.customer_id).filter(Boolean))]
+      const jobIds = [...new Set(got.rows.map((r: any) => r.job_id).filter(Boolean))]
+      const [custs, jobs] = await Promise.all([
+        custIds.length ? fetchRows(sb('customers'), new URLSearchParams({ select: 'id,name,business_name', company_id: `eq.${companyId}`, id: `in.(${custIds.slice(0, 1000).join(',')})` }), hdr, 1000) : Promise.resolve({ rows: [] as any[], total: 0, truncated: false }),
+        jobIds.length ? fetchRows(sb('jobs'), new URLSearchParams({ select: 'id,job_id,job_title,customer_name', company_id: `eq.${companyId}`, id: `in.(${jobIds.slice(0, 1000).join(',')})` }), hdr, 1000) : Promise.resolve({ rows: [] as any[], total: 0, truncated: false }),
+      ])
+      const custBy = new Map(('error' in custs ? [] : custs.rows).map((c: any) => [c.id, c]))
+      const jobBy = new Map(('error' in jobs ? [] : jobs.rows).map((j: any) => [j.id, j]))
+      for (const r of got.rows) {
+        const c: any = custBy.get(r.customer_id), j: any = jobBy.get(r.job_id)
+        r.customer_name = c ? (c.business_name && c.name && c.business_name !== c.name ? `${c.business_name} (${c.name})` : (c.business_name || c.name)) : (j?.customer_name || null)
+        r.job = j ? [j.job_id, j.job_title].filter(Boolean).join(' — ') : null
+      }
+
       // What is OWED on the overdue rows, not what they were invoiced for.
       // Admitting part-paid invoices to the overdue set is the point of the
       // filter above, and summing their `amount` would hand back money
@@ -1443,6 +1463,16 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       // Every claim about a specific invoice must be checkable by the user,
       // so hand back the invoice numbers rather than only totals.
       agg.invoice_numbers = got.rows.slice(0, 40).map((r: any) => r.invoice_id).filter(Boolean)
+      // The collections list, ready to read out or email: number, who, job,
+      // due, what is still owed — biggest first. Names come from the lookup
+      // above; one with no customer on file says so.
+      if (overdue.length) {
+        agg.overdue_list = [...overdue]
+          .sort((a: any, b: any) => (parseFloat(b.balance) || 0) - (parseFloat(a.balance) || 0))
+          .slice(0, 60)
+          .map((r: any) => ({ invoice: r.invoice_id, customer: r.customer_name || 'no customer on file', job: r.job, due: r.due_date, owed: r.balance }))
+        notes.push('overdue_list carries each invoice\'s real customer and job from the database. Use those words exactly; an invoice that says "no customer on file" has none — never put a name to it.')
+      }
       if (got.truncated) {
         notes.push(`overdue_count and overdue_total_owed cover only the ${got.rows.length} of ${got.total} matching rows that could be read.`)
       }

@@ -204,3 +204,18 @@ describe('the aggregate cannot be read as an overdue total by accident', () => {
     expect(desc[1]).toContain('STILL OWED')
   })
 })
+
+describe('the overdue report carries real names (Tracy, 2026-10-19)', () => {
+  const src = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
+  const branch = src.slice(src.indexOf("    if (name === 'query_invoices') {"), src.indexOf("    if (name === 'query_jobs'"))
+  it('every invoice row is given its customer and job from the database', () => {
+    expect(branch).toMatch(/fetchRows\(sb\('customers'\), new URLSearchParams\(\{ select: 'id,name,business_name', company_id: `eq\.\$\{companyId\}`/)
+    expect(branch).toMatch(/fetchRows\(sb\('jobs'\), new URLSearchParams\(\{ select: 'id,job_id,job_title,customer_name', company_id: `eq\.\$\{companyId\}`/)
+    expect(branch).toMatch(/r\.customer_name = c \?/)
+  })
+  it('the collections list is ready-made, biggest first, and a missing name stays missing', () => {
+    expect(branch).toMatch(/agg\.overdue_list = \[\.\.\.overdue\]/)
+    expect(branch).toMatch(/customer: r\.customer_name \|\| 'no customer on file'/)
+    expect(branch).toMatch(/never put a name to it/)
+  })
+})
