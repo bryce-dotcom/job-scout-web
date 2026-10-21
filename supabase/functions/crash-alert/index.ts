@@ -16,6 +16,7 @@
 // reopens it and clears alerted_at — being wrong about a fix is worth knowing.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { isCronCaller } from "../_shared/cronAuth.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -29,6 +30,11 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
+    // verify_jwt is false here (pinned), so the gateway lets anyone in; only
+    // the scheduler's Vault key or a verified service caller may run it.
+    if (!(await isCronCaller(req, { url: Deno.env.get("SUPABASE_URL")!, key: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! }))) {
+      return new Response(JSON.stringify({ error: "Not for callers." }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

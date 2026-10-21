@@ -25,6 +25,7 @@
 //   {company_id}                      → live run for one company (if enabled)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callerForCompany } from '../_shared/cronAuth.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -84,6 +85,14 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const preview = !!body.preview;
+
+    // Who is asking. The scheduler (Vault key) or a server may run every
+    // company; a person runs their own, as a Manager or above. Before this
+    // any JWT the gateway accepted — the anon key is one — ran collections
+    // for every tenant.
+    const gate = await callerForCompany(req, { url: SUPABASE_URL, key: KEY }, body.cron ? null : Number(body.company_id) || null);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
+    if (body.cron && gate.via !== 'cron') return json({ error: 'Not for callers.' }, 403);
 
     // Resolve which companies to process
     let companyIds: number[] = [];

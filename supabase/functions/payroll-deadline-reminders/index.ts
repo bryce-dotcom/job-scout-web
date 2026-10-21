@@ -18,6 +18,7 @@
 // { company_id } to run for one company, { dry_run: true, days: 30 } to preview a wider window.
 // =====================================================================
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callerForCompany } from '../_shared/cronAuth.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
@@ -56,6 +57,11 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const only = body.company_id ? Number(body.company_id) : null;
     const dryRun = body.dry_run === true;
+
+    // Every company at once is the scheduler's job; one company is its own Manager's.
+    const gate = await callerForCompany(req, { url: SUPABASE_URL, key: SERVICE_ROLE_KEY }, only);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
+    if (!only && gate.via !== 'cron') return json({ error: 'Name a company_id, or let the scheduler run everyone.' }, 403);
     const today = todayIso();
     const horizon = addDays(today, Math.min(60, Math.max(0, Number(body.days) || 3)));   // days: widen for a preview
 

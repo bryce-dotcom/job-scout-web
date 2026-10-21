@@ -13,6 +13,7 @@
 //   - Cron body {cron:true} loops enabled companies only.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callerForCompany } from '../_shared/cronAuth.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { invoiceCustomerTotal } from "../_shared/money.ts";
 
@@ -33,6 +34,11 @@ serve(async (req) => {
     const supabase = createClient(SUPABASE_URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } });
     const body = await req.json().catch(() => ({}));
     const preview = !!body.preview;
+
+    // The scheduler or a server runs everyone; a person runs their own company (Manager+).
+    const gate = await callerForCompany(req, { url: SUPABASE_URL, key: KEY }, body.cron ? null : Number(body.company_id) || null);
+    if (!gate.ok) return json({ error: gate.error }, gate.status);
+    if (body.cron && gate.via !== 'cron') return json({ error: 'Not for callers.' }, 403);
 
     let companyIds: number[] = [];
     if (body.cron) {

@@ -24,6 +24,7 @@
 // email, throttled so a week-long outage does not send seven identical mails.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callerForCompany } from '../_shared/cronAuth.ts';
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -251,6 +252,10 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const companyId = Number(body.company_id) || 3;
     const dryRun = body.dry_run === true;
+
+    // The scheduler (Vault key), a server, or a Manager+ of that company.
+    const gate = await callerForCompany(req, { url: Deno.env.get('SUPABASE_URL')!, key: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! }, companyId);
+    if (!gate.ok) return new Response(JSON.stringify({ error: gate.error }), { status: gate.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const results: Array<Record<string, unknown>> = [];
     const stale: Array<Record<string, unknown>> = [];
