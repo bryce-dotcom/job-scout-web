@@ -351,14 +351,20 @@ describe('a commission earned last month is not deleted for being out of view', 
   })
 
   it('still deletes a row whose invoice IS loaded and no longer earns it', async () => {
-    // invoice 1 is in view and produces nothing for employee 9 (no jobs, no
-    // ownership), so this row really has been undone — that is the case the
-    // reconcile exists for.
-    const { client, deleted } = clientWith([earned({ invoice_id: 1 })])
-    const out = await syncRepCommissions(client, 3, liveData())
+    // The job is loaded and now belongs to someone else, so the row really
+    // has been undone. It used to prove this with NO jobs and NO employees
+    // loaded, calling that "no ownership" — it is not, it is not knowing,
+    // and that equivalence deleted Noah Free's and Damien Hargett's
+    // commissions on 20-21 Oct.
+    const { client, deleted } = clientWith([earned({ invoice_id: 1, job_id: 1, employee_id: 9 })])
+    const out = await syncRepCommissions(client, 3, liveData({
+      employees: [{ id: 9, company_id: 3, is_commission: true, commission_services_rate: 8.5, commission_services_type: 'percent' }],
+      jobs: [{ id: 1, salesperson_id: 404, job_total: 100 }],
+    }))
     expect(deleted).toContain(900)
     expect(out.deleted).toBe(1)
   })
+
 
   it('never deletes a row that has been paid, in view or not', async () => {
     const { client, deleted } = clientWith([earned({ invoice_id: 1, payment_status: 'paid' })])
@@ -513,7 +519,9 @@ describe('a hand-made commission is not the engine to delete', () => {
 
   // employee 999 no longer owns the job, so the engine does not expect
   // this row: in view, not expected — the exact shape the sweep removes.
-  const manual = { id: 77, employee_id: 999, invoice_id: 100, payment_id: null, utility_invoice_id: null, kind: 'services', payment_status: 'earned', source: 'manual' }
+  // job 1 is loaded and owned by someone else, so the engine does not expect
+  // this row: in view, judgeable, not expected — the shape the sweep removes.
+  const manual = { id: 77, employee_id: 5, job_id: 1, invoice_id: 100, payment_id: null, utility_invoice_id: null, kind: 'services', payment_status: 'earned', source: 'manual' }
 
   it('leaves it alone even though nothing earns it', async () => {
     expect(await deletedIdsFrom([manual])).not.toContain(77)

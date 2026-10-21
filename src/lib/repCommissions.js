@@ -264,8 +264,31 @@ export async function syncRepCommissions(supabase, companyId, data, onlyEmployee
     // The sweep exists to clear what the ENGINE minted and no longer earns.
     // A person who typed a number in has made a decision, and a recompute does
     // not get to overrule it. Only a person removes it.
-    const stale = (existing || []).filter(r =>
-      r.payment_status !== 'paid' && r.source !== 'manual' && inView(r) && !expectedKeys.has(keyOf(r)))
+    // AND SEEING THE MONEY IS NOT ENOUGH — WE MUST SEE WHAT RECREATES THE ROW.
+    //
+    // A commission is produced from a job and an employee. This sweep only
+    // asked whether the row's MONEY (invoice, payment or utility invoice) was
+    // loaded; it never asked whether the JOB was. The rep ledger loads last on
+    // Payroll, so a sync can run while `jobs` is still short: computeRepRows
+    // finds no job, emits nothing, and every utility commission whose utility
+    // invoice happened to be in hand reads as "no longer earned".
+    //
+    // It took Noah Free's Dubois commission on 20 Oct while his ticket about
+    // never being paid for it was open, and Damien Hargett's Halverson rows on
+    // 21 Oct — $1,294.22 — minutes after they were corrected. Both men had
+    // phoned in to say the job had stopped showing.
+    //
+    // So: judge a row only when its job AND its employee are both in hand, and
+    // never delete anything at all from an empty load. A job genuinely
+    // reassigned to another rep still drops the old row, because then the job
+    // IS loaded and simply no longer produces it.
+    const loadedJobIds = new Set((data?.jobs || []).map(j => j.id).filter(v => v != null))
+    const loadedEmployeeIds = new Set((data?.employees || []).map(e => e.id).filter(v => v != null))
+    const canJudge = (r) => loadedJobIds.has(r.job_id) && loadedEmployeeIds.has(r.employee_id)
+    const haveInputs = loadedJobIds.size > 0 && loadedEmployeeIds.size > 0
+
+    const stale = !haveInputs ? [] : (existing || []).filter(r =>
+      r.payment_status !== 'paid' && r.source !== 'manual' && canJudge(r) && inView(r) && !expectedKeys.has(keyOf(r)))
 
     // The duplicates already in the ledger. This one needs no window: a
     // synthetic row whose invoice ALSO carries a payment-backed row is the
