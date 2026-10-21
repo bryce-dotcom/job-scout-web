@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { syncJobBonuses, bonusStatusLabel, heldReasonLabel, FROZEN_STATUSES, isFrozen } from './bonusLedger'
+import { syncJobBonuses, bonusStatusLabel, heldReasonLabel, FROZEN_STATUSES, isFrozen, isPayableNow, payableBonusTotal } from './bonusLedger'
 
 // ─────────────────────────────────────────────────────────────────────────
 // The ledger is what actually gets paid — bonusCalc only computes. Its whole
@@ -574,6 +574,75 @@ describe('the nightly cron freezes the same statuses', () => {
     expect(skip, 'the frozen-status skip in the cron').toBeTruthy()
     for (const status of FROZEN_STATUSES) {
       expect(skip[1], `cron must freeze '${status}'`).toContain(`'${status}'`)
+    }
+  })
+})
+
+describe('My Pay and Payroll quote the same bonus', () => {
+  // London Miller, 9 Oct 2026: "My Pay page is not calculating correctly
+  // again." Payroll's gross counted staged, unheld bonuses; My Pay's gross
+  // added up EVERY accrued one — months of backlog, held rows included. His
+  // screen read $9,102.03 of bonus against $955.67 actually coming, and the
+  // green take-home figure was computed off the inflated number.
+  //
+  // $4,253.83 of what it promised him is held `allotted_over_actual` on jobs
+  // he clocked 2.98 hours against, and another slice is Intercon — whose
+  // scope is duplicated across three jobs and will not pay as it stands.
+  const row = (over) => ({ status: 'accrued', queued_for_payroll: true, needs_verification: false, amount: 100, ...over })
+
+  it('counts a staged, unheld bonus', () => {
+    expect(isPayableNow(row())).toBe(true)
+    expect(payableBonusTotal([row(), row({ amount: 55 })])).toBeCloseTo(155, 2)
+  })
+
+  it('does not count one nobody has staged', () => {
+    expect(isPayableNow(row({ queued_for_payroll: false }))).toBe(false)
+  })
+
+  it('does not count one that is held', () => {
+    // The whole point of a hold. This is the $4,253.83.
+    expect(isPayableNow(row({ needs_verification: true }))).toBe(false)
+  })
+
+  it('does not count one still waiting on the customer', () => {
+    expect(isPayableNow(row({ status: 'pending' }))).toBe(false)
+  })
+
+  it('does not count one already paid, or voided', () => {
+    expect(isPayableNow(row({ status: 'paid' }))).toBe(false)
+    expect(isPayableNow(row({ status: 'void' }))).toBe(false)
+  })
+
+  it('survives junk', () => {
+    expect(isPayableNow(null)).toBe(false)
+    expect(payableBonusTotal(null)).toBe(0)
+    expect(payableBonusTotal([row({ amount: 'x' })])).toBe(0)
+  })
+
+  it('is London on 9 Oct, to the cent', () => {
+    // 19 accrued rows: $955.67 staged and clear, $6,585.36 held, the rest
+    // owed but never staged. Gross should quote the first number only.
+    const ledger = [
+      row({ amount: 955.67 }),
+      row({ amount: 4253.83, needs_verification: true }),
+      row({ amount: 2131.22, needs_verification: true }),
+      row({ amount: 196.74, needs_verification: true }),
+      row({ amount: 3.57, needs_verification: true }),
+      row({ amount: 1561.00, queued_for_payroll: false }),
+    ]
+    const accruedTotal = ledger.reduce((s, b) => s + b.amount, 0)
+    expect(payableBonusTotal(ledger)).toBeCloseTo(955.67, 2)
+    expect(accruedTotal - payableBonusTotal(ledger)).toBeCloseTo(8146.36, 2)
+  })
+
+  it('both pages call the shared rule, not their own filter', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    for (const page of ['MyPay.jsx', 'Payroll.jsx']) {
+      const src = readFileSync(resolve(here, '../pages/' + page), 'utf8')
+      expect(src, `${page} must import the shared rule`).toMatch(/payableBonusTotal|isPayableNow/)
+      // The hand-rolled version this replaced, in either argument order.
+      expect(src, `${page} still hand-rolls the payable test`)
+        .not.toMatch(/status === 'accrued' && !b\.needs_verification && b\.queued_for_payroll/)
     }
   })
 })

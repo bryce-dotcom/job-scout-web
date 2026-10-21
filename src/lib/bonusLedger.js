@@ -31,6 +31,32 @@ import { mergeJobHourSources } from './jobHours'
 export const FROZEN_STATUSES = new Set(['paid', 'void'])
 export const isFrozen = (row) => FROZEN_STATUSES.has(row?.status)
 
+/**
+ * Will this bonus be on the next cheque?
+ *
+ * Three things have to be true, and Run Payroll tests all three before it
+ * marks anything paid: the job's money is in (accrued), an admin has staged
+ * it (queued_for_payroll), and nothing is holding it (needs_verification).
+ *
+ * London Miller, 2026-10-09: "My Pay page is not calculating correctly
+ * again." Payroll's gross used this rule; My Pay's gross added up EVERY
+ * accrued bonus instead — months of backlog, held rows included. His screen
+ * read $9,102.03 of bonus against $955.67 actually coming, and the green
+ * take-home figure was calculated off the inflated number. $4,253.83 of
+ * what it promised him is held `allotted_over_actual` on jobs he clocked
+ * 2.98 hours against; another slice is Intercon, whose scope is duplicated
+ * across three jobs and will not pay in its present form.
+ *
+ * So the rule lives here now and both pages call it. A person reading their
+ * own pay and the office running payroll have to see the same number — that
+ * is the whole job of this page.
+ */
+export const isPayableNow = (row) =>
+  row?.status === 'accrued' && !!row?.queued_for_payroll && !row?.needs_verification
+
+export const payableBonusTotal = (rows = []) =>
+  (rows || []).filter(isPayableNow).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+
 // ── Reader ─────────────────────────────────────────────────────────────
 // All of one employee's bonus rows, newest first, with the job title joined.
 /**

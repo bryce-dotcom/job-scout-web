@@ -11,7 +11,7 @@ import {
   calculateInvoiceCommissions,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
-import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
+import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel, payableBonusTotal } from '../lib/bonusLedger'
 import { greaterOfPay, paysGreaterOf, greaterOfSummary } from '../lib/payBasis'
 import { paycheckDetail } from '../lib/payHistory'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
@@ -606,14 +606,25 @@ export default function MyPay() {
   // A voided bonus is not waiting on anybody — it is off the books.
   const needsVerCount = ledgerBonuses.filter(b => b.needs_verification && b.status !== 'paid' && b.status !== 'void').length
 
-  // Owed bonuses (money already collected) count toward gross pay, and so do
-  // setter commissions — leaving them out is what made this page disagree
-  // with Payroll for anyone who books appointments.
+  // Gross counts the bonus that is actually going to be PAID — staged into
+  // the run and not held — which is the same rule Payroll's gross uses
+  // (lib/bonusLedger isPayableNow). It used to add every accrued bonus,
+  // months of backlog and held rows included, so this page and Payroll
+  // quoted different numbers for the same person. London Miller, 9 Oct:
+  // $9,102.03 of bonus in his gross against $955.67 actually coming, with
+  // the green take-home figure calculated off the inflated one.
+  //
+  // What is owed but not on this run has its own line under the tile, and
+  // its own card further down. It has not gone anywhere — it is just not
+  // this cheque, and saying so is the difference between a tech reading
+  // their pay and a tech filing a ticket.
+  const payableBonus = payableBonusTotal(ledgerBonuses)
+  const owedNotOnThisRun = accruedBonusTotal - payableBonus
   // Salary or commission, whichever is more (lib/payBasis) — the one pay type
   // that does NOT add up. Without this the page promised both halves to the
   // two people on that arrangement.
   const myPayBasis = greaterOfPay({ salaryPay, commissionPay: commAvailable + setterComm.total, enabled: paysGreaterOf(me) })
-  const grossPay = hourlyPay + myPayBasis.salaryPaid + ptoPay + myPayBasis.commissionPaid + accruedBonusTotal
+  const grossPay = hourlyPay + myPayBasis.salaryPaid + ptoPay + myPayBasis.commissionPaid + payableBonus
 
   // ── Take-home, year to date, PTO bank ───────────────────────────────
   // Bryce, 2026-10-09: "do all 5" — the page headlined gross, and gross is
@@ -659,7 +670,10 @@ export default function MyPay() {
 
   // What's been STAGED into the next payroll run (an admin added it) — so the
   // tech sees what's actually coming next run vs what's owed but not yet added.
-  const queuedBonusTotal = accruedBonuses.filter(b => b.queued_for_payroll).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+  // Same rule as gross above: staged AND not held. Queued alone was not
+  // enough — a bonus staged while clear and re-flagged by a later ledger sync
+  // showed here and then paid nothing.
+  const queuedBonusTotal = payableBonus
   const queuedRepTotal = repCommissions.filter(r => r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= periodStartStr && (r.earned_at || '').slice(0, 10) <= periodEndStr).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
   const inNextPaycheck = queuedBonusTotal + queuedRepTotal
 
@@ -855,6 +869,11 @@ export default function MyPay() {
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross this period</div>
             <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, marginTop: '2px' }}>{fmt(grossPay)}</div>
             <div style={{ fontSize: '11px', color: theme.textMuted }}>before taxes</div>
+            {owedNotOnThisRun > 0.005 && (
+              <div style={{ fontSize: '11px', color: '#8b5cf6', marginTop: '2px', lineHeight: 1.35 }}>
+                {fmt(owedNotOnThisRun)} in bonuses owed, not on this run
+              </div>
+            )}
           </div>
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{is1099 ? 'You receive' : 'Take-home (est.)'}</div>

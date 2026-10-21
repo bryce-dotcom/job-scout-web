@@ -21,7 +21,7 @@ import {
   timeClockToJobHours,
   calculateInvoiceCommissions as sharedCalculateInvoiceCommissions,
 } from '../lib/bonusCalc'
-import { syncJobBonuses, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
+import { syncJobBonuses, bonusJobLabel, heldReasonLabel, isPayableNow, payableBonusTotal } from '../lib/bonusLedger'
 import { toast } from '../lib/toast'
 import { splitPendingRequests, daysOverdue } from '../lib/timeOffRequests'
 import { previewTypedHourImpact, mergeJobHourSources, splitTypedHours, newestTypedRowId, TYPED_HOURS_COUNTED_KEY } from '../lib/jobHours'
@@ -48,7 +48,7 @@ import { paycheckDetail, runsWithStubs } from '../lib/payHistory'
 import { needsAttention } from '../lib/openPunches'
 import { localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
-import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
+import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
 import { SignedImg } from '../lib/storageUrl'
 
 // Roll the per-employee tax breakdowns up into one row per tax-kind +
@@ -1823,9 +1823,10 @@ export default function Payroll() {
     // the old "bonus showed then vanished" drift.
     const efficiencyBonus = calculateEfficiencyBonus(employee.id)
     // Only bonuses ADDED to this payroll (queued + eligible) are paid by a run.
-    const bonusOwed = (bonusesByEmployee.get(employee.id) || [])
-      .filter(b => b.status === 'accrued' && !b.needs_verification && b.queued_for_payroll)
-      .reduce((s, b) => s + (parseFloat(b.amount) || 0), 0)
+    // ONE rule, shared with My Pay (lib/bonusLedger isPayableNow), because a
+    // tech reading their own pay and the office running it have to see the
+    // same number. They did not — My Pay added every accrued bonus instead.
+    const bonusOwed = payableBonusTotal(bonusesByEmployee.get(employee.id) || [])
 
     // PTO this period, from approved requests inside it. The employee card
     // dictates the rate: an hourly PTO day pays eight hours at hourly_rate;
@@ -2579,7 +2580,7 @@ export default function Payroll() {
           // the same one bonusOwed applies to the gross above. Without it, a
           // bonus queued while clear and re-flagged for review by a later
           // ledger sync was stamped paid with nothing on the paystub.
-          const bonusPaid = (b) => paidEmpIds.includes(b.employee_id) && b.status === 'accrued' && b.queued_for_payroll && !b.needs_verification
+          const bonusPaid = (b) => paidEmpIds.includes(b.employee_id) && isPayableNow(b)
           // paid_payroll_run_id is what makes "what have we paid on?"
           // answerable afterwards. Every other ledger below this stamps it;
           // bonuses alone did not, so a paid bonus recorded a date and a
