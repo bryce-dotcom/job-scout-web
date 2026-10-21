@@ -66,9 +66,11 @@ describe('the target registry', () => {
     // quotes, quote_lines, invoice_lines and products_services were added for
     // the description targets (2026-10-20) — their WORDING only: each writes
     // one text column, and arnieDescriptionTargets.test.js pins that no
-    // target reaches a price, quantity or total.
+    // target reaches a price, quantity or total. job_lines was added for
+    // job_line_note (2026-10-21, Alayda's part numbers) — its notes only.
     const tables = new Set(Object.values(RECORD_TARGETS).map(t => t.table))
-    expect([...tables].sort()).toEqual(['invoice_lines', 'job_sections', 'jobs', 'leads', 'products_services', 'quote_lines', 'quotes', 'time_clock'])
+    expect([...tables].sort()).toEqual(['invoice_lines', 'job_lines', 'job_sections', 'jobs', 'leads', 'products_services', 'quote_lines', 'quotes', 'time_clock'])
+    expect(RECORD_TARGETS.job_line_note.field).toBe('notes')
   })
 
   it('requires a manager for everything by default', () => {

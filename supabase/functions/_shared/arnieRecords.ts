@@ -27,7 +27,7 @@ import { applyLeadMerge, proposeLeadMerge, rollbackLeadMerge } from './arnieLead
 import { applySectionAssign, proposeSectionAssign, rollbackSectionAssign } from './arnieDispatch.ts'
 import {
   checkDescription, findEstimateLineRow, findEstimateSummaryRow, findInvoiceLineRow,
-  invoiceLineGuard, quoteLineOwner, quoteOwner,
+  invoiceLineGuard, pickLine, quoteLineOwner, quoteOwner,
 } from './arnieDescriptions.ts'
 
 export interface RecordTarget {
@@ -181,6 +181,47 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
     searchCols: ['name'], selectCols: 'id,name,description,unit_price', labelOf: (r) => r.name || `product #${r.id}`,
     checkValue: checkDescription,
   },
+  // "I need fixture part numbers in the notes on fast auto job" (Alayda,
+  // 2026-10-21). One job line's notes — words only, like the descriptions
+  // above; the job page's manager bar. The job is found as a job is, then
+  // the line by "line 2" or its words.
+  job_line_note: {
+    label: 'job line note', table: 'job_lines', field: 'notes', mode: 'set', minLevel: 2,
+    searchCols: [], selectCols: 'id,job_id,item_id,item_name,description,notes', labelOf: (r) => r._label || `job line #${r.id}`,
+    findRow: findJobLineRow, checkValue: checkDescription,
+  },
+}
+
+/** job_line_note: the job (as said, or record_id = the job), then one of its lines. */
+async function findJobLineRow(r: Rest, caller: Caller, input: { record_query?: string; record_id?: number; line?: string }) {
+  const companyId = caller.companyId as number
+  const job = await resolveEntity(r, companyId, RECORD_TARGETS.job_description, input.record_query || '', input.record_id)
+  if (!('row' in job)) return { ...job, message: 'More than one job matches. Ask which one, then call again with record_id.' }
+  const j = job.row
+  const lines = await readRecordList(r,
+    `job_lines?select=id,job_id,item_id,item_name,description,notes,quantity&company_id=eq.${companyId}&job_id=eq.${j.id}&order=id.asc&limit=500`)
+  // Most lines carry only item_id; the job page shows the price book name, and
+  // the part number is the price book's too — so the choice can show both.
+  const ids = [...new Set(lines.map((l: any) => l.item_id).filter(Boolean))]
+  const prods = ids.length
+    ? await readRecordList(r, `products_services?select=id,name,model_number&company_id=eq.${companyId}&id=in.(${ids.join(',')})`)
+    : []
+  const prod = new Map(prods.map((p: any) => [p.id, p]))
+  const named = lines.map((l: any) => ({ ...l, item_name: l.item_name || prod.get(l.item_id)?.name || null }))
+  const extra = (l: any) => {
+    const part = String(prod.get(l.item_id)?.model_number || '').trim()
+    return `${part ? ` — part #: ${part}` : ' — no part # in the price book'}${l.notes ? ` — notes now: "${String(l.notes).slice(0, 120)}"` : ''}`
+  }
+  const picked = pickLine(named, input.line)
+  if ('error' in picked) return picked
+  if ('candidates' in picked) {
+    return {
+      candidates: picked.candidates.map((c) => ({ id: c.id, label: c.label + extra(named[c.id - 1]) })),
+      message: `Several lines on that job could be meant. Read them out, ask which one, then call again with record_id=${j.id} and line set to its number.`,
+    }
+  }
+  const what = String(picked.line.item_name || picked.line.description || 'line').slice(0, 50)
+  return { row: { ...picked.line, _label: `${jobLabel(j)} — line ${picked.pos} (${what})` } }
 }
 
 export const isRecordTarget = (t: string): boolean => Object.hasOwn(RECORD_TARGETS, t)
