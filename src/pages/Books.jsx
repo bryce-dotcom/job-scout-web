@@ -58,7 +58,7 @@ import { toast } from '../lib/toast'
 import { isAdmin as checkAdmin } from '../lib/accessControl'
 import {
   isTransferCategory, resolveIsTransfer, transferFields, needsCategories, displayCategory, isAiCategoryGuess,
-  processorPayoutNote,
+  displayJobId, isAiJobGuess, processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
 // The Tax Category dropdown (IRS Form 1065 lines) lives in lib/taxCategories
@@ -1582,7 +1582,10 @@ export default function Books() {
     setTxnEditTaxCategory(txn.user_tax_category || txn.ai_tax_category || '')
     setTxnEditIsTransfer(!!txn.is_transfer)
     setTxnEditNotes(txn.notes || '')
-    setTxnEditJobId(txn.job_id || txn.ai_job_id || null)
+    // displayJobId, not `job_id || ai_job_id`: on a confirmed row an empty
+    // job is a person's answer, and the guess must not overwrite it on screen.
+    // lib transferRule owns this rule, the same way it owns displayCategory.
+    setTxnEditJobId(displayJobId(txn) ?? null)
     setTxnAllocJobSearch('')
     // Hydrate Plaid-side splits for this txn (if any).
     const existingPlaidSplits = splitsByPlaidTxn[txn.id] || []
@@ -1684,10 +1687,35 @@ export default function Books() {
       user_category: (plaidSplitsEnabled || isTransfer) ? null : category,
       user_tax_category: (plaidSplitsEnabled || isTransfer) ? null : taxCategory,
     }
-    if (txnEditNotes) updates.notes = txnEditNotes
-    // Set job_id to first allocation for backward compat
-    const firstJobId = txnJobAllocations.length > 0 ? txnJobAllocations[0].job_id : txnEditJobId
-    if (firstJobId) updates.job_id = firstJobId
+    // An emptied field has to be WRITTEN empty, or it cannot be emptied.
+    //
+    // These two were the only `if (value)` guards left in this save; the
+    // splits and the allocations below both already delete what is no longer
+    // there. The guard meant a cleared value was simply left out of the
+    // update, so the old one stayed in the database and came back on reload.
+    //
+    // Tracy, /books, 2026-10-22: "It is choosing the wrong job and won't let
+    // me take it off and save it." A $3,875.43 Central Valley deposit was
+    // matched to The Breakfast Club by the AI at 0.75 confidence, promoted to
+    // a real job_id on confirm, and from then on was unremovable — the same
+    // job was stuck on her 6/25 deposit for $16,299.20 too.
+    updates.notes = txnEditNotes || null
+    // job_id follows the Allocate to Jobs list, and ONLY that list, because
+    // that list is the only job control this editor has.
+    //
+    // It used to fall back to txnEditJobId when the list was empty.
+    // setTxnEditJobId is called in exactly one place — expandTransaction —
+    // so that state is a frozen copy of the job the row had when it opened,
+    // and nothing on screen can change it. Removing the last allocation
+    // therefore fell back to the job being removed and wrote it straight
+    // back. That is the whole of Tracy's "won't let me take it off and save
+    // it": the × worked, the save undid it.
+    //
+    // An unconfirmed row with only an AI guess has an empty list and now
+    // saves empty, which is what the screen shows. Accepting the guess is
+    // what the Accept button is for, and it still does that.
+    const firstJobId = txnJobAllocations[0]?.job_id ?? null
+    updates.job_id = firstJobId
 
     await supabase.from('plaid_transactions').update(updates).eq('id', txnId)
 
@@ -3145,8 +3173,8 @@ export default function Books() {
                 const isAI = isAiCategoryGuess(txn)
                 const amountNum = parseFloat(txn.amount) || 0
                 const isIncome = amountNum < 0
-                const jId = txn.job_id || txn.ai_job_id
-                const isAIJob = !txn.job_id && !!txn.ai_job_id
+                const jId = displayJobId(txn)
+                const isAIJob = isAiJobGuess(txn)
                 const matchedJob = jId ? (jobs || []).find(j => j.id === jId) : null
 
                 return (

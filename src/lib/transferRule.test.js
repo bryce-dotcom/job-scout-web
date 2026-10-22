@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   TRANSFER_CATEGORY, isTransferCategory, resolveIsTransfer, transferFields, needsCategories, displayCategory, isAiCategoryGuess,
-  processorPayoutNote,
+  displayJobId, isAiJobGuess, processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
 // Tracy's ticket, as tests. She picked "Transfer (between accounts)" from the
@@ -144,5 +144,43 @@ describe('isAiCategoryGuess: a transfer is never an unconfirmed guess', () => {
     expect(isAiCategoryGuess({ user_category: 'Fuel', ai_category: 'Service' })).toBe(false)
     expect(isAiCategoryGuess({})).toBe(false)
     expect(isAiCategoryGuess(null)).toBe(false)
+  })
+})
+
+// Tracy's second ticket, one field over. The $3,875.43 Central Valley deposit
+// the matcher put on The Breakfast Club at 0.75 confidence: she took the job
+// off, saved, and it came straight back.
+describe('displayJobId: once a person has answered, the guess stops answering', () => {
+  it('shows the job a person chose', () => {
+    expect(displayJobId({ job_id: 21043, ai_job_id: 999, confirmed: true })).toBe(21043)
+  })
+
+  it('offers the guess while nobody has decided', () => {
+    expect(displayJobId({ job_id: null, ai_job_id: 21043, confirmed: false })).toBe(21043)
+    expect(displayJobId({ job_id: null, ai_job_id: 21043 })).toBe(21043)
+  })
+
+  it('an emptied job on a confirmed row stays empty — this is the bug', () => {
+    expect(displayJobId({ job_id: null, ai_job_id: 21043, confirmed: true })).toBe(null)
+  })
+
+  it('has nothing to show when there is nothing', () => {
+    expect(displayJobId({})).toBe(null)
+    expect(displayJobId(null)).toBe(null)
+  })
+})
+
+describe('isAiJobGuess: style the guess as a guess', () => {
+  it('a job with no human answer behind it is a guess', () => {
+    expect(isAiJobGuess({ job_id: null, ai_job_id: 21043, confirmed: false })).toBe(true)
+  })
+
+  it('a chosen job is not a guess', () => {
+    expect(isAiJobGuess({ job_id: 21043, ai_job_id: 21043, confirmed: true })).toBe(false)
+  })
+
+  it('a confirmed row with no job shows nothing to style', () => {
+    expect(isAiJobGuess({ job_id: null, ai_job_id: 21043, confirmed: true })).toBe(false)
+    expect(isAiJobGuess(null)).toBe(false)
   })
 })

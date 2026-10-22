@@ -96,6 +96,43 @@ export function isAiCategoryGuess(
 }
 
 /**
+ * Which job a bank transaction shows — the same rule as displayCategory, for
+ * the other field that carries a guess and an answer in two columns.
+ *
+ * job_id is what a person chose. ai_job_id is what the matcher thought. While
+ * nobody has decided, the guess is a useful head start and shows. Once the row
+ * is confirmed, a person HAS decided, and an empty job_id is their answer:
+ * "not this one". Falling back to ai_job_id past that point overrides the
+ * answer with the guess it was given to replace.
+ *
+ * Tracy, /books, 2026-10-22: a $3,875.43 Central Valley deposit matched to The
+ * Breakfast Club at 0.75 confidence. The guess was promoted to job_id on
+ * confirm, and clearing it put the guess straight back on screen — so the row
+ * read as unchanged, and saving again re-attached the job she was removing.
+ * The same job sat on her $16,299.20 deposit from 6/25.
+ *
+ * This is f31332d3 again, one field over: the category dropdown snapped back
+ * to the AI's pick for exactly this reason, and she reported it in the same
+ * words — "it went back to what you very first chose".
+ */
+export function displayJobId(
+  txn: { job_id?: unknown; ai_job_id?: unknown; confirmed?: unknown } | null | undefined,
+): unknown {
+  if (txn?.job_id !== null && txn?.job_id !== undefined && txn?.job_id !== '') return txn.job_id
+  if (txn?.confirmed === true) return null
+  return txn?.ai_job_id ?? null
+}
+
+/** Is the job on screen only the matcher's guess — the one to style as such? */
+export function isAiJobGuess(
+  txn: { job_id?: unknown; ai_job_id?: unknown; confirmed?: unknown } | null | undefined,
+): boolean {
+  const shown = displayJobId(txn)
+  if (shown === null || shown === undefined) return false
+  return txn?.job_id === null || txn?.job_id === undefined || txn?.job_id === ''
+}
+
+/**
  * A transfer needs no category and no tax category — there is no true answer to
  * either. Everything else needs both, or the books have a hole in them.
  */
