@@ -5,7 +5,7 @@
 // world rather than "Room 2", because a team that says "I'm on the Ridge"
 // is a team that uses the thing.
 //
-// The main room always exists and is always The Campfire. Side rooms are made
+// The main room always exists and is always The Campfire. Huddles are made
 // on the spot and take the next unused name, so nobody has to invent one
 // mid-conversation.
 
@@ -14,7 +14,7 @@
 // the wrong place. The Campfire is where everyone gathers anyway.
 export const MAIN_ROOM = { slug: 'the-campfire', name: 'The Campfire', blurb: 'Everyone gathers here' }
 
-/** Side rooms, in the order they get handed out. */
+/** Huddles, in the order their names get handed out. */
 export const ROOM_NAMES = [
   { slug: 'the-ridge', name: 'The Ridge', blurb: 'Up where you can see the whole job' },
   { slug: 'switchback', name: 'Switchback', blurb: 'For the problem you have to come at twice' },

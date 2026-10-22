@@ -32,7 +32,7 @@ export default function RoomsBar({ theme, compact = false }) {
   // One click does both jobs. Bryce, 2026-10-22: "I like that you click
   // CampFire and you're in — but make the UI open to the rooms page." So the
   // fire puts you in the room AND opens the lobby behind the dock, which is
-  // what lets the menu item go away: the side rooms are already on screen
+  // what lets the menu item go away: the huddles are already on screen
   // instead of being a second thing to go and find.
   const enter = (slug) => { session?.join(slug); navigate('/rooms') }
 
@@ -84,7 +84,7 @@ export default function RoomsBar({ theme, compact = false }) {
         {here > 0 && count(here)}
       </button>
 
-      {/* A side room shows only while someone is in it. An empty room listed
+      {/* A huddle shows only while someone is in it. An empty one listed
           here is clutter, and the full set is one click away. */}
       {busy.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 38 }}>

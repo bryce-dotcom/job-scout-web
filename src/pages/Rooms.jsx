@@ -2,7 +2,7 @@
 //
 // Bryce, 2026-10-22: techs are on phones in the field, the office is on
 // laptops, and there was nowhere in JobScout to just see each other. The
-// Campfire is the main room and always exists; side rooms get opened on the
+// Campfire is the main room and always exists; huddles get opened on the
 // spot and take the next free name off the topo list, so nobody has to invent
 // one mid-conversation.
 //
@@ -84,7 +84,7 @@ export default function Rooms() {
   }
 
   const closeRoom = async (room) => {
-    if (!confirm(`Close ${room.name}? It disappears from the lobby. Anyone still talking stays connected.`)) return
+    if (!confirm(`Close ${room.name}? It disappears from the list. Anyone still talking stays connected.`)) return
     const { error } = await supabase.from('conference_rooms').update({ closed_at: new Date().toISOString() }).eq('id', room.id)
     if (error) { toast.error('Could not close it: ' + error.message); return }
     setRooms(prev => prev.filter(r => r.id !== room.id))
@@ -97,10 +97,10 @@ export default function Rooms() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: theme.text, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <CampfireMark size={24} id="cf-lobby" /> Rooms
+            <CampfireMark size={24} id="cf-lobby" /> CampFire
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: theme.textSecondary, maxWidth: 560, lineHeight: 1.5 }}>
-            Everyone gathers at The Campfire. Open a side room when a few of you need to go deep on
+            Everyone gathers at The Campfire. Start a huddle when a few of you need to go deep on
             something without holding up the rest.
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function Rooms() {
             fontSize: 14, fontWeight: 700, cursor: opening ? 'wait' : 'pointer', whiteSpace: 'nowrap',
           }}
         >
-          <Plus size={16} /> {opening ? 'Opening…' : 'Open a side room'}
+          <Plus size={16} /> {opening ? 'Starting…' : 'Start a huddle'}
         </button>
       </div>
 

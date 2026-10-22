@@ -14,7 +14,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
-  useTracks, ControlBar,
+  FocusLayout, FocusLayoutContainer, CarouselLayout,
+  useTracks, useSpeakingParticipants, ControlBar,
 } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 import '@livekit/components-styles'
@@ -121,7 +122,22 @@ export function RoomSessionProvider({ theme, children }) {
   )
 }
 
+// What actually went wrong with the camera, in words a tech on a roof can
+// act on. "Device error" sends people to IT; "click the padlock" does not.
+function deviceMessage({ failure, kind }) {
+  const thing = kind === 'audioinput' ? 'microphone' : 'camera'
+  if (failure === 'PermissionDenied') return `Your browser is blocking the ${thing}. Click the padlock in the address bar, allow it, then rejoin.`
+  if (failure === 'NotFound') return `No ${thing} found on this device. You can still see and hear everyone else.`
+  if (failure === 'DeviceInUse') return `Another app is using the ${thing} — close it and rejoin.`
+  return `The ${thing} could not start. You can still see and hear everyone else.`
+}
+
 function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper }) {
+  const [deviceIssue, setDeviceIssue] = useState(null)
+  // Walking into a different room is a fresh start — the dock stays mounted
+  // across a room change, so without this a warning from the last one follows
+  // you in and reads as a fault with the room you just joined.
+  useEffect(() => { setDeviceIssue(null) }, [slug])
   const meta = roomMeta(slug)
   const isMain = slug === MAIN_ROOM.slug
 
@@ -189,12 +205,30 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             video
             audio
             onDisconnected={onLeave}
-            style={{ height: '100%', width: '100%' }}
+            // Without this a blocked camera is completely silent: you connect,
+            // you see a grey avatar of yourself, and nothing anywhere says the
+            // browser refused. People conclude the feature is broken.
+            onMediaDeviceFailure={(failure, kind) => setDeviceIssue({ failure, kind })}
+            // Flex column, not fixed heights. The stage used to be sized with
+            // calc(100% - 50px) for the control bar, so the moment anything
+            // else appeared above it — the camera warning — the controls got
+            // pushed off the bottom edge. Let the box do the arithmetic.
+            style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}
           >
-            <Stage expanded={expanded} />
+            {deviceIssue && (
+              <div style={{
+                padding: '7px 10px', fontSize: 11.5, lineHeight: 1.4, flexShrink: 0,
+                background: '#fef3c7', color: '#92400e', borderBottom: '1px solid #fde68a',
+              }}>
+                {deviceMessage(deviceIssue)}
+              </div>
+            )}
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <Stage expanded={expanded} />
+            </div>
             <RoomAudioRenderer />
-            <div style={{ borderTop: `1px solid ${theme.border}` }}>
-              <ControlBar variation="minimal" controls={{ camera: true, microphone: true, screenShare: expanded, chat: false, leave: false }} />
+            <div style={{ borderTop: `1px solid ${theme.border}`, flexShrink: 0 }}>
+              <ControlBar variation="minimal" controls={{ camera: true, microphone: true, screenShare: true, chat: false, leave: false }} />
             </div>
           </LiveKitRoom>
         )}
@@ -203,15 +237,70 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
   )
 }
 
+// How five faces fit in a box the size of a postcard.
+//
+// A grid is the obvious answer and it is the wrong one small: five tiles in
+// a 340px dock is five thumbnails nobody can read, and the only thing anyone
+// actually wants from a small window is to see WHO IS TALKING. So the dock
+// is a speaker view and the expanded panel is a grid, and a screen share
+// beats both because that is the thing everybody turned to look at.
 function Stage({ expanded }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
   )
+  const speaking = useSpeakingParticipants()
+
+  const share = tracks.find(t => t.source === Track.Source.ScreenShare)
+  const cams = tracks.filter(t => t.source === Track.Source.Camera)
+
+  // Somebody sharing their screen is the reason everyone is looking: it takes
+  // the room, and the faces go into a strip beside it.
+  if (share) {
+    return (
+      <FocusLayoutContainer style={{ height: '100%' }}>
+        <FocusLayout trackRef={share} />
+        {expanded && cams.length > 0 && (
+          <CarouselLayout tracks={cams}><ParticipantTile /></CarouselLayout>
+        )}
+      </FocusLayoutContainer>
+    )
+  }
+
+  // Expanded, there is room for everyone. GridLayout works out the rows and
+  // columns for however many are in, so 2 and 9 both come out even.
+  if (expanded) {
+    return (
+      <GridLayout tracks={cams} style={{ height: "100%" }}>
+        <ParticipantTile />
+      </GridLayout>
+    )
+  }
+
+  // Collapsed: one face — whoever is speaking, else anybody but you, else
+  // you — and a count so you know how many others are round the fire.
+  const talking = new Set(speaking.map(p => p.identity))
+  const hero = cams.find(t => talking.has(t.participant?.identity))
+    || cams.find(t => !t.participant?.isLocal)
+    || cams[0]
+  const others = Math.max(0, cams.length - 1)
+
   return (
-    <GridLayout tracks={tracks} style={{ height: expanded ? 'calc(100% - 50px)' : '160px' }}>
-      <ParticipantTile />
-    </GridLayout>
+    <div style={{ position: 'relative', flex: 1, minHeight: 160, background: '#000' }}>
+      {hero && <ParticipantTile trackRef={hero} style={{ height: '100%', width: '100%' }} />}
+      {others > 0 && (
+        <span
+          title={`${others} other${others === 1 ? '' : 's'} in the room — expand to see everyone`}
+          style={{
+            position: 'absolute', right: 8, bottom: 8, zIndex: 2,
+            padding: '2px 8px', borderRadius: 999, background: 'rgba(0,0,0,0.65)',
+            color: '#fff', fontSize: 11, fontWeight: 700, pointerEvents: 'none',
+          }}
+        >
+          +{others}
+        </span>
+      )}
+    </div>
   )
 }
 
