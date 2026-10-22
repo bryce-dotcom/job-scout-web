@@ -44,7 +44,7 @@ async function photoOf(r: Rest, e: any): Promise<{ media_type: string; data: str
 }
 
 const READ_PROMPT = 'Read this purchase receipt. Return JSON only, no prose: '
-  + '{"merchant": "<as printed>", "items": [{"description": "<as printed>", "sku": "<SKU/model if printed, else null>", "quantity": <number>, "unit": "<what the quantity counts if printed or plain from the line — FT, EA, BOX, ROLL, PK — else null>", "unit_price": <number or null>, "line_total": <number or null>}]}. '
+  + '{"merchant": "<as printed>", "items": [{"description": "<as printed>", "sku": "<SKU/model if printed, else null>", "quantity": <number>, "unit": "<what the QUANTITY counts — FT, EA, BOX, ROLL, PK; a C or M printed after the price is the price per hundred/thousand, not this — else null>", "unit_price": <number or null>, "line_total": <number or null>}]}. '
   + 'Every purchased line, exactly as printed. Leave out tax, totals, payment and discount lines. '
   + 'If a line cannot be read, leave it out — never guess a word or a number. If nothing is readable, return {"merchant": null, "items": []}.'
 
@@ -84,6 +84,24 @@ async function readOne(r: Rest, companyId: number, e: any): Promise<{ items: Rec
   return { items, unreadable, note }
 }
 
+/**
+ * What the quantity counts. Supply-house invoices print C or M after the
+ * PRICE — per hundred, per thousand — not after the quantity: "750 … 914.21 M"
+ * is 750 feet of cable at $914.21 a thousand feet, and "25 … 361.22 C" is 25
+ * connectors at $361.22 a hundred. Read as a unit, the list said "750 M"
+ * (live, 2026-10-21). Cable and wire are counted in feet; the rest are each.
+ */
+export function quantityUnit(unit: unknown, description: unknown): string | null {
+  const u = String(unit ?? '').trim().toUpperCase()
+  if (u === 'M' || u === 'C' || u === 'CWT') {
+    // Wire by its marks — a gauge (12/2), a length on the reel (X250), or the
+    // word — never the bare "MC": an MC CONNECTOR is sold each.
+    const d = String(description ?? '')
+    return /\b\d{1,2}\/\d\b|\bx\s?\d{3,4}\b|\b(wire|cable|romex|thhn|thwn|nm-?b|uf-?b|cord|ft|feet)\b/i.test(d) ? 'FT' : 'EA'
+  }
+  return u || null
+}
+
 // Feet and rolls of the same SKU are not added together.
 const keyOf = (i: ReceiptItem) => (i.sku ? `sku:${String(i.sku).toLowerCase().replace(/\s+/g, '')}` : `d:${i.description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`) + `|${String(i.unit || '').toLowerCase()}`
 
@@ -111,7 +129,8 @@ export async function materialsFromReceipts(r: Rest, companyId: number, expenses
     if (!k) { if (!(e.receipt_url || e.receipt_storage_path)) noPhoto++; continue }
     if (k.unreadable) { unreadable++; continue }
     read++
-    for (const it of (k.items || []) as ReceiptItem[]) {
+    for (const raw of (k.items || []) as ReceiptItem[]) {
+      const it = { ...raw, unit: quantityUnit(raw.unit, raw.description) }
       const key = keyOf(it)
       const t = totals.get(key) || { item: it.description, sku: it.sku || null, unit: it.unit || null, quantity: 0, receipts: 0, vendors: new Set<string>(), spent: 0 }
       t.quantity += Number(it.quantity) || 0

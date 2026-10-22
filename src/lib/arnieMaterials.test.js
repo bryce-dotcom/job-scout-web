@@ -49,6 +49,15 @@ describe('materials off the receipts', () => {
     const out = await materialsFromReceipts(R, 3, [{ id: 1, receipt_storage_path: 'a.pdf' }, { id: 2, receipt_storage_path: 'b.jpg' }], { withPrices: false })
     expect(out.items.map((i) => `${i.quantity} ${i.unit}`).sort()).toEqual(['1 ROLL', '750 FT'])
   })
+  it('C and M are price units — cable becomes feet, the rest each', async () => {
+    const { quantityUnit } = await import('../../supabase/functions/_shared/arnieReceiptItems.ts')
+    expect(quantityUnit('M', '12/2 MC AL SOL W/GRN GRD X250')).toBe('FT')
+    expect(quantityUnit('C', 'ARL 3838AST DUPLEX INSL MC')).toBe('EA')   // an MC connector, sold each
+    expect(quantityUnit('M', '14 AWG THHN BLK')).toBe('FT')
+    expect(quantityUnit('C', 'APP 8465 4SQ COVER BLANK')).toBe('EA')
+    expect(quantityUnit('ea', 'Wire nut')).toBe('EA')
+    expect(quantityUnit(null, 'Wire nut')).toBeNull()
+  })
   it('prices only when allowed', async () => {
     world([{ expense_id: 1, items: [{ description: 'Romex', quantity: 1, line_total: 119 }], unreadable: false }])
     const out = await materialsFromReceipts(R, 3, [{ id: 1, receipt_storage_path: 'x.jpg' }], { withPrices: true })
