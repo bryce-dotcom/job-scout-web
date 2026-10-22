@@ -124,16 +124,74 @@ export function RoomSessionProvider({ theme, children }) {
 
 // What actually went wrong with the camera, in words a tech on a roof can
 // act on. "Device error" sends people to IT; "click the padlock" does not.
-function deviceMessage({ failure, kind }) {
+//
+// LiveKit buckets everything it does not recognise into "Other", and that
+// bucket is a dead end — it is what Bryce hit. So when we land there we ask
+// the browser ourselves: count the cameras, and try a PLAIN getUserMedia with
+// no constraints. If the plain one works while LiveKit's failed, the fault is
+// the quality we asked for, not the device — which is a different fix and
+// nobody could have guessed it from "could not start".
+function deviceMessage({ failure, kind }, detail) {
   const thing = kind === 'audioinput' ? 'microphone' : 'camera'
   if (failure === 'PermissionDenied') return `Your browser is blocking the ${thing}. Click the padlock in the address bar, allow it, then rejoin.`
   if (failure === 'NotFound') return `No ${thing} found on this device. You can still see and hear everyone else.`
   if (failure === 'DeviceInUse') return `Another app is using the ${thing} — close it and rejoin.`
-  return `The ${thing} could not start. You can still see and hear everyone else.`
+
+  if (!detail) return `Checking why the ${thing} did not start…`
+  // Browsers only hand out a camera on a secure origin. Open the app on a
+  // plain http:// address — a LAN IP, a staging box without a certificate —
+  // and navigator.mediaDevices is simply not there. LiveKit files that under
+  // "Other", and no amount of clicking Allow will ever fix it, because there
+  // is nothing to allow.
+  if (detail.insecure) return `This page is not on a secure (https) address, so the browser will not give it a ${thing} at all. Open JobScout on its https:// address and rejoin.`
+  if (detail.count === 0) return `Windows is not offering this browser a ${thing} at all. Check Settings → Privacy & security → ${kind === 'audioinput' ? 'Microphone' : 'Camera'} and allow desktop apps.`
+  if (detail.plainWorks) return `Your ${thing} works, but not at the quality we asked for. Pick a different ${thing} from the arrow beside the button — or tell Bryce and this gets fixed properly.`
+  if (detail.name === 'NotReadableError' || detail.name === 'TrackStartError') return `Another app is holding the ${thing} — Teams, Zoom or OBS in the tray. Close it and rejoin.`
+  if (detail.name === 'NotAllowedError') return `Your browser is blocking the ${thing}. Click the padlock in the address bar, allow it, then rejoin.`
+  if (detail.name === 'OverconstrainedError') return `This ${thing} cannot do the quality we asked for. Tell Bryce — it is ours to fix, not yours.`
+  return `The ${thing} could not start (${detail.name || 'unknown'}). ${detail.count} found. You can still see and hear everyone else.`
+}
+
+// Ask the browser directly, because LiveKit's "Other" tells us nothing.
+async function probeDevice(kind) {
+  const want = kind === 'audioinput' ? 'audioinput' : 'videoinput'
+  // Check this first: on an insecure origin navigator.mediaDevices does not
+  // exist, so every call below would throw a TypeError that tells you
+  // nothing about the real cause.
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices || window.isSecureContext === false) {
+    return { count: null, plainWorks: false, name: null, insecure: true }
+  }
+  let count = null
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    count = devices.filter(d => d.kind === want).length
+  } catch { /* enumerate can throw in locked-down browsers */ }
+
+  // No constraints at all. Succeeding here while LiveKit failed is the
+  // signal: the hardware is fine and our request was too demanding.
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(
+      want === 'audioinput' ? { audio: true } : { video: true },
+    )
+    stream.getTracks().forEach(t => t.stop())
+    return { count, plainWorks: true, name: null }
+  } catch (err) {
+    return { count, plainWorks: false, name: err?.name || null }
+  }
 }
 
 function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper }) {
   const [deviceIssue, setDeviceIssue] = useState(null)
+  const [deviceDetail, setDeviceDetail] = useState(null)
+
+  // Only runs when something actually failed, so the probe never asks for a
+  // camera nobody wanted.
+  useEffect(() => {
+    if (!deviceIssue) { setDeviceDetail(null); return }
+    let cancelled = false
+    probeDevice(deviceIssue.kind).then(d => { if (!cancelled) setDeviceDetail(d) })
+    return () => { cancelled = true }
+  }, [deviceIssue])
   // Walking into a different room is a fresh start — the dock stays mounted
   // across a room change, so without this a warning from the last one follows
   // you in and reads as a fault with the room you just joined.
@@ -236,7 +294,7 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
                 padding: '7px 10px', fontSize: 11.5, lineHeight: 1.4, flexShrink: 0,
                 background: '#fef3c7', color: '#92400e', borderBottom: '1px solid #fde68a',
               }}>
-                {deviceMessage(deviceIssue)}
+                {deviceMessage(deviceIssue, deviceDetail)}
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -302,8 +360,11 @@ function Stage({ expanded }) {
   const others = Math.max(0, cams.length - 1)
 
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 160, background: '#000' }}>
-      {hero && <ParticipantTile trackRef={hero} style={{ height: '100%', width: '100%' }} />}
+    <div style={{ position: 'relative', flex: 1, minHeight: 160, background: '#000', display: 'flex' }}>
+      {/* flex, not height:100% — a percentage height cannot resolve through an
+          auto-height flex chain, and the tile silently computed to 0px: the
+          dock went black while the participant was still in it. */}
+      {hero && <ParticipantTile trackRef={hero} style={{ flex: 1, minWidth: 0 }} />}
       {others > 0 && (
         <span
           title={`${others} other${others === 1 ? '' : 's'} in the room — expand to see everyone`}
