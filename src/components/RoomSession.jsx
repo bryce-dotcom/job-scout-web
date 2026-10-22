@@ -204,6 +204,22 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             connect
             video
             audio
+            // Audio loses to video on a thin connection, and that is what
+            // "I can't hear you very well" usually is. LiveKit captures at
+            // 720p by default with BOTH of these off, so a dock the size of a
+            // business card was being fed near-HD — upstream the office does
+            // not have, competing with the one stream that actually matters.
+            //
+            // adaptiveStream asks only for the resolution the tile on screen
+            // needs; dynacast stops sending layers nobody is looking at.
+            // Expanding still gets full quality, because the layer is chosen
+            // from what is rendered rather than fixed at join.
+            //
+            // The capture settings are deliberately untouched: echo
+            // cancellation, noise suppression, auto gain and voice isolation
+            // are all already on by default, and "fixing" them would be
+            // theatre.
+            options={{ adaptiveStream: true, dynacast: true }}
             onDisconnected={onLeave}
             // Without this a blocked camera is completely silent: you connect,
             // you see a grey avatar of yourself, and nothing anywhere says the
