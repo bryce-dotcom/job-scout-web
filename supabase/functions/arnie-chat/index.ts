@@ -15,6 +15,7 @@ import { receiptFor, unmarked, type ReceiptCall } from '../_shared/arnieReceipt.
 import { ARNIE_MODEL } from '../_shared/arnieModel.ts'
 import { inboxAddressFor, markHandled, readInbox } from '../_shared/arnieInbox.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
+import { MATERIAL_CATEGORIES, materialsFromReceipts } from '../_shared/arnieReceiptItems.ts'
 import { playbookFor, parseTakeoff, planEstimate } from '../_shared/lightingPlaybook.ts'
 import { activeRules, rulesPromptBlock } from '../_shared/arnieCompanyRules.ts'
 import { assistantName, sendArnieEmail } from '../_shared/arnieSend.ts'
@@ -478,6 +479,22 @@ const TOOLS = [
         start_date: { type: 'string' },
         end_date: { type: 'string' },
         group_by: { type: 'string', enum: ['category', 'month', 'vendor', 'status', 'none'] },
+      },
+    },
+  },
+  {
+    name: 'query_material_receipts',
+    description: 'What MATERIALS were bought — read item by item off the receipt PHOTOS on material expenses (Materials, Job Materials, Small Tools & Consumables, Supplies), totalled by part: quantity, how many receipts it was on, where from. '
+      + 'Use it for truck stock, restock and reorder lists ("what did we buy this month", "what should I keep on the trucks"). Each photo is read once and kept. '
+      + 'Quantities are as printed; an unreadable receipt is counted, never guessed. If still_to_read > 0, say so — asking again reads the rest. Managers and up; what was spent is shown only to those who may see expenses.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        month: { type: 'string', description: 'YYYY-MM, "this month" or "last month". Or use start_date/end_date.' },
+        start_date: { type: 'string' },
+        end_date: { type: 'string' },
+        vendor: { type: 'string', description: 'Only receipts from this vendor (partial match), e.g. "Home Depot".' },
+        business_unit: { type: 'string', description: 'Only receipts filed on jobs of this business unit, e.g. "Energy Scout".' },
       },
     },
   },
@@ -1863,6 +1880,52 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
       const got = await fetchRows(sb('quotes'), params, hdr)
       if ('error' in got) return { error: `quotes query failed: ${got.error}` }
       return aggregate(got, input.group_by, ['quote_amount', 'job_total'])
+    }
+
+    if (name === 'query_material_receipts') {
+      if (!isManager) return { restricted: 'Managers and up can read the material receipts.' }
+      const r = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
+      const tz = await companyTz(companyId!)
+      let start = input.start_date, end = input.end_date
+      const m = String(input.month || '').trim().toLowerCase()
+      if (m) {
+        const today = localDay(new Date(), tz)
+        const ym = m === 'this month' ? today.slice(0, 7)
+          : m === 'last month' ? new Date(Date.parse(`${today.slice(0, 7)}-01T12:00:00Z`) - 86400000 * 2).toISOString().slice(0, 7)
+          : /^\d{4}-\d{2}$/.test(m) ? m : null
+        if (!ym) return { error: `Give the month as YYYY-MM, "this month" or "last month" — I got "${input.month}".` }
+        start = `${ym}-01`
+        end = new Date(Date.parse(`${ym}-01T12:00:00Z`) + 32 * 86400000).toISOString().slice(0, 7) + '-01'
+        end = new Date(Date.parse(`${end}T12:00:00Z`) - 86400000).toISOString().slice(0, 10)
+      }
+      const params = new URLSearchParams({
+        company_id: `eq.${companyId}`, select: 'id,date,vendor,merchant,amount,job_id,receipt_url,receipt_storage_path',
+        category: `in.(${MATERIAL_CATEGORIES.map((c) => `"${c}"`).join(',')})`, order: 'date.asc',
+      })
+      if (input.vendor) {
+        const v = String(input.vendor).replace(/[*,()]/g, '').trim()
+        if (v) params.append('or', `(vendor.ilike.*${v}*,merchant.ilike.*${v}*)`)
+      }
+      await appendDayRange(params, 'date', start, end, companyId!)
+      const got = await fetchRows(sb('expenses'), params, hdr, 300)
+      if ('error' in got) return { error: `expenses query failed: ${got.error}` }
+      let rows = got.rows
+      const notes: string[] = []
+      if (input.business_unit) {
+        const bu = String(input.business_unit).replace(/[*,()]/g, '').trim()
+        const jobIds = [...new Set(rows.map((e: any) => e.job_id).filter(Boolean))]
+        const jobs = jobIds.length ? await fetchRows(sb('jobs'), new URLSearchParams({ select: 'id', company_id: `eq.${companyId}`, id: `in.(${jobIds.join(',')})`, business_unit: `ilike.*${bu}*` }), hdr, 1000) : { rows: [] as any[] }
+        const keep = new Set(('error' in jobs ? [] : jobs.rows).map((j: any) => j.id))
+        const before = rows.length
+        rows = rows.filter((e: any) => keep.has(e.job_id))
+        notes.push(`Only receipts filed on ${bu} jobs: ${rows.length} of ${before}. A receipt with no job on it cannot be placed in a business unit and is left out.`)
+      }
+      const out = await materialsFromReceipts(r, companyId!, rows, { withPrices: isOwner })
+      return {
+        from: start || null, to: end || null, ...out,
+        ...(isOwner ? {} : { prices: 'Not shown at this person\'s access — say so if asked; do not estimate them.' }),
+        note: [...notes, 'Items are read off the photos as printed. Name items exactly as listed here; never add one that is not.'].join(' '),
+      }
     }
 
     if (name === 'query_expenses') {
