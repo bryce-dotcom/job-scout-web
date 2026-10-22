@@ -127,6 +127,8 @@ export function buildInvoiceSendPayload({ invoice, lines, customer, company, set
       quantity: l.quantity || 1,
       unit_price: parseFloat(l.unit_price) || 0,
       line_total: parseFloat(l.line_total) || 0,
+      // The job line's notes, unless the invoice's Notes switch is off.
+      ...(!invoice.hide_line_notes && String(l.notes || '').trim() ? { notes: String(l.notes).trim() } : {}),
     })),
     // The email greets by first name ("Hi Sylvia,"), so the PERSON, and only
     // then the business — "Hi Jan," from "Jan Pro" is nobody.

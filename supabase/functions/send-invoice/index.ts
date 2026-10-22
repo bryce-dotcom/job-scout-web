@@ -214,11 +214,14 @@ serve(async (req) => {
               </tr>
               ${lines.map((l: any) => {
                 const desc = String(l.description || l.item_name || 'Item').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                // The job line's notes (part numbers) — the sender leaves them
+                // out when the invoice's Notes switch is off.
+                const notes = String(l.notes || '').trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
                 const qty = parseFloat(l.quantity) || 1;
                 const unit = parseFloat(l.unit_price || l.price) || 0;
                 const total = parseFloat(l.line_total || l.total) || (qty * unit);
                 return `<tr>
-                  <td style="padding:8px 0;color:#2c3530;font-size:13px;border-bottom:1px solid #f0ece4;">${desc}</td>
+                  <td style="padding:8px 0;color:#2c3530;font-size:13px;border-bottom:1px solid #f0ece4;">${desc}${notes ? `<div style="font-size:11px;color:#5a6349;margin-top:2px;">${notes}</div>` : ''}</td>
                   <td style="padding:8px 0;color:#4d5a52;font-size:13px;text-align:center;border-bottom:1px solid #f0ece4;">${qty}</td>
                   <td style="padding:8px 0;color:#4d5a52;font-size:13px;text-align:right;border-bottom:1px solid #f0ece4;">$${unit.toFixed(2)}</td>
                   <td style="padding:8px 0;color:#2c3530;font-size:13px;text-align:right;font-weight:500;border-bottom:1px solid #f0ece4;">$${total.toFixed(2)}</td>

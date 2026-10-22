@@ -64,7 +64,7 @@ import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
 import { clockInChoice, mustClockToJob, clockInSettings } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
-import { autoLinkReceipts } from '../lib/expenseMatch'
+import { autoLinkReceipts } from '../lib/expenseMatch'
 import { SignedImg } from '../lib/storageUrl'
 
 // Stripe card payment form (rendered inside Elements provider)
@@ -1606,7 +1606,7 @@ export default function FieldScout() {
               // item_name and labor_cost were missing here: without them the
               // invoice billed unnamed lines as "Item" and dropped the labor
               // portion, so summary PDFs could not split Parts vs Labor.
-              .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, item:products_services(name)')
+              .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, notes, item:products_services(name)')
               .eq('job_id', job.id)
               .order('id', { ascending: true })
             await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: invoice.id, summaryFor: { description: job.job_title, total: jobTotal, manual: job.job_total_source === 'manual' } })
@@ -4489,7 +4489,7 @@ export default function FieldScout() {
           try {
             const invoice = await ensureJobInvoice(job)
             if (!invoice) throw new Error('Could not create the invoice for this job')
-            const { data: lines } = await supabase.from('invoice_lines').select('description, quantity, unit_price, line_total').eq('invoice_id', invoice.id).order('id')
+            const { data: lines } = await supabase.from('invoice_lines').select('description, quantity, unit_price, line_total, notes').eq('invoice_id', invoice.id).order('id')
             const { data: cust } = job.customer_id
               ? await supabase.from('customers').select('name, business_name').eq('id', job.customer_id).maybeSingle()
               : { data: null }

@@ -176,6 +176,15 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
     searchCols: [], selectCols: 'id,invoice_id,description', labelOf: (r) => r._label || `invoice line #${r.id}`,
     findRow: findInvoiceLineRow, guard: invoiceLineGuard, checkValue: checkDescription,
   },
+  // The same notes, on an invoice ALREADY made (Bryce, 2026-10-22: "if the
+  // invoice is already created just do it there"). New invoices copy the job
+  // line's notes; this is for the one that exists now. Appends, like
+  // job_line_note; the invoice-line rule for who and when (admin, unlocked).
+  invoice_line_note: {
+    label: 'invoice line note', table: 'invoice_lines', field: 'notes', mode: 'append', minLevel: 3,
+    searchCols: [], selectCols: 'id,invoice_id,description,notes', labelOf: (r) => r._label || `invoice line #${r.id}`,
+    findRow: findInvoiceLineRow, guard: invoiceLineGuard, checkValue: checkDescription,
+  },
   product_description: {
     label: 'price book description', table: 'products_services', field: 'description', mode: 'set', minLevel: 2,
     searchCols: ['name'], selectCols: 'id,name,description,unit_price', labelOf: (r) => r.name || `product #${r.id}`,

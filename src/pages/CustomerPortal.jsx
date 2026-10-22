@@ -340,6 +340,7 @@ export default function CustomerPortal() {
     const rawDesc = (li.description || '').trim()
     const primary = name || rawDesc || 'Item'
     const showDesc = !hideLineDesc && rawDesc && rawDesc !== primary
+    const notes = doc.hide_line_notes ? '' : String(li.notes || '').trim()
     return (
       <div key={li.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -348,6 +349,9 @@ export default function CustomerPortal() {
           </p>
           {showDesc && (
             <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0' }}>{rawDesc}</p>
+          )}
+          {notes && (
+            <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0', whiteSpace: 'pre-line' }}>{notes}</p>
           )}
           <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0' }}>{q} x {formatCurrency(u)}</p>
         </div>

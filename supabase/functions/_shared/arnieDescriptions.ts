@@ -181,7 +181,7 @@ export async function findEstimateSummaryRow(r: Rest, caller: Caller, input: Fin
 }
 
 const QUOTE_LINE_SELECT = 'id,quote_id,item_name,description,quantity,price,line_total,sort_order'
-const INVOICE_LINE_SELECT = 'id,invoice_id,item_id,description,quantity,unit_price,line_total,sort_order,line_number'
+const INVOICE_LINE_SELECT = 'id,invoice_id,item_id,description,notes,quantity,unit_price,line_total,sort_order,line_number'
 
 /** estimate_line_description: one quote_lines row, found by its estimate then by "line 3" or its words. */
 export async function findEstimateLineRow(r: Rest, caller: Caller, input: FindInput): Promise<Found> {

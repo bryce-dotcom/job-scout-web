@@ -63,6 +63,11 @@ export function buildInvoiceLineRows(lines, { companyId, invoiceId }) {
       // Carried from the job/quote line so a materials-only tax jurisdiction
       // can leave labor lines alone. Default taxable, like the column.
       taxable: l.taxable !== false,
+      // The job line's notes — part numbers, settings — shown under the line
+      // unless the invoice's Notes switch is off. Copied here because an
+      // invoice is regenerated from the job, and anything typed onto the old
+      // one is lost (Bryce, 2026-10-22).
+      notes: String(l.notes ?? '').trim() || null,
     }
   })
 }

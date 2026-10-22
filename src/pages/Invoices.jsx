@@ -352,7 +352,7 @@ export default function Invoices() {
         const { data: jobLines } = await supabase
           .from('job_lines')
           // item_name and labor_cost were missing here (see FieldScout).
-          .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, item:products_services(name)')
+          .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, notes, item:products_services(name)')
           .eq('job_id', formData.job_id)
           .order('id', { ascending: true })
         await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: data.id })

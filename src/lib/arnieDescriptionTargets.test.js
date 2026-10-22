@@ -48,7 +48,7 @@ describe('descriptions, never amounts', () => {
 
   it('the model is told the targets and can name a line', () => {
     for (const key of Object.keys(DESCRIPTION_TARGETS)) expect(recordTargetsSentence()).toContain(key)
-    expect(chat).toMatch(/line: \{ type: 'string', description: 'For estimate_line_description \/ invoice_line_description \/ job_line_note only/)
+    expect(chat).toMatch(/line: \{ type: 'string', description: 'For estimate_line_description \/ invoice_line_description \/ job_line_note \/ invoice_line_note only/)
     expect(chat).toMatch(/line: input\?\.line == null \? undefined : String\(input\.line\)/)
   })
 })

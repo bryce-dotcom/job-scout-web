@@ -101,9 +101,14 @@ describe('row shape and ordering', () => {
     // Guards against a stray property causing a PostgREST insert to fail.
     expect(Object.keys(build([{ description: 'A' }])[0]).sort()).toEqual([
       'company_id', 'description', 'discount', 'in_utility_scope', 'invoice_id',
-      'item_id', 'labor_cost', 'line_number', 'line_total', 'quantity',
+      'item_id', 'labor_cost', 'line_number', 'line_total', 'notes', 'quantity',
       'sort_order', 'taxable', 'unit_price',
     ])
+  })
+
+  it('carries the job line\'s notes, trimmed; none is null', () => {
+    expect(build([{ description: 'Flood', notes: ' Set at 45W\nPart # MES-FL-PG ' }])[0].notes).toBe('Set at 45W\nPart # MES-FL-PG')
+    expect(build([{ description: 'Flood' }])[0].notes).toBeNull()
   })
 
   it('defaults quantity to 1 and price to 0', () => {

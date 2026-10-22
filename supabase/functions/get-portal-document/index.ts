@@ -243,7 +243,9 @@ serve(async (req) => {
         // estimate line_items shape so the portal renders both the same way.
         const { data: invLines } = await supabase
           .from('invoice_lines')
-          .select('id, description, quantity, unit_price, line_total, in_utility_scope, sort_order, item:products_services(id, name)')
+          // notes: the job line's part numbers/settings, shown under the line
+          // unless the invoice's Notes switch (hide_line_notes) is off.
+          .select('id, description, quantity, unit_price, line_total, in_utility_scope, sort_order, notes, item:products_services(id, name)')
           .eq('invoice_id', inv.id)
           .order('sort_order', { ascending: true });
         lineItems = invLines || [];

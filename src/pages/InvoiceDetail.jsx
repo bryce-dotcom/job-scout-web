@@ -1391,6 +1391,7 @@ ${CHANGE_INSTEAD}`)
     // Labor / Adjustable, Cut Off..."). "(ARCHIVED …)" is stripped from names
     // so retired products still read cleanly on the customer's invoice.
     const hideLineDesc = !!invoice.hide_line_descriptions
+    const hideLineNotes = !!invoice.hide_line_notes
     const cleanLineName = (l) => (l?.item?.name || '').replace(/\s*\(ARCHIVED[^)]*\)/i, '').trim()
 
     // Draw a line-items table (green column header + rows) for a subset of
@@ -1424,7 +1425,13 @@ ${CHANGE_INSTEAD}`)
         const showDesc = !hideLineDesc && rawDesc && rawDesc !== primary
         const primaryLines = doc.splitTextToSize(primary, descColMaxWidth)
         const descLines = showDesc ? doc.splitTextToSize(rawDesc, descColMaxWidth) : []
-        checkPage((primaryLines.length + descLines.length) * lineHeight + 4)
+        // The job line's notes (part numbers, settings) under the line, unless
+        // the invoice's Notes switch is off (Bryce, 2026-10-22).
+        const rawNotes = hideLineNotes ? '' : String(line.notes || '').trim()
+        const noteLines = rawNotes
+          ? rawNotes.split(/\n+/).flatMap((p) => doc.splitTextToSize(p.trim(), descColMaxWidth - 2)).filter(Boolean)
+          : []
+        checkPage((primaryLines.length + descLines.length + noteLines.length) * lineHeight + 4)
         // Primary label (product name, or the description when there is no name)
         doc.setTextColor(0)
         doc.setFont('helvetica', 'normal')
@@ -1444,6 +1451,13 @@ ${CHANGE_INSTEAD}`)
           doc.setFontSize(8.5)
           doc.setTextColor(120)
           for (const dl of descLines) { checkPage(5); doc.text(dl, margin + 6, y); y += 4.5 }
+          doc.setFontSize(10)
+          doc.setTextColor(0)
+        }
+        if (noteLines.length) {
+          doc.setFontSize(8.5)
+          doc.setTextColor(90, 99, 73)
+          for (const nl of noteLines) { checkPage(5); doc.text(nl, margin + 6, y); y += 4.5 }
           doc.setFontSize(10)
           doc.setTextColor(0)
         }
@@ -1975,6 +1989,16 @@ ${CHANGE_INSTEAD}`)
     if (error) { toast.error('Could not save: ' + error.message); return }
     setInvoice(prev => ({ ...prev, hide_line_descriptions: next }))
     toast.success(next ? 'Line descriptions hidden' : 'Line descriptions shown')
+  }
+
+  // The same switch for the job line notes (part numbers, settings) printed
+  // under each line — on unless turned off, per invoice (Bryce, 2026-10-22).
+  const toggleHideNotes = async () => {
+    const next = !invoice.hide_line_notes
+    const { error } = await supabase.from('invoices').update({ hide_line_notes: next }).eq('id', invoice.id)
+    if (error) { toast.error('Could not save: ' + error.message); return }
+    setInvoice(prev => ({ ...prev, hide_line_notes: next }))
+    toast.success(next ? 'Line notes hidden' : 'Line notes shown')
   }
 
   // The utility's aging clock. A utility owes nothing until the submittal
@@ -3307,6 +3331,25 @@ ${CHANGE_INSTEAD}`)
                   }}
                 >
                   {invoice.hide_line_descriptions ? 'Descriptions: Off' : 'Descriptions: On'}
+                </button>
+                <button
+                  onClick={toggleHideNotes}
+                  title="Show or hide each line's notes from the job (part numbers, settings) on the invoice PDF, the customer portal and the invoice email."
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: invoice.hide_line_notes ? theme.bg : 'rgba(90,99,73,0.12)',
+                    color: invoice.hide_line_notes ? theme.textMuted : theme.accent,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {invoice.hide_line_notes ? 'Notes: Off' : 'Notes: On'}
                 </button>
                 <button
                   onClick={handleGenerateAndUploadPDF}
