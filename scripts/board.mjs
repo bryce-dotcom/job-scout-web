@@ -142,6 +142,32 @@ try {
 const deployLagging = !!(prev.lastMainSha && prev.lastLiveBuild && liveBuild
   && mainSha !== prev.lastMainSha && liveBuild === prev.lastLiveBuild)
 
+// ── 4b. work that exists only on this machine ─────────────────────────
+// scripts/fleet.mjs already answers "is any worktree sitting on work that
+// never reached main", and answers it far better than a commit count can:
+// `ship` cherry-picks, so every shipped branch reads as permanently ahead of
+// main and the count is noise. Fleet's headline is the one signal that cannot
+// be argued with — files the branch has that main does not. Read its header;
+// it is the record of the day six worktrees turned out to be husks and the
+// RLS security work turned out to be stranded on one of them.
+//
+// So this does not recompute any of that. It runs fleet and keeps the part
+// that says work is missing from main, dropping its "safe to re-cut" tail,
+// which is inventory rather than news.
+let stranded = ''
+if (!argv.includes('--no-fleet')) {
+  try {
+    const out = execFileSync(process.execPath, [join(ROOT, 'scripts', 'fleet.mjs')],
+      { cwd: ROOT, encoding: 'utf8', timeout: 240000 })
+    const lines = out.split('\n')
+    const from = lines.findIndex((l) => /MAIN IS MISSING THIS/.test(l))
+    const to = lines.findIndex((l) => /SAFE TO RE-CUT/.test(l))
+    if (from !== -1) stranded = lines.slice(from, to === -1 ? undefined : to).join('\n').replace(/\s+$/, '')
+  } catch (e) {
+    notes.push(`fleet could not run: ${String(e.message).split('\n')[0]}`)
+  }
+}
+
 // ── 5. what is broken, said and owed ──────────────────────────────────
 // Shelled out rather than reimplemented: morning-sweep.mjs is the tested
 // source of the crash, feedback and money-ledger checks, and a second copy of
@@ -177,11 +203,19 @@ console.log(`\nSHIPPED TO MAIN  (${shipped.length})`)
 if (!shipped.length) console.log('  - nothing')
 for (const c of shipped) console.log(`  - ${c.at}  ${c.sha}  ${c.subject}`)
 
-console.log(`\nIN FLIGHT  (${inFlight.length} branch${inFlight.length === 1 ? '' : 'es'}, active in the last ${FLIGHT_HOURS}h)`)
-if (!inFlight.length) console.log('  - nothing unshipped')
+// Touched recently, so somebody is probably in it right now. Deliberately NOT
+// called "unshipped" — see the note above the fleet block for why a commit
+// count cannot tell you that, and why fleet is what answers it below.
+console.log(`\nBEING WORKED IN  (${inFlight.length}, touched in the last ${FLIGHT_HOURS}h)`)
+if (!inFlight.length) console.log('  - nothing')
 for (const b of inFlight.sort((a, z) => z.lastAt.localeCompare(a.lastAt))) {
   const when = local(b.lastAt).slice(11, 16)
-  console.log(`  - ${b.branch}  (${b.name}, ${b.ahead} unshipped, ${b.files.length} file${b.files.length === 1 ? '' : 's'}${b.dirty ? `, ${b.dirty} uncommitted` : ''}, last ${when})`)
+  console.log(`  - ${b.branch}  (${b.name}, ${b.files.length} file${b.files.length === 1 ? '' : 's'} vs main${b.dirty ? `, ${b.dirty} uncommitted` : ''}, last commit ${when})`)
+}
+
+if (stranded) {
+  console.log('')
+  console.log(stranded)
 }
 
 if (collisions.length) {
