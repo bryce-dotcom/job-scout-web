@@ -14,6 +14,8 @@ import { defaultTabWishlist, resolveTabs } from '../lib/navTabs'
 import BottomTabs from './BottomTabs'
 import ArnieOnboardingBanner from './ArnieOnboardingBanner'
 import GlobalSearch from './GlobalSearch'
+import RoomsBar from './RoomsBar'
+import { RoomSessionProvider } from './RoomSession'
 import TrialBanner from './TrialBanner'
 import AgentNavIcon from './AgentNavIcon'
 import { useLocationTracking } from '../hooks/useLocationTracking'
@@ -67,6 +69,7 @@ import {
   X as XIcon,
   Database,
   Compass,
+  Video,
   RefreshCw,
   HelpCircle,
   Eye,
@@ -892,6 +895,9 @@ export default function Layout() {
 
   return (
     <ThemeContext.Provider value={{ theme }}>
+      {/* The call lives here, above the router: navigating must never hang
+          up on anybody. */}
+      <RoomSessionProvider theme={theme}>
       <div style={{
         display: 'flex',
         minHeight: '100vh',
@@ -963,6 +969,12 @@ export default function Layout() {
             <GlobalSearch theme={theme} />
           </div>
 
+          {/* Who is talking, right now. A page you have to navigate to is a
+              page nobody opens, so the rooms live where you already look. */}
+          <div style={{ padding: '8px 8px 0' }}>
+            <RoomsBar theme={theme} />
+          </div>
+
           <nav style={{
             flex: 1,
             padding: '8px 8px',
@@ -1026,6 +1038,25 @@ export default function Layout() {
               >
                 <MapIcon size={20} />
                 Company Map
+              </NavLink>
+              {/* Third of the same family: the calendar is the day across
+                  time, the map is the day across space, and this is the day
+                  across the people in it — a field tech on a phone and the
+                  office on a laptop in the same room. */}
+              <NavLink
+                to="/rooms"
+                title="Base Camp and the side rooms — see each other and talk, wherever you are working"
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', borderRadius: '8px',
+                  color: isActive ? theme.accent : theme.textMuted,
+                  backgroundColor: isActive ? theme.accentBg : 'transparent',
+                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                })}
+              >
+                <Video size={20} />
+                Rooms
               </NavLink>
               {/* The clock. Christopher (26 Aug): "I have to search for Field
                   Scout in the menu in order to find jobs and clock in." For a
@@ -1493,6 +1524,11 @@ export default function Layout() {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          {/* Compact on a phone — the Campfire plus at most one busy room,
+              because this header is also carrying Feedback and the menu. */}
+          <div style={{ marginRight: 6, minWidth: 0 }}>
+            <RoomsBar theme={theme} compact />
+          </div>
           {/* Feedback moved off the floating bubble and up here: the bubble
               covered the More tab, and this is one tap from anywhere. */}
           <button
@@ -2453,6 +2489,7 @@ export default function Layout() {
           }
         }
       `}</style>
+      </RoomSessionProvider>
     </ThemeContext.Provider>
   )
 }

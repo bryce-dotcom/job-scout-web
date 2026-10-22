@@ -34,6 +34,8 @@
     "sweep": "node scripts/morning-sweep.mjs"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.9",
+    "@livekit/components-styles": "^1.2.0",
     "@sentry/react": "^10.36.0",
     "@stripe/react-stripe-js": "^5.6.1",
     "@stripe/stripe-js": "^8.9.0",
@@ -48,6 +50,7 @@
     "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
+    "livekit-client": "^2.13.3",
     "lucide-react": "^0.562.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.5.207",

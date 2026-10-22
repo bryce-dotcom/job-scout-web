@@ -72,6 +72,7 @@ export const MENU_PAGES: Page[] = [
   { route: '/company-calendar', label: 'Company Calendar', section: 'Top of the menu', rule: 'all', does: 'Sales appointments, scheduled work and time off in one month view.' },
   { route: '/company-map', label: 'Company Map', section: 'Top of the menu', rule: 'all', does: 'Live map of everyone on the clock and every tracked vehicle.' },
   { route: '/customers', label: 'Customers', section: 'Top of the menu', rule: 'office', does: 'Look up any customer: their jobs, estimates, invoices and contact details.' },
+  { route: '/rooms', label: 'Rooms', section: 'Top of the menu', rule: 'all', does: 'Video rooms for the team — Base Camp plus side rooms, so the field and the office can see each other.' },
 
   { route: '/marketing', label: 'Marketing', section: 'Sales Flow (step 1)', rule: 'office', does: 'Be found: social posts, brand and channels; field photos become posts.' },
   { route: '/leads', label: 'Leads', section: 'Sales Flow (step 2)', rule: 'office', does: 'Every potential customer starts here.' },

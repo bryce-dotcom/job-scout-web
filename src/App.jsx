@@ -68,6 +68,7 @@ import UtilityInvoiceDetail from './pages/UtilityInvoiceDetail'
 import Incentives from './pages/Incentives'
 import TimeClock from './pages/TimeClock'
 import FieldScout from './pages/FieldScout'
+import Rooms from './pages/Rooms'
 import Payroll from './pages/Payroll'
 import PayrollInbox from './pages/PayrollInbox'
 import PayrollSetup from './pages/PayrollSetup'
@@ -484,6 +485,7 @@ function App() {
           <Route path="/incentives" element={<Incentives />} />
           <Route path="/time-clock" element={<TimeClockRouteGuard />} />
           <Route path="/field-scout" element={<FieldScout />} />
+          <Route path="/rooms" element={<Rooms />} />
           <Route path="/payroll" element={<Payroll />} />
           <Route path="/payroll/inbox" element={<PayrollInbox />} />
           <Route path="/payroll/setup" element={<PayrollSetup />} />
