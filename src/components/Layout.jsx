@@ -961,6 +961,12 @@ export default function Layout() {
                 )}
               </div>
             </div>
+            {/* The front door to the lobby, right under the logo. Bryce,
+                2026-10-22: a room you have to go looking for is a room nobody
+                walks into — so the way in sits where the eye already lands. */}
+            <div style={{ marginTop: '14px' }}>
+              <RoomsBar theme={theme} />
+            </div>
           </div>
 
           {/* Navigation */}
@@ -969,11 +975,6 @@ export default function Layout() {
             <GlobalSearch theme={theme} />
           </div>
 
-          {/* Who is talking, right now. A page you have to navigate to is a
-              page nobody opens, so the rooms live where you already look. */}
-          <div style={{ padding: '8px 8px 0' }}>
-            <RoomsBar theme={theme} />
-          </div>
 
           <nav style={{
             flex: 1,

@@ -81,23 +81,60 @@ export default function RoomsBar({ theme, compact = false }) {
     </button>
   )
 
+  if (compact) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflowX: 'auto' }}>
+        {pill(MAIN_ROOM.slug, 'Campfire', campfire, <Flame size={12} />)}
+        {busy.slice(0, 1).map(slug => pill(slug, roomMeta(slug).name, counts[slug], null))}
+      </div>
+    )
+  }
+
+  // The front door. Wide, warm and obvious, directly under the logo — you
+  // walk in, you do not go hunting through a menu for it.
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflowX: 'auto' }}>
-      {pill(MAIN_ROOM.slug, compact ? 'Campfire' : MAIN_ROOM.name, campfire, <Flame size={compact ? 12 : 13} />)}
-      {busy.slice(0, compact ? 1 : 3).map(slug => pill(slug, roomMeta(slug).name, counts[slug], null))}
-      {!compact && (
-        <button
-          onClick={() => navigate('/rooms')}
-          title="All rooms"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 24, height: 24, borderRadius: 999, cursor: 'pointer',
-            border: `1px solid ${theme.border}`, background: 'transparent', color: theme.textMuted,
-          }}
-        >
-          <Plus size={12} />
-        </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+      <button
+        onClick={() => session?.join(MAIN_ROOM.slug)}
+        title={campfire > 0 ? `${campfire} at the Campfire — click to join` : 'Open up the Campfire'}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+          padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+          border: `1px solid ${campfire > 0 ? theme.accent : theme.border}`,
+          background: campfire > 0 ? `${theme.accent}1a` : 'transparent',
+          color: campfire > 0 ? theme.accent : theme.textMuted,
+          fontSize: 13.5, fontWeight: 700,
+        }}
+      >
+        <Flame size={16} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, minWidth: 0 }}>{MAIN_ROOM.name}</span>
+        {campfire > 0 ? (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
+            background: theme.accent, color: '#fff', fontSize: 10.5, fontWeight: 800,
+          }}>{campfire}</span>
+        ) : (
+          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.8 }}>Empty</span>
+        )}
+      </button>
+
+      {busy.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {busy.slice(0, 3).map(slug => pill(slug, roomMeta(slug).name, counts[slug], null))}
+        </div>
       )}
+
+      <button
+        onClick={() => navigate('/rooms')}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5, padding: '2px 2px',
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: theme.textMuted, fontSize: 11, fontWeight: 600,
+        }}
+      >
+        <Plus size={11} /> Side rooms
+      </button>
     </div>
   )
 }
