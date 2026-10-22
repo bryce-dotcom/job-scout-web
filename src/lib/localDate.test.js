@@ -144,3 +144,35 @@ describe('a timestamptz holding a calendar day is that day', () => {
     expect(parseLocalDate('2026-09-01T00:30:00+00:00').getTime()).toBe(Date.UTC(2026, 8, 1, 0, 30))   // not midnight → an instant
   })
 })
+
+describe('a DATE column reads as its own calendar day', () => {
+  it('a time-off request for the 14th does not display as the 13th', async () => {
+    const { formatLocalDate } = await import('./localDate.js')
+    // What PostgREST hands back for a Postgres DATE. The old code did
+    // new Date(this).toLocaleDateString() and lost a day everywhere west of
+    // Greenwich, which is every user this app has.
+    const shown = formatLocalDate('2026-09-14', 'en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
+    expect(shown).toBe('9/14/2026')
+  })
+
+  it('formats from local parts, so the day never depends on the clock', async () => {
+    const { formatLocalDate, parseLocalDate } = await import('./localDate.js')
+    for (const v of ['2026-01-01', '2026-12-31', '2026-03-08', '2026-11-01']) {
+      const d = parseLocalDate(v)
+      expect(formatLocalDate(v, 'en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }))
+        .toBe(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`)
+    }
+  })
+
+  it('leaves a real timestamp alone, so paidDate is safe either shape', async () => {
+    const { formatLocalDate } = await import('./localDate.js')
+    const instant = new Date(2026, 8, 18, 12, 41)
+    expect(formatLocalDate(instant.toISOString(), 'en-US', { month: 'short', day: 'numeric' }))
+      .toBe(instant.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+  })
+
+  it('a missing date is empty, not a wrong day', async () => {
+    const { formatLocalDate } = await import('./localDate.js')
+    for (const v of [null, undefined, '']) expect(formatLocalDate(v)).toBe('')
+  })
+})

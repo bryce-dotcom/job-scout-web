@@ -19,7 +19,7 @@ import { groupHoursByDay } from '../lib/dailyHours'
 import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
-import { localDateStr } from '../lib/localDate'
+import { formatLocalDate, localDateStr } from '../lib/localDate'
 import { ptoAccrualPerPeriod, ptoBalanceDays } from '../lib/ptoThisPeriod'
 import { payDateForPeriod } from '../lib/payDate'
 import PlaidLink from '../components/PlaidLink'
@@ -739,7 +739,7 @@ export default function MyPay() {
   const processorPendingTotal = pendingProcessor.reduce((s, d) => s + d.amount, 0)
 
   const fmt = (n) => `$${(n || 0).toFixed(2)}`
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+  const fmtDate = (d) => formatLocalDate(d, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   // Customer leads, job title underneath, and the heading opens the job.
   // Payroll already worked this way; My Pay still led with the job title, so a
   // tech's own bonus list read as a column of identical service names. One
@@ -1412,7 +1412,7 @@ export default function MyPay() {
                 denied: { bg: 'rgba(239,68,68,0.12)', fg: '#b91c1c', label: 'Denied' },
               }
               const s = statusStyles[r.status] || { bg: theme.bg, fg: theme.textSecondary, label: r.status }
-              const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+              const fmt = (d) => formatLocalDate(d, 'en-US', { month: 'short', day: 'numeric' })
               const range = r.start_date === r.end_date ? fmt(r.start_date) : `${fmt(r.start_date)} – ${fmt(r.end_date)}`
               return (
                 <div key={r.id} style={{

@@ -48,7 +48,7 @@ import { VERIFICATION_EXEMPT_KEY } from '../lib/verificationPolicy'
 import { getDeliveredStatusIds } from '../lib/jobMetrics'
 import { paycheckDetail, runsWithStubs } from '../lib/payHistory'
 import { needsAttention } from '../lib/openPunches'
-import { localDateStr, parseLocalDate } from '../lib/localDate'
+import { formatLocalDate, localDateStr, parseLocalDate } from '../lib/localDate'
 import { quarterDueDate } from '../lib/payrollQuarters'
 import { suiRateInForce, suiWageBaseFor } from '../lib/suiRate'
 import { SignedImg } from '../lib/storageUrl'
@@ -3297,7 +3297,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.jobTitle}</div>
                           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
                             {d.invoiceId} · ${(d.paidAmount || d.invoiceAmount).toFixed(2)} paid
-                            {d.paidDate && ` on ${new Date(d.paidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                            {d.paidDate && ` on ${formatLocalDate(d.paidDate, 'en-US', { month: 'short', day: 'numeric' })}`}
                             {d.rateType === 'percent' && ` · ${d.rate}%`}
                           </div>
                         </div>
@@ -4834,7 +4834,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: '600', color: theme.text }}>{request.employee?.name || request.employee?.email}</div>
                   <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                    {new Date(request.start_date).toLocaleDateString()} - {new Date(request.end_date).toLocaleDateString()}
+                    {formatLocalDate(request.start_date)} - {formatLocalDate(request.end_date)}
                     <span style={{
                       marginLeft: '8px', padding: '2px 8px', backgroundColor: 'rgba(139,92,246,0.1)',
                       borderRadius: '12px', color: '#8b5cf6', fontSize: '11px', textTransform: 'uppercase'
@@ -4882,7 +4882,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
               }}>
                 <div style={{ flex: 1 }}>
                   <strong style={{ color: theme.text }}>{request.employee?.name || request.employee?.email}</strong>
-                  {' — '}{new Date(request.start_date).toLocaleDateString()}–{new Date(request.end_date).toLocaleDateString()}
+                  {' — '}{formatLocalDate(request.start_date)}–{formatLocalDate(request.end_date)}
                   {' · '}{request.request_type}
                   {request.reason && <span style={{ marginLeft: 6, fontStyle: 'italic' }}>&ldquo;{request.reason}&rdquo;</span>}
                 </div>

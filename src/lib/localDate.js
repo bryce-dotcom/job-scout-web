@@ -85,6 +85,28 @@ export function calendarDay(value) {
 }
 
 /**
+ * The same day, written the way the reader expects to see it.
+ *
+ * `new Date('2026-09-14').toLocaleDateString()` is the display half of the bug
+ * at the top of this file, and it reads the opposite way round: a bare DATE
+ * from Postgres is parsed as UTC midnight, so west of Greenwich it renders as
+ * the day BEFORE. An approved time-off request for the 14th showed on
+ * /payroll as the 13th — to the employee on My Pay as well, so both sides of
+ * the conversation were looking at the wrong day and agreeing with each other.
+ *
+ * Safe on a real timestamp too: parseLocalDate hands those to `new Date`
+ * untouched, so a timestamptz formats exactly as it did before. That is what
+ * makes it usable on a field like paidDate, which arrives as a bare DATE from
+ * payments.date and as an instant from job_bonuses.paid_at.
+ *
+ * @returns {string} '' for a missing date — never a confidently wrong day.
+ */
+export function formatLocalDate(value, locales, options) {
+  const d = parseLocalDate(value)
+  return d ? d.toLocaleDateString(locales, options) : ''
+}
+
+/**
  * Does `value` fall in [start, end)? Half-open, matching jobMetrics' range
  * functions, so consecutive windows never double-count a boundary day.
  * Either bound may be null for an open end.
