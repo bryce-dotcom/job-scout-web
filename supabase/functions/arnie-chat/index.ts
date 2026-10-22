@@ -7,7 +7,7 @@ import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
-import { fabricationIn, correctionFor, untracedFigures, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
+import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
@@ -3135,6 +3135,14 @@ function untracedFiguresOf(text: string, systemPrompt: string, convo: any[]): st
   } catch { return [] }
 }
 
+/** Amounts given after saying they could not be read — only in a turn with a photo or document. */
+function guessedAmountsOf(text: string, convo: any[]): string[] {
+  try {
+    if (!convo.some((m: any) => Array.isArray(m?.content) && m.content.some((b: any) => b?.type === 'image' || b?.type === 'document'))) return []
+    return guessedAmounts(text)
+  } catch { return [] }
+}
+
 function logFabrication(kind: Fabrication, caller: Caller, said = '', reply = '', shown = false) {
   console.warn(`[arnie-truth] caught a ${kind} claim with no tool call — company ${caller.companyId}, ${caller.email}`)
   // Kept for the weekly review (api/cron/arnie-review.js). Never blocks the reply.
@@ -3187,11 +3195,14 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
           || (PROPOSE_TOOLS.every((n) => !used.has(n)) ? fabricationIn(text, used, await cardPendingFor(caller)) : null)
         const untraced = claim ? [] : untracedFiguresOf(text, systemPrompt, convo)
         if (!claim && untraced.length) claim = 'figures'
+        const guessed = claim ? [] : guessedAmountsOf(text, convo)
+        if (!claim && guessed.length) claim = 'guess'
+        const detail = claim === 'guess' ? guessed : untraced
         if (claim) {
           corrections++
           logFabrication(claim, caller, lastUserText(messages), text, false)
           convo.push({ role: 'assistant', content: blocks })
-          convo.push({ role: 'user', content: correctionFor(claim, false, untraced) })
+          convo.push({ role: 'user', content: correctionFor(claim, false, detail) })
           continue
         }
       }
@@ -3382,6 +3393,10 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // Figures nobody looked up (London's Arizona revenue, 2026-10-20).
               const untraced = claim ? [] : untracedFiguresOf(text, systemPrompt, convo)
               if (!claim && untraced.length) claim = 'figures'
+              // A total he said he could not read, given anyway (eval, 2026-10-22).
+              const guessed = claim ? [] : guessedAmountsOf(text, convo)
+              if (!claim && guessed.length) claim = 'guess'
+              const detail = claim === 'guess' ? guessed : untraced
               if (claim && hold) {
                 // Held, so never shown: it is replaced by what he writes next,
                 // and there is nothing for him to take back.
@@ -3389,7 +3404,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 logFabrication(claim, caller, lastUserText(messages), text, false)
                 pending = ''
                 convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
-                convo.push({ role: 'user', content: correctionFor(claim, false, untraced) })
+                convo.push({ role: 'user', content: correctionFor(claim, false, detail) })
                 forceComputer = claim === 'computer' && computerAsk
                 continue
               }
@@ -3407,7 +3422,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
                 convo.push({ role: 'assistant', content: blocks.filter(Boolean) })
                 // `true`: this is a stream, so they have already read it and
                 // it has to be taken back in words.
-                convo.push({ role: 'user', content: correctionFor(claim, true, untraced) })
+                convo.push({ role: 'user', content: correctionFor(claim, true, detail) })
                 forceComputer = claim === 'computer' && computerAsk
                 continue
               }

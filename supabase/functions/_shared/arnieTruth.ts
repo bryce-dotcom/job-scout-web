@@ -165,7 +165,7 @@ export function blamesTheApp(text: string): boolean {
     || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)
 }
 
-export type Fabrication = 'computer' | 'card' | 'figures' | 'email'
+export type Fabrication = 'computer' | 'card' | 'figures' | 'email' | 'guess'
 
 // ── Figures nobody looked up ────────────────────────────────────────────
 //
@@ -267,6 +267,41 @@ export function untracedFigures(text: string, context: string, toolContext = '')
 }
 
 /**
+ * An amount it said it could not read, then gave anyway. The eval's receipt
+ * with every total blacked out, 2026-10-22: "I won't work the total out from
+ * gallons times price" — and the same reply carried the worked-out figure.
+ *
+ * In a turn with a photo the figure trace cannot run (what is on the paper is
+ * in no text), so this reads the reply alone. Once it says an amount cannot
+ * be read, a dollar figure is a guess if it is two numbers it quotes
+ * multiplied (gallons × price), two of its own dollar figures added (fuel +
+ * car wash), or set beside estimate words. A figure that really is printed
+ * can be caught too (a legible fuel line is gallons × price); the correction
+ * lets him keep it by saying so.
+ */
+const UNREADABLE = /\b(?:can(?:no|['’])t|could(?:n['’]t| not)|unable to|not able to)\s+(?:quite\s+)?(?:read|make out|see)\b|\b(?:blacked|cut|torn|smudged|faded|crossed|scratched)\s+(?:out|off)\b|\b(?:illegible|unreadable|not legible)\b/i
+const ESTIMATE = /\b(?:would (?:be|come to)|works? out|comes? to|about|around|roughly|approximately|approx|estimated?|likely|probably|my guess)\b|[~≈]/i
+export function guessedAmounts(text: string): string[] {
+  const t = String(text || '')
+  if (!UNREADABLE.test(t)) return []
+  const money = figuresIn(t).money
+  const all = numbersIn(t).filter((n) => n > 0 && n < 100000)
+  const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.02, b * 0.002)
+  const out = new Set<string>()
+  for (const s of t.split(/(?<=[.!?\n])\s+/)) {
+    for (const m of s.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)) {
+      const v = parseFloat(m[1].replace(/,/g, ''))
+      if (!(v >= 10)) continue
+      const others = all.filter((n) => !close(n, v))
+      const product = others.some((a, i) => others.some((b, j) => i < j && close(a * b, v)))
+      const sum = money.some((a, i) => money.some((b, j) => i < j && !close(a, v) && !close(b, v) && close(a + b, v)))
+      if (product || sum || ESTIMATE.test(s)) out.add(`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
+    }
+  }
+  return [...out]
+}
+
+/**
  * "Email sent", "check your inbox" — with no email tool run this turn.
  * Cole, 2026-10-20: "Email sent, boss … check your inbox" three times, then a
  * made-up tool result ("sent": true) when he said it never came.
@@ -316,6 +351,16 @@ export function correctionFor(kind: Fabrication, seen = false, detail: string[] 
       'Then do one of these two things, and nothing else:',
       '1. CALL the query tool that answers it and give the real figures from its result.',
       '2. If no tool you have can answer it, say so in one line — never estimate, round up from a guess, or fill a breakdown with plausible numbers.',
+    ].join('\n')
+  }
+  if (kind === 'guess') {
+    return [
+      `STOP. You said an amount on what they sent cannot be read, and then gave one anyway: ${detail.slice(0, 6).join(', ')}. A figure worked out from other lines, or estimated, is a guess at what the paper does not show.`,
+      ...opensWith,
+      'Then do this, and nothing else:',
+      '1. Drop every amount you worked out or estimated. Say only what is printed and legible.',
+      '2. Ask them for the amount you could not read, in one line.',
+      'If one of those figures IS printed and legible on the paper, you may keep it — say so plainly ("the fuel line itself reads $X").',
     ].join('\n')
   }
   if (kind === 'computer') {

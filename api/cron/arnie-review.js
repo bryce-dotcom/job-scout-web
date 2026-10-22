@@ -46,6 +46,7 @@ const KIND_WORDS = {
   email: 'said an email went that never did',
   computer: 'described work on their computer he never did',
   figures: 'gave figures no lookup returned',
+  guess: 'said an amount could not be read, then gave one anyway',
 }
 
 /**
