@@ -1,22 +1,24 @@
-// Who is talking, right now, in the header.
+// The way in: a fire, a name, and the word that says what it is for.
 //
-// Bryce, 2026-10-22: a page you have to navigate to is a page nobody opens.
-// So the rooms live in the sticky header instead — the Campfire plus any
-// side room with somebody in it, each showing a headcount, one click to walk
-// in. You see the team gathering the way you would see it across an office.
+// Bryce, 2026-10-22: the button was too big and "nobody knows what the fuck
+// the Campfire is". Both true. A pill reads as a control you have to make a
+// decision about; a lit fire with CampFire beside it reads as a PLACE, and
+// the little word underneath — collaborate — is the whole explanation anyone
+// needs. No box, no border, no pill: the fire carries the colour, the text
+// does the telling.
 //
-// It owns its own presence subscription rather than taking it from Layout,
+// It owns its own presence subscription rather than taking one from Layout,
 // so Layout's hook count is untouched and this can be dropped anywhere.
-// Presence is the right source here: the lobby only needs a headcount, and
-// asking the media server for one on every render would be absurd.
+// Presence is the right source: the lobby only needs a headcount, and asking
+// the media server for one on every render would be absurd.
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Flame, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { MAIN_ROOM, roomMeta } from '../lib/conferenceRooms'
 import { useRoomSession } from './RoomSession'
+import CampfireMark from './CampfireMark'
 
 export default function RoomsBar({ theme, compact = false }) {
   const navigate = useNavigate()
@@ -26,9 +28,9 @@ export default function RoomsBar({ theme, compact = false }) {
 
   useEffect(() => {
     if (!companyId) return
-    // Read-only: this bar watches the lobby, it never announces anybody. The
-    // page you are ON does the announcing when you actually join a room —
-    // otherwise every open tab would read as a person in the Campfire.
+    // Read-only: this watches the lobby, it never announces anybody. The room
+    // you are IN does the announcing — otherwise every open tab would read as
+    // a person sitting at the fire.
     const channel = supabase.channel(`rooms-lobby-${companyId}`)
     channel
       .on('presence', { event: 'sync' }, () => {
@@ -48,93 +50,76 @@ export default function RoomsBar({ theme, compact = false }) {
 
   if (!companyId) return null
 
-  // The Campfire always shows. A side room shows only while someone is in
-  // it: an empty room in the header is clutter, and the full list is one
-  // click away on the page.
-  const busy = Object.keys(counts).filter(slug => slug !== MAIN_ROOM.slug && counts[slug] > 0)
-  const campfire = counts[MAIN_ROOM.slug] || 0
+  const here = counts[MAIN_ROOM.slug] || 0
+  const busy = Object.keys(counts).filter(s => s !== MAIN_ROOM.slug && counts[s] > 0)
 
-  const pill = (slug, label, n, icon) => (
-    <button
-      key={slug}
-      onClick={() => session?.join(slug)}
-      title={n > 0 ? `${n} in ${label} — click to join` : `${label} — click to open it up`}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: compact ? '4px 8px' : '5px 10px',
-        borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
-        fontSize: compact ? 11.5 : 12.5, fontWeight: 600,
-        border: `1px solid ${n > 0 ? theme.accent : theme.border}`,
-        background: n > 0 ? `${theme.accent}1a` : 'transparent',
-        color: n > 0 ? theme.accent : theme.textMuted,
-      }}
-    >
-      {icon}
-      <span style={{ maxWidth: compact ? 70 : 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-      {n > 0 && (
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          minWidth: 16, height: 16, padding: '0 4px', borderRadius: 999,
-          background: theme.accent, color: '#fff', fontSize: 10, fontWeight: 800,
-        }}>{n}</span>
-      )}
-    </button>
+  const count = (n) => (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      minWidth: 17, height: 17, padding: '0 5px', borderRadius: 999,
+      background: '#f97316', color: '#fff', fontSize: 10.5, fontWeight: 800, flexShrink: 0,
+    }}>{n}</span>
   )
 
+  // On a phone the header already carries the menu and Feedback, so the fire
+  // goes in on its own and the words come off.
   if (compact) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflowX: 'auto' }}>
-        {pill(MAIN_ROOM.slug, 'Campfire', campfire, <Flame size={12} />)}
-        {busy.slice(0, 1).map(slug => pill(slug, roomMeta(slug).name, counts[slug], null))}
-      </div>
+      <button
+        onClick={() => session?.join(MAIN_ROOM.slug)}
+        aria-label={here > 0 ? `CampFire, ${here} inside` : 'CampFire'}
+        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer' }}
+      >
+        <CampfireMark size={22} live={here > 0} id="cf-m" />
+        {here > 0 && count(here)}
+      </button>
     )
   }
 
-  // The front door. Wide, warm and obvious, directly under the logo — you
-  // walk in, you do not go hunting through a menu for it.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
       <button
         onClick={() => session?.join(MAIN_ROOM.slug)}
-        title={campfire > 0 ? `${campfire} at the Campfire — click to join` : 'Open up the Campfire'}
+        title={here > 0 ? `${here} at the CampFire — click to join them` : 'CampFire — start it up'}
         style={{
-          display: 'flex', alignItems: 'center', gap: 9, width: '100%',
-          padding: '9px 12px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-          border: `1px solid ${campfire > 0 ? theme.accent : theme.border}`,
-          background: campfire > 0 ? `${theme.accent}1a` : 'transparent',
-          color: campfire > 0 ? theme.accent : theme.textMuted,
-          fontSize: 13.5, fontWeight: 700,
+          display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
         }}
       >
-        <Flame size={16} style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1, minWidth: 0 }}>{MAIN_ROOM.name}</span>
-        {campfire > 0 ? (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
-            background: theme.accent, color: '#fff', fontSize: 10.5, fontWeight: 800,
-          }}>{campfire}</span>
-        ) : (
-          <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.8 }}>Empty</span>
-        )}
+        <CampfireMark size={28} live={here > 0} id="cf-d" />
+        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.15 }}>
+          <span style={{ fontSize: 14.5, fontWeight: 700, color: theme.text, letterSpacing: '-0.01em' }}>
+            CampFire
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 500, color: theme.textMuted, letterSpacing: '0.06em' }}>
+            collaborate
+          </span>
+        </span>
+        {here > 0 && count(here)}
       </button>
 
+      {/* A side room shows only while someone is in it. An empty room listed
+          here is clutter, and the full set is one click away. */}
       {busy.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {busy.slice(0, 3).map(slug => pill(slug, roomMeta(slug).name, counts[slug], null))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 38 }}>
+          {busy.slice(0, 3).map(slug => (
+            <button
+              key={slug}
+              onClick={() => session?.join(slug)}
+              title={`${counts[slug]} in ${roomMeta(slug).name}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: 0,
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 11, fontWeight: 600, color: theme.textMuted, whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ width: 5, height: 5, borderRadius: 999, background: '#f97316', flexShrink: 0 }} />
+              {roomMeta(slug).name}
+              <span style={{ opacity: 0.75 }}>{counts[slug]}</span>
+            </button>
+          ))}
         </div>
       )}
-
-      <button
-        onClick={() => navigate('/rooms')}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 5, padding: '2px 2px',
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: theme.textMuted, fontSize: 11, fontWeight: 600,
-        }}
-      >
-        <Plus size={11} /> Side rooms
-      </button>
     </div>
   )
 }
