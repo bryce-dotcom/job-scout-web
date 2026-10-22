@@ -1,23 +1,24 @@
 // The conference rooms.
 //
 // Bryce, 2026-10-22: techs are on phones in the field, the office is on
-// laptops, and there was nowhere in JobScout to just see each other. Base
-// Camp is the main room and always exists; side rooms get opened on the spot
-// and take the next free name off the topo list, so nobody has to invent one
-// mid-conversation.
+// laptops, and there was nowhere in JobScout to just see each other. The
+// Campfire is the main room and always exists; side rooms get opened on the
+// spot and take the next free name off the topo list, so nobody has to invent
+// one mid-conversation.
 //
 // This page is only the lobby. The call itself is held by RoomSession,
 // above the router, so joining a room does not trap you here — you walk in
 // and carry on working, and the dock follows you around the app.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Video, Plus, Users, X, DoorOpen, Loader } from 'lucide-react'
+import { Plus, Users, X, DoorOpen, Loader } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/ThemeContext'
 import { toast } from '../lib/toast'
 import { MAIN_ROOM, nextRoomName, occupancyLabel } from '../lib/conferenceRooms'
 import { useRoomSession } from '../components/RoomSession'
+import CampfireMark from '../components/CampfireMark'
 
 export default function Rooms() {
   const theme = useTheme()
@@ -38,7 +39,7 @@ export default function Rooms() {
   )
   const myName = me?.name || user?.email || 'Someone'
 
-  // The lobby list. Base Camp is not stored — it exists for every company,
+  // The lobby list. The Campfire is not stored — it exists for every company,
   // so there is nothing to create before the first meeting.
   useEffect(() => {
     if (!companyId) return
@@ -118,10 +119,10 @@ export default function Rooms() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: theme.text, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Video size={22} style={{ color: theme.accent }} /> Rooms
+            <CampfireMark size={24} id="cf-lobby" /> Rooms
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: theme.textSecondary, maxWidth: 560, lineHeight: 1.5 }}>
-            Everyone gathers at Base Camp. Open a side room when a few of you need to go deep on
+            Everyone gathers at The Campfire. Open a side room when a few of you need to go deep on
             something without holding up the rest.
           </p>
         </div>
@@ -156,7 +157,10 @@ export default function Rooms() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{room.name}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, fontSize: 16, fontWeight: 700, color: theme.text }}>
+                    {room.isMain && <CampfireMark size={18} live={live} id="cf-card" />}
+                    {room.name}
+                  </span>
                   {room.isMain && (
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: theme.accent, background: `${theme.accent}1f`, padding: '3px 7px', borderRadius: 999 }}>Main</span>
                   )}

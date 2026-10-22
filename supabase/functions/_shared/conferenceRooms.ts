@@ -5,7 +5,7 @@
 // world rather than "Room 2", because a team that says "I'm on the Ridge"
 // is a team that uses the thing.
 //
-// The main room always exists and is always Base Camp. Side rooms are made
+// The main room always exists and is always The Campfire. Side rooms are made
 // on the spot and take the next unused name, so nobody has to invent one
 // mid-conversation.
 

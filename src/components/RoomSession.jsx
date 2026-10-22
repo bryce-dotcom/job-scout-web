@@ -12,17 +12,17 @@
 // to join; it never owns the connection itself.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, ControlBar,
 } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 import '@livekit/components-styles'
-import { Minus, Maximize2, PhoneOff, Flame, VideoOff } from 'lucide-react'
+import { Minus, Maximize2, PhoneOff, VideoOff } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { roomMeta, MAIN_ROOM } from '../lib/conferenceRooms'
+import CampfireMark from './CampfireMark'
 
 const RoomSessionContext = createContext(null)
 export const useRoomSession = () => useContext(RoomSessionContext)
@@ -31,6 +31,9 @@ export function RoomSessionProvider({ theme, children }) {
   const companyId = useStore(s => s.companyId)
   const user = useStore(s => s.user)
   const employees = useStore(s => s.employees)
+  // Only the platform can switch video on — the keys are JobScout's, not a
+  // tenant's. So a customer must never be told to go and add them.
+  const isDeveloper = useStore(s => s.isDeveloper)
   const [slug, setSlug] = useState(null)
   const [ticket, setTicket] = useState(null)
   const [status, setStatus] = useState('idle')   // idle | joining | live | unconfigured | error
@@ -87,13 +90,14 @@ export function RoomSessionProvider({ theme, children }) {
           expanded={expanded}
           setExpanded={setExpanded}
           onLeave={leave}
+          isDeveloper={isDeveloper}
         />
       )}
     </RoomSessionContext.Provider>
   )
 }
 
-function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave }) {
+function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper }) {
   const meta = roomMeta(slug)
   const isMain = slug === MAIN_ROOM.slug
 
@@ -122,7 +126,9 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
         borderBottom: `1px solid ${theme.border}`, background: theme.bg,
       }}>
-        {isMain && <Flame size={14} style={{ color: theme.accent, flexShrink: 0 }} />}
+        {/* The same fire as the front door, lit while the call is up, so the
+            dock is obviously the thing you clicked and not a stray window. */}
+        {isMain && <CampfireMark size={16} live={status === 'live'} id="cf-dock" />}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {meta.name}
@@ -144,8 +150,9 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
       <div style={{ flex: 1, minHeight: expanded ? 0 : 150, position: 'relative' }}>
         {status === 'unconfigured' && (
           <Note theme={theme} icon={<VideoOff size={22} />}>
-            The rooms are built and {meta.name} is ready — it just needs a media service behind it.
-            Add the LiveKit keys and it comes alive with no further changes.
+            {isDeveloper
+              ? `${meta.name} is ready — the project has no LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET yet.`
+              : 'Video is not switched on yet. Nothing for you to do — it will just start working.'}
           </Note>
         )}
         {status === 'error' && <Note theme={theme} tone="#dc2626">{message}</Note>}

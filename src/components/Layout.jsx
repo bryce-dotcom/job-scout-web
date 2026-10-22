@@ -1048,7 +1048,7 @@ export default function Layout() {
                   office on a laptop in the same room. */}
               <NavLink
                 to="/rooms"
-                title="Base Camp and the side rooms — see each other and talk, wherever you are working"
+                title="The Campfire and the side rooms — see each other and talk, wherever you are working"
                 style={({ isActive }) => ({
                   display: 'flex', alignItems: 'center', gap: '10px',
                   padding: '10px 12px', borderRadius: '8px',
