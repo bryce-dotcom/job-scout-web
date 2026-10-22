@@ -111,7 +111,7 @@ describe('an app too old to draw a card is said out loud, not covered up', () =>
     expect(chat).toMatch(/close it completely \(on a phone, swipe it away\) and open it again/)
   })
   it('only for a person in the app — a text, an email or a routine is not an app', () => {
-    expect(chat).toMatch(/const inTheApp = !!caller\n/)
+    expect(chat).toMatch(/const inTheApp = !!caller\r?\n/)
     expect(chat).toMatch(/\+ \(inTheApp \? oldAppBlock\(cards, caller\) : ''\)/)
   })
 })
