@@ -97,7 +97,7 @@ function smsTerms(c, slug) {
 <p><strong>${name} Notifications</strong> sends text messages about work you have asked for or are doing with us: estimates and follow-ups on them, appointment confirmations and reminders, crew-on-the-way notices, invoices and payment receipts. Our own staff also receive messages about their schedules, assigned jobs and daily work. We do not send marketing or promotional texts.</p>
 
 <h2>How you opt in</h2>
-<p>Customers opt in when they request an estimate or book work and agree to receive texts; we record that consent with their mobile number. Staff opt in when they give us their mobile number for work notifications. Consent is not a condition of any purchase.</p>
+<p>Customers and staff opt in on our sign-up page, <a href="/legal/${esc(slug)}/text-signup">Get text updates from ${name}</a>: they enter their mobile number and tick a box — never ticked for them — that says exactly what is in "What you agree to" above. Customers can also tick the same box when they request an estimate online or view an estimate or invoice we sent them. We keep each consent with its date. Consent is not a condition of any purchase.</p>
 
 <h2>Message frequency and cost</h2>
 <p>Message frequency varies with your jobs. Message and data rates may apply, depending on your mobile plan.</p>
@@ -113,13 +113,99 @@ function smsTerms(c, slug) {
 `)
 }
 
+// ── The sign-up page: the call to action a carrier can verify ───────────────
+//
+// /legal/:slug/text-signup. The campaign was rejected a second time
+// (2026-10-21, Twilio 30909: "issues verifying the Call to Action") because
+// it said "our office records consent" — nothing a reviewer can open. This
+// is: the business's name, what it texts about, an UNTICKED box with the
+// registered sentence, the terms and the privacy policy. A plain HTML form —
+// no JavaScript — that posts back here; the opt-in is kept in sms_opt_ins
+// with the words agreed to, when and from where.
+
+/** The sentence the carriers registered (src/lib/smsConsent.js consentDisclosure). */
+const disclosure = (name) => `${String(name || '').trim() || 'this company'} may text me about my estimates, appointments, jobs and invoices. `
+  + 'Message frequency varies, and message and data rates may apply. Reply STOP to stop, HELP for help.'
+
+/** 10 US digits, or null; a leading 1 is dropped. */
+function usMobile(raw) {
+  let d = String(raw ?? '').replace(/\D/g, '')
+  if (d.length === 11 && d.startsWith('1')) d = d.slice(1)
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(d) ? d : null
+}
+
+function textSignup(c, slug, state = {}) {
+  const name = esc(c.company_name)
+  const links = `<p class="muted"><a href="/legal/${esc(slug)}/sms-terms">Text message terms</a> · <a href="/legal/${esc(slug)}/privacy">Privacy policy</a>${c.phone ? ` · ${esc(c.phone)}` : ''}</p>`
+  if (state.done) {
+    return page(`${c.company_name} — Text sign-up`, `
+<h1>You're signed up</h1>
+<p>${name} will text ${esc(state.phone)} about your estimates, appointments, jobs and invoices. Message frequency varies, and message and data rates may apply. Reply <strong>STOP</strong> to any text to stop, <strong>HELP</strong> for help.</p>
+${links}`)
+  }
+  return page(`${c.company_name} — Get text updates`, `
+<h1>Get text updates from ${name}</h1>
+<p>Texts about work you have asked for or are doing with us — estimates, appointment confirmations and reminders, crew-on-the-way notices, invoices and receipts — and, for our staff, their schedules and jobs. No marketing or promotions.</p>
+<form method="post" action="/legal/${esc(slug)}/text-signup" class="box">
+  <p><label for="n"><strong>Your name</strong></label><br><input id="n" name="name" autocomplete="name" value="${esc(state.name || '')}" style="width:100%;padding:10px;border:1px solid #d6cdb8;border-radius:8px;font:inherit;box-sizing:border-box"></p>
+  <p><label for="p"><strong>Mobile number</strong></label><br><input id="p" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="(801) 555-0100" value="${esc(state.phone || '')}" style="width:100%;padding:10px;border:1px solid #d6cdb8;border-radius:8px;font:inherit;box-sizing:border-box"></p>
+  <p><label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" name="agree" value="yes" style="width:18px;height:18px;margin-top:4px;flex-shrink:0"> <span>${esc(disclosure(c.company_name))}</span></label></p>
+  ${state.error ? `<p role="alert" style="color:#b91c1c">${esc(state.error)}</p>` : ''}
+  <p><button type="submit" style="padding:11px 18px;border:0;border-radius:8px;background:#5a6349;color:#fff;font:inherit;font-weight:700;cursor:pointer">Sign me up for texts</button></p>
+  <p class="muted">The box is not ticked for you. Agreeing to texts is not a condition of any purchase. Message frequency varies; message and data rates may apply. Reply STOP to stop, HELP for help.</p>
+</form>
+${links}`)
+}
+
+/** Record an opt-in. Returns an error sentence, or null when kept. */
+async function recordOptIn(slug, body, req) {
+  const url = process.env.VITE_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return 'Sign-up is not available right now.'
+  if (String(body?.agree || '') !== 'yes') return 'Tick the box to agree to texts.'
+  const phone = usMobile(body?.phone)
+  if (!phone) return 'Enter a 10-digit US mobile number.'
+  const H = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+  const [co] = await fetch(`${url}/rest/v1/companies?public_quote_slug=eq.${encodeURIComponent(slug)}&select=id,company_name&limit=1`, { headers: H }).then((r) => (r.ok ? r.json() : []))
+  if (!co) return 'No company at this address.'
+  const ip = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim() || null
+  if (ip) {
+    const since = new Date(Date.now() - 3600_000).toISOString()
+    const recent = await fetch(`${url}/rest/v1/sms_opt_ins?select=id&ip=eq.${encodeURIComponent(ip)}&created_at=gte.${since}&limit=11`, { headers: H }).then((r) => (r.ok ? r.json() : []))
+    if (recent.length >= 10) return 'Too many sign-ups from here — try again later.'
+  }
+  const r = await fetch(`${url}/rest/v1/sms_opt_ins`, {
+    method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      company_id: co.id, phone, name: String(body?.name || '').replace(/[<>]/g, '').trim().slice(0, 120) || null,
+      disclosure: disclosure(co.company_name), source: 'web_form', ip,
+      user_agent: String(req.headers?.['user-agent'] || '').slice(0, 300) || null,
+    }),
+  })
+  return r.ok ? null : 'That did not save — try again.'
+}
+
 module.exports = async function handler(req, res) {
   const slug = String(req.query?.slug || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 80)
   const doc = String(req.query?.doc || '')
-  if (!['privacy', 'sms-terms'].includes(doc)) return res.status(404).send('Not found')
+  if (!['privacy', 'sms-terms', 'text-signup'].includes(doc)) return res.status(404).send('Not found')
   const c = await companyFor(slug)
   if (!c) return res.status(404).setHeader('Content-Type', 'text/html; charset=utf-8').send(page('Not found', '<h1>Not found</h1><p>No company at this address.</p>'))
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  if (doc === 'text-signup') {
+    // A form is never cached: what it shows depends on what was just sent.
+    res.setHeader('Cache-Control', 'no-store')
+    if (req.method === 'POST') {
+      const body = req.body && typeof req.body === 'object' ? req.body : Object.fromEntries(new URLSearchParams(String(req.body || '')))
+      const error = await recordOptIn(slug, body, req)
+      const phone = usMobile(body?.phone)
+      return res.status(error ? 400 : 200).send(textSignup(c, slug, error
+        ? { error, name: body?.name, phone: body?.phone }
+        : { done: true, phone: phone ? `(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}` : '' }))
+    }
+    return res.status(200).send(textSignup(c, slug))
+  }
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400')
   return res.status(200).send(doc === 'privacy' ? privacy(c, slug) : smsTerms(c, slug))
 }
+module.exports.usMobile = usMobile
+module.exports.disclosure = disclosure

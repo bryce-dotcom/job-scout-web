@@ -60,6 +60,21 @@ export default function Privacy() {
         We <strong>do not sell your data</strong> to advertisers or data brokers.
       </p>
 
+      {/* The carriers' A2P 10DLC review reads the privacy policy for this
+          paragraph by name; without it a campaign is rejected (HHH, 2026-10-21). */}
+      <h2 style={sectionHeader}>Text messages</h2>
+      <p style={para}>
+        When you give a business that uses JobScout your mobile number and agree
+        to receive texts, we use that number only to send the messages you agreed
+        to — about your estimates, appointments, jobs and invoices, or your work
+        if you are their staff. <strong>No mobile information will be shared
+        with third parties or affiliates for marketing or promotional
+        purposes.</strong> Text-messaging opt-in data and consent are not shared
+        with any third party, except the messaging provider that delivers the
+        text. Reply STOP to any message to stop, HELP for help; the full terms
+        are at <Link to="/sms-terms" style={{ color: '#5a6349' }}>text message terms</Link>.
+      </p>
+
       <h2 style={sectionHeader}>Tenant isolation</h2>
       <p style={para}>
         Each tenant&apos;s data is isolated at the database level via
