@@ -141,7 +141,11 @@ describe('Cole #2 and #3', () => {
     expect(d).toMatch(/if \(!mine && caller\.level < 2\)/)
     expect(d).toMatch(/snapshot: \{ quote, lines, messages, submissions \}/)
     expect(d).toMatch(/relinks: \{ expenses: /)
-    expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/quote_delete: \{\n\s+label: 'estimate delete',/)
+    // \r?\n, not \n: arnieCreate.ts is CRLF (all 932 lines), so `\{\n` cannot
+    // match `{\r\n` and this read as a missing quote_delete card for as long
+    // as the file has had Windows line endings. Same fault as 765c540e and
+    // 36bb83cb fixed in two other source-shape tests; this was the third.
+    expect(read('supabase/functions/_shared/arnieCreate.ts')).toMatch(/quote_delete: \{\r?\n\s+label: 'estimate delete',/)
     expect(read('supabase/functions/arnie-chat/index.ts')).toMatch(/'company_rule', 'quote_delete'(, '[a-z_]+')*\]/)
   })
 })
