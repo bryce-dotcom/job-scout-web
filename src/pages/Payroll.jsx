@@ -571,28 +571,6 @@ export default function Payroll() {
     return () => { cancelled = true }
   }, [companyId, periodOffset, timeOffRequests, ptoVersion])
 
-  // Payroll requires BOTH Admin+ access AND the HR permission for the
-  // full roster view. Non-HR users get redirected to /my-pay where they
-  // can see their own commissions + hours.
-  if (user && (!isAdmin || !hasHR)) {
-    return (
-      <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-        <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Access Restricted</div>
-        <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '16px' }}>
-          {!isAdmin
-            ? 'The full Payroll view is admin-only.'
-            : 'Payroll access requires HR permission. Contact a Super Admin to request access.'}
-        </div>
-        <button onClick={() => navigate('/my-pay')} style={{
-          padding: '10px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none',
-          borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
-        }}>
-          View My Pay →
-        </button>
-      </div>
-    )
-  }
-
   // Load payroll config from settings
   useEffect(() => {
     if (companyId) {
@@ -3673,6 +3651,48 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
           isMobile={isMobile}
           fmt={fmt}
         />
+      </div>
+    )
+  }
+
+  // ACCESS CHECK, AFTER EVERY HOOK — NOT IN THE MIDDLE OF THE COMPONENT.
+  //
+  // This sat around line 577, which breaks the Rules of Hooks: the effects
+  // registered ABOVE it still run, and they close over getCurrentPeriod,
+  // declared some five hundred lines BELOW it. On a render that returned
+  // here those consts were never reached, so the effects fired into the
+  // dead zone and the page threw
+  //
+  //     Cannot access 'Gr' before initialization
+  //
+  // instead of showing this message. Resolved from the production source
+  // map of build BX-koiVH to Payroll.jsx:558 — the first effect that calls
+  // getCurrentPeriod.
+  //
+  // It only hit people WITHOUT HR access, which is why it read as random:
+  // of HHH's four admins only Alayda has has_hr_access, so she was the only
+  // one who could open this page at all. Cole got it on 15 Oct, Doug on
+  // 22 Oct, and Tracy would have. They saw a white screen where the words
+  // below should have been.
+
+  // Payroll requires BOTH Admin+ access AND the HR permission for the
+  // full roster view. Non-HR users get redirected to /my-pay where they
+  // can see their own commissions + hours.
+  if (user && (!isAdmin || !hasHR)) {
+    return (
+      <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text, marginBottom: '8px' }}>Access Restricted</div>
+        <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '16px' }}>
+          {!isAdmin
+            ? 'The full Payroll view is admin-only.'
+            : 'Payroll access requires HR permission. Contact a Super Admin to request access.'}
+        </div>
+        <button onClick={() => navigate('/my-pay')} style={{
+          padding: '10px 20px', backgroundColor: theme.accent, color: '#fff', border: 'none',
+          borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
+        }}>
+          View My Pay →
+        </button>
       </div>
     )
   }
