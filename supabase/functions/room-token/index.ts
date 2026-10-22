@@ -37,9 +37,15 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    const LIVEKIT_URL = Deno.env.get('LIVEKIT_URL') || ''
-    const API_KEY = Deno.env.get('LIVEKIT_API_KEY') || ''
-    const API_SECRET = Deno.env.get('LIVEKIT_API_SECRET') || ''
+    // .trim() is not politeness, it is the bug. A secret pasted into a
+    // dashboard field carries the line break that came with it, and the
+    // newline rides along into the token: iss gains a trailing line break and
+    // the HMAC is computed over a different secret, so LiveKit answers 'invalid
+    // API key' — which reads exactly like a wrong key and sends you back to
+    // the dashboard to re-copy a value that was correct all along.
+    const LIVEKIT_URL = (Deno.env.get('LIVEKIT_URL') || '').trim()
+    const API_KEY = (Deno.env.get('LIVEKIT_API_KEY') || '').trim()
+    const API_SECRET = (Deno.env.get('LIVEKIT_API_SECRET') || '').trim()
 
     const caller = await resolveCaller(req, SUPABASE_URL, SERVICE_KEY, { verify: true })
     if (!caller || !caller.companyId) return json({ error: 'Sign in to join a room.' }, 401)

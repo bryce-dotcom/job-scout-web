@@ -60,7 +60,10 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
   const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-  const API_SECRET = Deno.env.get('LIVEKIT_API_SECRET') || ''
+  // Trimmed for the same reason the health branch above trims: a pasted
+  // secret keeps its line break, and an untrimmed one here would reject
+  // every genuine delivery as a bad signature.
+  const API_SECRET = (Deno.env.get('LIVEKIT_API_SECRET') || '').trim()
   if (!API_SECRET) return ok({ error: 'not configured' }, 503)
 
   // ---- authenticate the sender -------------------------------------------

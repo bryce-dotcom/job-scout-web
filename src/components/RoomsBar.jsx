@@ -12,9 +12,7 @@
 // Presence is the right source: the lobby only needs a headcount, and asking
 // the media server for one on every render would be absurd.
 
-import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { MAIN_ROOM, roomMeta } from '../lib/conferenceRooms'
 import { useRoomSession } from './RoomSession'
@@ -24,29 +22,10 @@ export default function RoomsBar({ theme, compact = false }) {
   const navigate = useNavigate()
   const session = useRoomSession()
   const companyId = useStore(s => s.companyId)
-  const [counts, setCounts] = useState({})
-
-  useEffect(() => {
-    if (!companyId) return
-    // Read-only: this watches the lobby, it never announces anybody. The room
-    // you are IN does the announcing — otherwise every open tab would read as
-    // a person sitting at the fire.
-    const channel = supabase.channel(`rooms-lobby-${companyId}`)
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState()
-        const next = {}
-        for (const entries of Object.values(state)) {
-          for (const entry of entries) {
-            if (!entry?.room) continue
-            next[entry.room] = (next[entry.room] || 0) + 1
-          }
-        }
-        setCounts(next)
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [companyId])
+  // The headcount comes from the one presence channel RoomSession owns. This
+  // used to open a second channel on the same topic, which is why the fire
+  // and the lobby could disagree about who was at it.
+  const counts = session?.counts || {}
 
   if (!companyId) return null
 

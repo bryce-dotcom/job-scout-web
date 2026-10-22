@@ -29,7 +29,7 @@ export default function Rooms() {
   const joined = session?.slug || null
 
   const [rooms, setRooms] = useState([])
-  const [headcount, setHeadcount] = useState({})
+
   const [loading, setLoading] = useState(true)
   const [opening, setOpening] = useState(false)
 
@@ -56,33 +56,11 @@ export default function Rooms() {
     return () => { cancelled = true }
   }, [companyId])
 
-  // Who is in which room, without asking the media server. Presence is
-  // cheap and instant, and the lobby only needs a headcount — the real
-  // participant list is whatever the call itself shows once you are in.
-  useEffect(() => {
-    if (!companyId) return
-    const channel = supabase.channel(`rooms-lobby-${companyId}`, {
-      config: { presence: { key: `${me?.id || user?.email || Math.random()}` } },
-    })
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState()
-        const counts = {}
-        for (const entries of Object.values(state)) {
-          for (const entry of entries) {
-            if (!entry?.room) continue
-            counts[entry.room] = (counts[entry.room] || 0) + 1
-          }
-        }
-        setHeadcount(counts)
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ room: joined || null, name: myName, at: Date.now() })
-        }
-      })
-    return () => { supabase.removeChannel(channel) }
-  }, [companyId, joined, myName, me?.id, user?.email])
+  // Who is in which room comes from RoomSession's single presence channel.
+  // This page used to open its own on the same topic and announce under the
+  // same key, which is how a card could read "Empty" and "You're in here" at
+  // once, about the same person.
+  const headcount = session?.counts || {}
 
   const openRoom = async () => {
     const taken = [...rooms.map(r => r.slug)]

@@ -37,6 +37,7 @@ export function RoomSessionProvider({ theme, children }) {
   const [slug, setSlug] = useState(null)
   const [ticket, setTicket] = useState(null)
   const [status, setStatus] = useState('idle')   // idle | joining | live | unconfigured | error
+  const [counts, setCounts] = useState({})       // slug -> how many are in it
   const [message, setMessage] = useState(null)
   const [expanded, setExpanded] = useState(false)
 
@@ -62,20 +63,43 @@ export function RoomSessionProvider({ theme, children }) {
     setTicket(data); setStatus('live')
   }, [displayName])
 
-  // Tell the lobby where you are, so the headcount in the header is real.
-  // Only while actually in a room — an open tab is not a person.
+  // ONE presence channel for the whole app, owned here.
+  //
+  // There were three — this provider, RoomsBar and the lobby page — all on
+  // the topic rooms-lobby-<company>, and only this one announcing. Several
+  // channels on one topic in a single client do not reliably see each
+  // other's presence, so the lobby could show "Empty" on a card while the
+  // dock beside it said Connected, about the same person. One writer and one
+  // reader, and everything downstream takes the count from here.
   useEffect(() => {
-    if (!companyId || !slug) return
+    if (!companyId) return
     const channel = supabase.channel(`rooms-lobby-${companyId}`, {
       config: { presence: { key: `${me?.id || user?.email || 'anon'}` } },
     })
-    channel.subscribe(async (s) => {
-      if (s === 'SUBSCRIBED') await channel.track({ room: slug, name: displayName, at: Date.now() })
-    })
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        const next = {}
+        for (const entries of Object.values(state)) {
+          for (const entry of entries) {
+            if (!entry?.room) continue
+            next[entry.room] = (next[entry.room] || 0) + 1
+          }
+        }
+        setCounts(next)
+      })
+      // An open tab is not a person: room is null until you are actually in
+      // one, and the count above skips anyone whose room is null.
+      .subscribe(async (s) => {
+        if (s === 'SUBSCRIBED') await channel.track({ room: slug || null, name: displayName, at: Date.now() })
+      })
     return () => { supabase.removeChannel(channel) }
   }, [companyId, slug, displayName, me?.id, user?.email])
 
-  const value = useMemo(() => ({ slug, status, join, leave, expanded, setExpanded }), [slug, status, join, leave, expanded])
+  const value = useMemo(
+    () => ({ slug, status, join, leave, expanded, setExpanded, counts }),
+    [slug, status, join, leave, expanded, counts],
+  )
 
   return (
     <RoomSessionContext.Provider value={value}>
