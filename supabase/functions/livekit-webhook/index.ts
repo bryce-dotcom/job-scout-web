@@ -19,7 +19,7 @@
 // that token, both of which are checked before anything is written.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { verify } from 'https://deno.land/x/djwt@v3.0.2/mod.ts'
+import { create, getNumericDate, verify } from 'https://deno.land/x/djwt@v3.0.2/mod.ts'
 import { parseRoomId } from '../_shared/conferenceRooms.ts'
 
 const ok = (body: unknown, status = 200) =>
@@ -46,14 +46,45 @@ Deno.serve(async (req) => {
     const key = (Deno.env.get('LIVEKIT_API_KEY') || '').trim()
     const secret = (Deno.env.get('LIVEKIT_API_SECRET') || '').trim()
     const placeholder = /your-project|yourproject|xxxx|example|changeme|\.\.\./i
-    return ok({
-      present: { url: !!url, key: !!key, secret: !!secret },
-      looksReal: {
-        url: !!url && /^wss:\/\/[a-z0-9.-]+$/i.test(url) && !placeholder.test(url),
-        key: !!key && /^API[A-Za-z0-9]{8,}$/.test(key) && !placeholder.test(key),
-        secret: !!secret && secret.length >= 24 && !placeholder.test(secret),
-      },
-    })
+    const looksReal = {
+      url: !!url && /^wss:\/\/[a-z0-9.-]+$/i.test(url) && !placeholder.test(url),
+      key: !!key && /^API[A-Za-z0-9]{8,}$/.test(key) && !placeholder.test(key),
+      secret: !!secret && secret.length >= 24 && !placeholder.test(secret),
+    }
+
+    // Shape is still not proof. A key from one "Add New Key" and a secret
+    // from another both look perfect and fail as "invalid API key", which is
+    // indistinguishable from a typo from the outside. So ask LiveKit.
+    //
+    // We sign a throwaway roomList token and call the REST API with it. Only
+    // the real pair produces a signature LiveKit accepts, so the answer is a
+    // fact about the credentials rather than a guess about their shape — and
+    // nothing but a boolean comes back out.
+    let credentials: Record<string, unknown> = { tested: false }
+    if (looksReal.url && looksReal.key && looksReal.secret) {
+      try {
+        const signKey = await crypto.subtle.importKey(
+          'raw', new TextEncoder().encode(secret),
+          { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+        )
+        const probeToken = await create(
+          { alg: 'HS256', typ: 'JWT' },
+          { iss: key, sub: 'health-probe', nbf: getNumericDate(0), exp: getNumericDate(60), video: { roomList: true } },
+          signKey,
+        )
+        const host = url.replace(/^wss:/i, 'https:').replace(/\/+$/, '')
+        const res = await fetch(`${host}/twirp/livekit.RoomService/ListRooms`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${probeToken}`, 'Content-Type': 'application/json' },
+          body: '{}',
+        })
+        credentials = { tested: true, valid: res.ok, status: res.status }
+      } catch (err) {
+        credentials = { tested: true, valid: false, error: (err as Error)?.message?.slice(0, 120) }
+      }
+    }
+
+    return ok({ present: { url: !!url, key: !!key, secret: !!secret }, looksReal, credentials })
   }
 
   if (req.method !== 'POST') return ok({ error: 'POST only' }, 405)

@@ -84,6 +84,7 @@ console.log(hookConfigured
 // This asks the function about the SHAPE of what it holds — booleans only,
 // no values ever cross the wire.
 let shapeOk = true
+let pairBad = false
 try {
   const res = await fetch(`${base}/functions/v1/livekit-webhook`)
   if (res.ok) {
@@ -94,6 +95,16 @@ try {
       if (!h?.present?.[k]) { console.log(`  ${red('MISSING')}      ${label[k]}`); shapeOk = false }
       else if (!h?.looksReal?.[k]) { console.log(`  ${red('PLACEHOLDER')}  ${label[k]} — set, but it is not a real value`); shapeOk = false }
       else console.log(`  ${green('looks real')}   ${label[k]}`)
+    }
+    // The one that actually decides it: LiveKit's own verdict on the pair.
+    if (h?.credentials?.tested) {
+      if (h.credentials.valid) {
+        console.log(`  ${green('ACCEPTED')}     LiveKit accepted this key + secret`)
+      } else {
+        shapeOk = false
+        pairBad = true
+        console.log(`  ${red('REJECTED')}     LiveKit refused this key + secret (HTTP ${h.credentials.status || '?'})`)
+      }
     }
   }
 } catch { /* an older deploy has no health branch; presence is all we get */ }
@@ -109,7 +120,7 @@ console.log(tokenGuarded
 // ---- verdict --------------------------------------------------------------
 console.log('')
 if (hookConfigured && tokenGuarded && !shapeOk) {
-  console.log(red('The secrets are set, but at least one is not a real value.'))
+  console.log(red(pairBad ? 'LiveKit rejected this key + secret.' : 'The secrets are set, but at least one is not a real value.'))
   console.log('Re-run the set command with YOUR values — do not paste the placeholders:\n')
   console.log(dim('  npx supabase secrets set LIVEKIT_URL=wss://<your-project>.livekit.cloud \\'))
   console.log(dim('    LIVEKIT_API_KEY=<the API... key> LIVEKIT_API_SECRET=<the secret>'))
