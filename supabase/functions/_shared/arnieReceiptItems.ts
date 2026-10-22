@@ -22,7 +22,10 @@ const READS_PER_CALL = 12           // a month is usually fewer; more are read o
 
 const H = (r: Rest) => ({ apikey: r.key, Authorization: `Bearer ${r.key}` })
 
-export type ReceiptItem = { description: string; sku?: string | null; quantity: number; unit_price?: number | null; line_total?: number | null }
+// unit: what the quantity counts, as printed (FT, EA, BOX…). A supply house
+// sells cable by the foot priced per thousand — "750" of a 250 ft roll is 750
+// FEET, and a restock list without the unit reads as 750 rolls (live, 10-21).
+export type ReceiptItem = { description: string; sku?: string | null; quantity: number; unit?: string | null; unit_price?: number | null; line_total?: number | null }
 
 /** The photo, as the model takes it — or why not. */
 async function photoOf(r: Rest, e: any): Promise<{ media_type: string; data: string } | { error: string }> {
@@ -41,7 +44,7 @@ async function photoOf(r: Rest, e: any): Promise<{ media_type: string; data: str
 }
 
 const READ_PROMPT = 'Read this purchase receipt. Return JSON only, no prose: '
-  + '{"merchant": "<as printed>", "items": [{"description": "<as printed>", "sku": "<SKU/model if printed, else null>", "quantity": <number>, "unit_price": <number or null>, "line_total": <number or null>}]}. '
+  + '{"merchant": "<as printed>", "items": [{"description": "<as printed>", "sku": "<SKU/model if printed, else null>", "quantity": <number>, "unit": "<what the quantity counts if printed or plain from the line — FT, EA, BOX, ROLL, PK — else null>", "unit_price": <number or null>, "line_total": <number or null>}]}. '
   + 'Every purchased line, exactly as printed. Leave out tax, totals, payment and discount lines. '
   + 'If a line cannot be read, leave it out — never guess a word or a number. If nothing is readable, return {"merchant": null, "items": []}.'
 
@@ -66,6 +69,7 @@ async function readOne(r: Rest, companyId: number, e: any): Promise<{ items: Rec
         .map((x: any) => ({
           description: String(x?.description || '').trim().slice(0, 160), sku: x?.sku ? String(x.sku).slice(0, 60) : null,
           quantity: Number(x?.quantity) > 0 ? Number(x.quantity) : 1,
+          unit: x?.unit ? String(x.unit).toUpperCase().slice(0, 12) : null,
           unit_price: Number.isFinite(Number(x?.unit_price)) ? Number(x.unit_price) : null,
           line_total: Number.isFinite(Number(x?.line_total)) ? Number(x.line_total) : null,
         }))
@@ -80,7 +84,8 @@ async function readOne(r: Rest, companyId: number, e: any): Promise<{ items: Rec
   return { items, unreadable, note }
 }
 
-const keyOf = (i: ReceiptItem) => (i.sku ? `sku:${String(i.sku).toLowerCase().replace(/\s+/g, '')}` : `d:${i.description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`)
+// Feet and rolls of the same SKU are not added together.
+const keyOf = (i: ReceiptItem) => (i.sku ? `sku:${String(i.sku).toLowerCase().replace(/\s+/g, '')}` : `d:${i.description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}`) + `|${String(i.unit || '').toLowerCase()}`
 
 /**
  * The month's (or range's) material receipts, read and totalled by item.
@@ -99,7 +104,7 @@ export async function materialsFromReceipts(r: Rest, companyId: number, expenses
     got.forEach((g, j) => byId.set(now[i + j].id, { expense_id: now[i + j].id, items: g.items, unreadable: g.unreadable, note: g.note }))
   }
 
-  const totals = new Map<string, { item: string; sku: string | null; quantity: number; receipts: number; vendors: Set<string>; spent: number }>()
+  const totals = new Map<string, { item: string; sku: string | null; unit: string | null; quantity: number; receipts: number; vendors: Set<string>; spent: number }>()
   let read = 0, unreadable = 0, noPhoto = 0
   for (const e of expenses) {
     const k: any = byId.get(e.id)
@@ -108,7 +113,7 @@ export async function materialsFromReceipts(r: Rest, companyId: number, expenses
     read++
     for (const it of (k.items || []) as ReceiptItem[]) {
       const key = keyOf(it)
-      const t = totals.get(key) || { item: it.description, sku: it.sku || null, quantity: 0, receipts: 0, vendors: new Set<string>(), spent: 0 }
+      const t = totals.get(key) || { item: it.description, sku: it.sku || null, unit: it.unit || null, quantity: 0, receipts: 0, vendors: new Set<string>(), spent: 0 }
       t.quantity += Number(it.quantity) || 0
       t.receipts++
       const v = e.vendor || e.merchant
@@ -121,7 +126,7 @@ export async function materialsFromReceipts(r: Rest, companyId: number, expenses
     .sort((a, b) => b.receipts - a.receipts || b.quantity - a.quantity)
     .slice(0, 150)
     .map((t) => ({
-      item: t.item, ...(t.sku ? { sku: t.sku } : {}), quantity: Math.round(t.quantity * 100) / 100,
+      item: t.item, ...(t.sku ? { sku: t.sku } : {}), quantity: Math.round(t.quantity * 100) / 100, unit: t.unit || 'not printed',
       on_receipts: t.receipts, vendors: [...t.vendors].slice(0, 4),
       ...(opts.withPrices ? { spent: Math.round(t.spent * 100) / 100 } : {}),
     }))

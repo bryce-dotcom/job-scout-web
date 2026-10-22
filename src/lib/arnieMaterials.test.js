@@ -41,6 +41,14 @@ describe('materials off the receipts', () => {
     expect(out).toMatchObject({ receipts: 2, read: 2, unreadable: 0, still_to_read: 0 })
   })
 
+  it('the unit travels with the quantity, and feet are never added to rolls', async () => {
+    world([
+      { expense_id: 1, items: [{ description: '12/2 MC AL SOL X250', sku: '122MCAGX250', quantity: 750, unit: 'FT' }], unreadable: false },
+      { expense_id: 2, items: [{ description: '12/2 MC AL SOL X250', sku: '122MCAGX250', quantity: 1, unit: 'ROLL' }], unreadable: false },
+    ])
+    const out = await materialsFromReceipts(R, 3, [{ id: 1, receipt_storage_path: 'a.pdf' }, { id: 2, receipt_storage_path: 'b.jpg' }], { withPrices: false })
+    expect(out.items.map((i) => `${i.quantity} ${i.unit}`).sort()).toEqual(['1 ROLL', '750 FT'])
+  })
   it('prices only when allowed', async () => {
     world([{ expense_id: 1, items: [{ description: 'Romex', quantity: 1, line_total: 119 }], unreadable: false }])
     const out = await materialsFromReceipts(R, 3, [{ id: 1, receipt_storage_path: 'x.jpg' }], { withPrices: true })
