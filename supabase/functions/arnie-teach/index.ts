@@ -20,7 +20,7 @@
 
 import { resolveCaller } from '../_shared/auth.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
-import { ARNIE_MODEL, textOf } from '../_shared/arnieModel.ts'
+import { liveArnieModel, textOf } from '../_shared/arnieModel.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
       {
         // Writing up a demonstration is real reading: medium effort, and room
         // for the thinking as well as the write-up.
-        model: ARNIE_MODEL,
+        model: await liveArnieModel(),
         max_tokens: 12000,
         output_config: { effort: 'medium' },
         system: SYSTEM,

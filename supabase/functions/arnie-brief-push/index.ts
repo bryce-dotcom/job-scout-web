@@ -47,7 +47,7 @@ Lead with what needs ACTION, in this order: a job today with nobody on it, a shi
 Warm, direct, a little salty. No emojis. No tool names. No markdown asterisks or pound signs — this is plain text. ${limit}
 Everything you say comes from the brief below. Do not add or guess. The my_day section is about ${first} — say "you", never a third person. Any person you name must appear by name in the brief; if no name is there, there is no person.`
   const ai = await callAnthropic({ feature: 'arnie-brief-push', companyId: brief.company_id ?? null }, {
-    ...quickCall(4000), system,
+    ...(await quickCall(4000)), system,
     messages: [{ role: 'user', content: JSON.stringify(brief) }],
   })
   const text = ai.ok ? textOf(ai.data) : ''

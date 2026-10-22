@@ -1,0 +1,48 @@
+# Keep Arnie on the best model (Bryce, 2026-10-22: "how do we keep arnie on
+# the best ai possible, set up a routine or something that checks and
+# autoupdates").
+#
+# Weekly: asks Anthropic which models exist; a NEW Sonnet or Opus (newer than
+# Arnie's current model, never tried) is run through the full eval beside the
+# current model, and arnie-model-watch switches Arnie to it only if it scores
+# at least as well, passes 95%+, its price is known, and it costs no more than
+# 30% extra per reply. The platform owners are emailed either way. Most weeks
+# nothing is new and the job ends in seconds.
+#
+# Sunday early, away from the nightly eval (11:17 UTC): both use the demo
+# tenant and its throwaway tech login.
+#
+# Needs the same three repository secrets as arnie-eval.yml.
+
+name: arnie-model-watch
+
+on:
+  schedule:
+    - cron: '17 9 * * 0'   # Sunday 09:17 UTC ≈ 3:17 AM Denver
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Try any new model
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::notice::arnie-model-watch skipped — repository secrets not configured."
+            echo "Skipped: secrets not configured." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" > .env
+          npm run arnie:model-watch 2>&1 | tee watch.log
+          { echo '## Arnie model watch'; echo; echo '```'; tail -n 30 watch.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

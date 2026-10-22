@@ -203,9 +203,9 @@ describe('short answers keep what a card needs', () => {
 describe('the model comparison switch is test-only', () => {
   const chat = read('supabase/functions/arnie-chat/index.ts')
   it('only the demo company or the internal test path may pick a model, from an allow-list', () => {
-    expect(chat).toMatch(/if \(caller && EVAL_MODELS\[String\(body\?\.eval_model \|\| ''\)\] && \(caller\.companyId === 25 \|\| !inTheApp\)\)/)
+    expect(chat).toMatch(/if \(caller && evalModelId\(body\?\.eval_model\) && \(caller\.companyId === 25 \|\| !inTheApp\)\)/)
     expect(chat).toMatch(/'sonnet-5-5': 'claude-sonnet-5-5',/)
-    expect(chat).toMatch(/const model = chosen\?\.model \|\| ARNIE_MODEL\r?\n/)
+    expect(chat).toMatch(/const model = chosen\?\.model \|\| activeModel\r?\n/)
   })
   it('newer models never get a forced tool_choice (they reject it)', () => {
     expect(chat).toMatch(/forceComputer && !isNewModel\(setup\.model\) \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \}/)

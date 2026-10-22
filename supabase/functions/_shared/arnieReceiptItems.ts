@@ -14,7 +14,7 @@
 import type { Rest } from './arnieConfig.ts'
 import { readRecordList } from './arnieRest.ts'
 import { callAnthropic } from './anthropic.ts'
-import { ARNIE_MODEL, textOf } from './arnieModel.ts'
+import { liveArnieModel, textOf } from './arnieModel.ts'
 
 export const MATERIAL_CATEGORIES = ['Materials', 'Job Materials', 'Small Tools & Consumables', 'Supplies']
 const MAX_IMAGE_BYTES = 4_800_000   // the API takes 5 MB an image
@@ -58,7 +58,7 @@ async function readOne(r: Rest, companyId: number, e: any): Promise<{ items: Rec
       ? { type: 'document', source: { type: 'base64', media_type: photo.media_type, data: photo.data } }
       : { type: 'image', source: { type: 'base64', media_type: photo.media_type, data: photo.data } }
     const ai = await callAnthropic({ feature: 'arnie-receipt-items', companyId }, {
-      model: ARNIE_MODEL, max_tokens: 6000, output_config: { effort: 'low' },
+      model: await liveArnieModel(), max_tokens: 6000, output_config: { effort: 'low' },
       messages: [{ role: 'user', content: [block, { type: 'text', text: READ_PROMPT }] }],
     })
     if (!ai.ok) return { items: [], unreadable: false, note: 'could not be read just now' }   // not kept: try again next time

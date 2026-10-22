@@ -69,7 +69,7 @@ describe('prompt caching', () => {
   it('Arnie runs on Sonnet 5.5, with room to think', () => {
     const m = readFileSync(new URL('../../supabase/functions/_shared/arnieModel.ts', import.meta.url), 'utf8')
     expect(m).toMatch(/export const ARNIE_MODEL = 'claude-sonnet-5-5'/)
-    expect(chat).toMatch(/import \{ ARNIE_MODEL \} from '\.\.\/_shared\/arnieModel\.ts'/)
+    expect(chat).toMatch(/import \{ ARNIE_MODEL, liveArnieModel \} from '\.\.\/_shared\/arnieModel\.ts'/)
     expect(chat).not.toMatch(/const ARNIE_MODEL = /)
     expect(chat).toMatch(/maxTokens: isNewModel\(model\) \? 16000 : 4096,/)
     const c = readFileSync(new URL('../../supabase/functions/_shared/computeConfig.ts', import.meta.url), 'utf8')
@@ -83,16 +83,17 @@ describe('prompt caching', () => {
       expect(src).not.toMatch(/claude-sonnet-4-5/)
       expect(src).toMatch(/textOf\(ai\.data\)/)
     }
-    expect(brief).toMatch(/\.\.\.quickCall\(4000\)/)
-    expect(config).toMatch(/\.\.\.quickCall\(2000\)/)
-    expect(teach).toMatch(/model: ARNIE_MODEL,\s+max_tokens: 12000,/)
+    expect(brief).toMatch(/\.\.\.\(await quickCall\(4000\)\)/)
+    expect(config).toMatch(/\.\.\.\(await quickCall\(2000\)\)/)
+    expect(teach).toMatch(/model: await liveArnieModel\(\),\s+max_tokens: 12000,/)
     expect(teach).not.toMatch(/content\?\.\[0\]\?\.text/)   // the first block can be thinking
   })
   it('textOf skips thinking blocks', async () => {
     const { textOf, quickCall } = await import('../../supabase/functions/_shared/arnieModel.ts')
     expect(textOf({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'Morning Bryce.' }] })).toBe('Morning Bryce.')
     expect(textOf({})).toBe('')
-    expect(quickCall(2000)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low' } })
+    // No database here, so the live model falls back to the code's.
+    expect(await quickCall(2000)).toEqual({ model: 'claude-sonnet-5-5', max_tokens: 2000, output_config: { effort: 'low' } })
   })
   it('the meter prices Sonnet 5.5 at $2/$10, ahead of the generic Sonnet line', () => {
     const a = readFileSync(new URL('../../supabase/functions/_shared/anthropic.ts', import.meta.url), 'utf8')

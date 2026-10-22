@@ -148,7 +148,7 @@ If the request cannot be mapped to one of these lists/actions, respond {"error":
 
   const ai = await callAnthropic(
     { feature: 'arnie-config', companyId },
-    { ...quickCall(2000), system: sys, messages: [{ role: 'user', content: request }] },
+    { ...(await quickCall(2000)), system: sys, messages: [{ role: 'user', content: request }] },
   )
   if (!ai.ok) return { error: ai.friendly || 'Arnie is unavailable right now.', ai_unavailable: ai.unavailable === true }
 

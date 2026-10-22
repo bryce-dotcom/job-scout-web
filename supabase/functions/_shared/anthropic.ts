@@ -47,16 +47,22 @@ export interface AiResult {
 
 // $ per million tokens — keep in sync with platform.claude.com/docs pricing.
 // (cached 2026-06: Opus 4.x $5/$25, Sonnet 4.x $3/$15, Haiku 4.5 $1/$5)
-const PRICES: Array<{ match: RegExp; inPerM: number; outPerM: number }> = [
+// exact: the price of THAT model, from the published list. The family rows
+// below are a guess for anything newer — the weekly model watch will not
+// switch Arnie onto a model priced by a guess (hasExactPrice).
+const PRICES: Array<{ match: RegExp; inPerM: number; outPerM: number; exact?: boolean }> = [
   // Most specific first — Opus 5.5 is cheaper than the Opus line before it.
-  { match: /opus-5-5/i, inPerM: 4, outPerM: 20 },
+  { match: /opus-5-5/i, inPerM: 4, outPerM: 20, exact: true },
   { match: /opus/i, inPerM: 5, outPerM: 25 },
   // Sonnet 5.5 is cheaper than the Sonnet line before it.
-  { match: /sonnet-5-5/i, inPerM: 2, outPerM: 10 },
+  { match: /sonnet-5-5/i, inPerM: 2, outPerM: 10, exact: true },
   { match: /haiku/i, inPerM: 1, outPerM: 5 },
   { match: /sonnet/i, inPerM: 3, outPerM: 15 },
 ]
 const DEFAULT_PRICE = { inPerM: 3, outPerM: 15 }
+
+/** Is this model's price actually known, not guessed from its family? */
+export const hasExactPrice = (model: string): boolean => !!PRICES.find((x) => x.match.test(model || ''))?.exact
 
 function estimateCost(model: string, usage: any): number {
   const p = PRICES.find((x) => x.match.test(model || '')) || DEFAULT_PRICE

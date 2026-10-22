@@ -12,7 +12,7 @@ import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
 import { receiptFor, unmarked, type ReceiptCall } from '../_shared/arnieReceipt.ts'
-import { ARNIE_MODEL } from '../_shared/arnieModel.ts'
+import { ARNIE_MODEL, liveArnieModel } from '../_shared/arnieModel.ts'
 import { inboxAddressFor, markHandled, readInbox } from '../_shared/arnieInbox.ts'
 import { readRecordList } from '../_shared/arnieRest.ts'
 import { MATERIAL_CATEGORIES, materialsFromReceipts } from '../_shared/arnieReceiptItems.ts'
@@ -58,6 +58,14 @@ const EVAL_MODELS: Record<string, string> = {
   'opus-5-5': 'claude-opus-5-5',
 }
 const EVAL_EFFORTS = new Set(['low', 'medium', 'high'])
+/** A test's model: one of the names above, or — for the weekly model watch,
+ *  trying a model that came out after this was written — a real claude- id. */
+const evalModelId = (v: unknown): string | null => {
+  const s = String(v ?? '')
+  return EVAL_MODELS[s] || (/^claude-(sonnet|opus|haiku|fable)-[a-z0-9-]{1,40}$/.test(s) ? s : null)
+}
+/** Set at the start of each request from liveArnieModel(); see the handler. */
+let activeModel = ARNIE_MODEL
 const evalChoice = new WeakMap<object, { model: string; effort?: string }>()
 /** Models from the 4.6+ generation: adaptive thinking, effort, no forced tool_choice. */
 const isNewModel = (m: string) => !/sonnet-4-5|haiku-4-5/.test(m)
@@ -2318,10 +2326,13 @@ Deno.serve(async (req) => {
     // this never widens a real user's session — it only fills the gap where
     // there was no user at all. The employee must still be ACTIVE.
     if (!caller) caller = await internalCaller(req, body, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    // The model this request answers on: the live one the weekly model watch
+    // keeps current (arnie_model_state), ARNIE_MODEL if that cannot be read.
+    activeModel = await liveArnieModel()
     // Test-only model choice: the demo company, or our own server's test path.
-    if (caller && EVAL_MODELS[String(body?.eval_model || '')] && (caller.companyId === 25 || !inTheApp)) {
+    if (caller && evalModelId(body?.eval_model) && (caller.companyId === 25 || !inTheApp)) {
       evalChoice.set(caller as unknown as object, {
-        model: EVAL_MODELS[String(body.eval_model)],
+        model: evalModelId(body.eval_model)!,
         effort: EVAL_EFFORTS.has(String(body?.eval_effort || '')) ? String(body.eval_effort) : undefined,
       })
     }
@@ -2505,7 +2516,7 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     }
   }
   const chosen = evalChoice.get(caller as unknown as object)
-  const model = chosen?.model || ARNIE_MODEL
+  const model = chosen?.model || activeModel
   return {
     model,
     effort: chosen?.effort,
