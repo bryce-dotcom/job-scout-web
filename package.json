@@ -33,7 +33,8 @@
     "agent:release": "node scripts/build-agent-release.mjs",
     "sweep": "node scripts/morning-sweep.mjs",
     "arnie:model-watch": "node scripts/arnie-model-watch.mjs",
-    "board": "node scripts/board.mjs"
+    "board": "node scripts/board.mjs",
+    "rooms:check": "node scripts/rooms-check.mjs"
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.9",
