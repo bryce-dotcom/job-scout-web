@@ -70,6 +70,26 @@ import documentRules      from './document-rules.js'
 import fixtureTypes       from './fixture-types.js'
 import commissions        from './commissions.js'
 import employees          from './employees.js'
+// — Round 5: built June 2026, registered here October 2026 —
+// The cards, their Stage components and some of their audio were written in
+// June and never registered in this file or in components/walkthroughs. A
+// card that is not in CARDS is invisible everywhere: no Video Library entry,
+// no Help section, no narration, nothing for Arnie to read. Thirteen features
+// the product already shipped had no walkthrough for four months because of
+// two missing lists.
+import appointments       from './appointments.js'
+import bills              from './bills.js'
+import bookings           from './bookings.js'
+import dashboard          from './dashboard.js'
+import frankieInsights    from './frankie-insights.js'
+import freddyCosts        from './freddy-costs.js'
+import freddyTracking     from './freddy-tracking.js'
+import freddyTrips        from './freddy-trips.js'
+import leadPayments       from './lead-payments.js'
+import payrollInbox       from './payroll-inbox.js'
+import photosSignatures   from './photos-signatures.js'
+import timeLog            from './time-log.js'
+import utilityProviders   from './utility-providers.js'
 
 const CARDS = [
   prospectScout,
@@ -124,6 +144,19 @@ const CARDS = [
   fixtureTypes,
   commissions,
   employees,
+  appointments,
+  bills,
+  bookings,
+  dashboard,
+  frankieInsights,
+  freddyCosts,
+  freddyTracking,
+  freddyTrips,
+  leadPayments,
+  payrollInbox,
+  photosSignatures,
+  timeLog,
+  utilityProviders,
 ]
 
 export const KNOWLEDGE_CARDS = Object.fromEntries(

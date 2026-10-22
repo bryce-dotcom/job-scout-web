@@ -57,6 +57,23 @@ import DocumentRulesWalkthrough      from './DocumentRulesWalkthrough'
 import FixtureTypesWalkthrough       from './FixtureTypesWalkthrough'
 import CommissionsWalkthrough        from './CommissionsWalkthrough'
 import EmployeesWalkthrough          from './EmployeesWalkthrough'
+// — Round 5: built June 2026, registered here October 2026. See the note in
+// lib/featureKnowledge/index.js; these thirteen were written and left out of
+// both registries, so getWalkthrough() returned null and the Video Library
+// fell through to its "no video yet" state for features that had one. —
+import AppointmentsWalkthrough       from './AppointmentsWalkthrough'
+import BillsWalkthrough              from './BillsWalkthrough'
+import BookingsWalkthrough           from './BookingsWalkthrough'
+import DashboardWalkthrough          from './DashboardWalkthrough'
+import FrankieInsightsWalkthrough    from './FrankieInsightsWalkthrough'
+import FreddyCostsWalkthrough        from './FreddyCostsWalkthrough'
+import FreddyTrackingWalkthrough     from './FreddyTrackingWalkthrough'
+import FreddyTripsWalkthrough        from './FreddyTripsWalkthrough'
+import LeadPaymentsWalkthrough       from './LeadPaymentsWalkthrough'
+import PayrollInboxWalkthrough       from './PayrollInboxWalkthrough'
+import PhotosSignaturesWalkthrough   from './PhotosSignaturesWalkthrough'
+import TimeLogWalkthrough            from './TimeLogWalkthrough'
+import UtilityProvidersWalkthrough   from './UtilityProvidersWalkthrough'
 
 export const WALKTHROUGHS = {
   'yard-measure':        YardMeasureWalkthrough,
@@ -108,6 +125,19 @@ export const WALKTHROUGHS = {
   'fixture-types':       FixtureTypesWalkthrough,
   'commissions':         CommissionsWalkthrough,
   'employees':           EmployeesWalkthrough,
+  'appointments':        AppointmentsWalkthrough,
+  'bills':               BillsWalkthrough,
+  'bookings':            BookingsWalkthrough,
+  'dashboard':           DashboardWalkthrough,
+  'frankie-insights':    FrankieInsightsWalkthrough,
+  'freddy-costs':        FreddyCostsWalkthrough,
+  'freddy-tracking':     FreddyTrackingWalkthrough,
+  'freddy-trips':        FreddyTripsWalkthrough,
+  'lead-payments':       LeadPaymentsWalkthrough,
+  'payroll-inbox':       PayrollInboxWalkthrough,
+  'photos-signatures':   PhotosSignaturesWalkthrough,
+  'time-log':            TimeLogWalkthrough,
+  'utility-providers':   UtilityProvidersWalkthrough,
 }
 
 export function getWalkthrough(id) {

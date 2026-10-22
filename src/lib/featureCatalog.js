@@ -212,6 +212,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Calendly', 'Acuity', 'Google Calendar'],
         highlights: ['Multi-salesperson', 'Google Calendar OAuth', 'Outcome tracking'],
         route: '/appointments',
+        walkthrough: 'appointments',
       },
       {
         name: 'Bookings',
@@ -220,6 +221,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Calendly', 'Acuity', 'HubSpot Meetings'],
         highlights: ['Real availability', 'Auto-create lead'],
         route: null,
+        walkthrough: 'bookings',
       },
       {
         name: 'Photos & Signatures',
@@ -228,6 +230,7 @@ export const FEATURE_CATALOG = [
         replaces: ['CompanyCam', 'DocuSign signature', 'Adobe Sign'],
         highlights: ['Per-line photos', 'ESIGN audit fields', 'Offline queue'],
         route: null,
+        walkthrough: 'photos-signatures',
       },
       {
         name: 'Document Rules & Packages',
@@ -269,6 +272,7 @@ export const FEATURE_CATALOG = [
         replaces: ['DSIRE database', 'manual utility research'],
         highlights: ['Rate schedule lookups', 'Per-provider programs'],
         route: null,
+        walkthrough: 'utility-providers',
       },
       {
         name: 'Utility Programs',
@@ -346,6 +350,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Fleetio Maintenance', 'Samsara Maintenance'],
         highlights: ['Cost-per-vehicle', 'Service reminders'],
         route: '/agents/freddy/costs',
+        walkthrough: 'freddy-costs',
       },
       {
         name: 'Fuel Logs',
@@ -362,6 +367,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Samsara GPS', 'Verizon Connect'],
         highlights: ['Phone GPS only', 'No hardware needed'],
         route: '/agents/freddy/tracking',
+        walkthrough: 'freddy-tracking',
       },
       {
         name: 'Trips',
@@ -370,6 +376,7 @@ export const FEATURE_CATALOG = [
         replaces: ['MileIQ', 'Everlance'],
         highlights: ['Auto-trip detection', 'Job linkage'],
         route: '/agents/freddy/trips',
+        walkthrough: 'freddy-trips',
       },
       {
         name: 'Drivers',
@@ -528,6 +535,20 @@ export const FEATURE_CATALOG = [
         walkthrough: 'expenses',
       },
       {
+        // The only one of the thirteen with no catalog entry to wire: /bills
+        // has shipped for months (Bills.jsx, BillDetail.jsx, admin-only in
+        // appMap) and the Video Library has never listed it. Every field here
+        // is taken from the card in lib/featureKnowledge/bills.js rather than
+        // written fresh, so the page and the narration cannot disagree.
+        name: 'Bills',
+        icon: 'FileText',
+        summary: 'Enter vendor bills, track AP aging, and run multi-bill payment batches — every expense allocated to a job so your cost-per-project is always accurate.',
+        replaces: ['QuickBooks AP', 'Bill.com', 'manual check runs', 'email invoices tracked in spreadsheets'],
+        highlights: ['Vendor bill entry', 'AP aging summary', 'Multi-bill payment runs', 'Job cost allocation'],
+        route: '/bills',
+        walkthrough: 'bills',
+      },
+      {
         name: 'Invoices',
         icon: 'Receipt',
         summary: 'Send a Stripe-powered invoice with due date, payment plan support, email tracking, deposit/progress/final typing, and one-click pay link.',
@@ -543,6 +564,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Square deposits', 'Stripe Payment Intents'],
         highlights: ['Pre-job deposits', 'Refund tracking'],
         route: null,
+        walkthrough: 'lead-payments',
       },
       {
         name: 'Payments & Refunds',
@@ -616,6 +638,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Gusto Inbox', 'ADP compliance dashboard'],
         highlights: ['EFTPS / state deposits', 'Form 941 / 940 / TC-941 reminders', 'I-9 Section 2 deadlines'],
         route: null,
+        walkthrough: 'payroll-inbox',
       },
       {
         name: 'Tax Engine & Filings',
@@ -765,6 +788,7 @@ export const FEATURE_CATALOG = [
         replaces: ['When I Work timesheets', 'TSheets admin'],
         highlights: ['Per-entry notes', 'Adjustment audit'],
         route: null,
+        walkthrough: 'time-log',
       },
     ],
   },
@@ -1254,6 +1278,7 @@ export const FEATURE_CATALOG = [
         replaces: ['custom Looker dashboards', 'QuickBooks home'],
         highlights: ['Real-time', 'Role-filtered'],
         route: '/',
+        walkthrough: 'dashboard',
       },
       {
         name: 'Reports',
@@ -1271,6 +1296,7 @@ export const FEATURE_CATALOG = [
         replaces: ['Domo', 'ProfitWell'],
         highlights: ['Anomaly detection', 'What-if scenarios'],
         route: '/agents/frankie',
+        walkthrough: 'frankie-insights',
       },
       {
         name: 'Company Notifications',
