@@ -184,9 +184,11 @@ export const RECORD_TARGETS: Record<string, RecordTarget> = {
   // "I need fixture part numbers in the notes on fast auto job" (Alayda,
   // 2026-10-21). One job line's notes — words only, like the descriptions
   // above; the job page's manager bar. The job is found as a job is, then
-  // the line by "line 2" or its words.
+  // the line by "line 2" or its words. APPEND: what is already in the note
+  // stays — "not deleting any notes already in the note section, just adding
+  // the part number" (Bryce, 2026-10-22).
   job_line_note: {
-    label: 'job line note', table: 'job_lines', field: 'notes', mode: 'set', minLevel: 2,
+    label: 'job line note', table: 'job_lines', field: 'notes', mode: 'append', minLevel: 2,
     searchCols: [], selectCols: 'id,job_id,item_id,item_name,description,notes', labelOf: (r) => r._label || `job line #${r.id}`,
     findRow: findJobLineRow, checkValue: checkDescription,
   },
@@ -357,11 +359,20 @@ export async function valuesInUse(r: Rest, companyId: number, target: RecordTarg
 export function computeAfter(target: RecordTarget, before: any, value: string): string {
   if (target.mode !== 'append') return value
   const prior = String(before ?? '').trim()
+  // Sent the whole note, old words included ("Set at 45W. Part # …"): it
+  // already keeps them, so it is not stacked under a second copy.
+  if (prior && String(value).includes(prior)) return value
+  // Already there: nothing to add (the caller reports "nothing to do").
+  if (prior && prior.includes(String(value).trim())) return prior
   return prior ? `${prior}\n${value}` : value
 }
 
 export function describeAfter(target: RecordTarget, before: any, value: string): string {
   if (target.mode !== 'append') return value
   const prior = String(before ?? '').trim()
-  return prior ? `…existing note kept, plus: "${value}"` : `"${value}"`
+  const after = computeAfter(target, before, value)
+  if (!prior) return `"${after}"`
+  // What is being ADDED, whether the whole note or only the new words came in.
+  const added = after.startsWith(prior) ? after.slice(prior.length).replace(/^[\s.,;:-]+/, '') : after
+  return `…existing note kept, plus: "${added}"`
 }

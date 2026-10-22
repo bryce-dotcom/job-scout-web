@@ -56,15 +56,34 @@ describe('job line notes (part numbers on the Fast Auto job)', () => {
 
   it('is one text column on job lines, at the job page\'s manager bar', () => {
     const t = RECORD_TARGETS.job_line_note
-    expect([t.table, t.field, t.mode, t.minLevel]).toEqual(['job_lines', 'notes', 'set', 2])
+    expect([t.table, t.field, t.mode, t.minLevel]).toEqual(['job_lines', 'notes', 'append', 2])
     expect(t.checkValue).toBeTypeOf('function')
+  })
+
+  it('ADDS the part number under what is there — never replaces it (Bryce, 2026-10-22)', async () => {
+    const w = world(); globalThis.fetch = w.fn
+    const r = await proposeRecordChange(R, ADMIN, { target: 'job_line_note', record_query: 'fast auto', line: 'flood', value: 'Part #: MES-FL-PG-60WBH8DA1-abcdeWg' })
+    expect(r.preview).toMatchObject({ before: 'Set at 45W', after: '…existing note kept, plus: "Part #: MES-FL-PG-60WBH8DA1-abcdeWg"' })
+    expect(w.posted.find((p) => p.table === 'arnie_proposals').body.after_value).toBe('Set at 45W\nPart #: MES-FL-PG-60WBH8DA1-abcdeWg')
+  })
+
+  it('sent the whole note, old words included: kept once, not stacked twice', async () => {
+    const w = world(); globalThis.fetch = w.fn
+    await proposeRecordChange(R, ADMIN, { target: 'job_line_note', record_query: 'fast auto', line: 'flood', value: 'Set at 45W. Part #: MES-FL' })
+    expect(w.posted.find((p) => p.table === 'arnie_proposals').body.after_value).toBe('Set at 45W. Part #: MES-FL')
+  })
+
+  it('a part number already in the note is nothing to do', async () => {
+    const w = world(); globalThis.fetch = w.fn
+    const r = await proposeRecordChange(R, ADMIN, { target: 'job_line_note', record_query: 'fast auto', line: 'flood', value: '45W' })
+    expect(r.error).toMatch(/Nothing to do/)
   })
 
   it('drafts the flood line\'s notes, keeping what was there, and writes nothing yet', async () => {
     const w = world(); globalThis.fetch = w.fn
     const r = await proposeRecordChange(R, ADMIN, { target: 'job_line_note', record_query: 'fast auto', line: 'flood', value: 'Set at 45W. Part #: MES-FL-PG-60WBH8DA1-abcdeWg' })
     expect(r.error).toBeUndefined()
-    expect(r.preview).toMatchObject({ kind: 'record', field: 'notes', before: 'Set at 45W', after: 'Set at 45W. Part #: MES-FL-PG-60WBH8DA1-abcdeWg' })
+    expect(r.preview).toMatchObject({ kind: 'record', field: 'notes', before: 'Set at 45W', after: '…existing note kept, plus: "Part #: MES-FL-PG-60WBH8DA1-abcdeWg"' })
     expect(r.preview.entity).toMatch(/line 2 \(SMBE 25\/45\/60W Flood\)/)
     expect(w.posted.find((p) => p.table === 'arnie_proposals').body.payload).toMatchObject({ entity_table: 'job_lines', entity_id: 12991, field: 'notes' })
     expect(w.patched).toEqual([])
@@ -107,6 +126,6 @@ describe('job line notes (part numbers on the Fast Auto job)', () => {
     const chat = readFileSync(new URL('../../supabase/functions/arnie-chat/index.ts', import.meta.url), 'utf8')
     expect(chat).toMatch(/select: 'id,name,manufacturer,model_number'/)
     expect(chat).toMatch(/part_number: partNo\.get\(l\.item_id\) \|\| null,/)
-    expect(chat).toMatch(/job_line_note \(set the NOTES on one line of a job/)
+    expect(chat).toMatch(/job_line_note \(ADD to the NOTES on one line of a job — e\.g\. a part number; value = only the words to add, the existing note is always kept/)
   })
 })
