@@ -69,7 +69,6 @@ import {
   X as XIcon,
   Database,
   Compass,
-  Video,
   RefreshCw,
   HelpCircle,
   Eye,
@@ -1042,25 +1041,13 @@ export default function Layout() {
                 <MapIcon size={20} />
                 Company Map
               </NavLink>
-              {/* Third of the same family: the calendar is the day across
-                  time, the map is the day across space, and this is the day
-                  across the people in it — a field tech on a phone and the
-                  office on a laptop in the same room. */}
-              <NavLink
-                to="/rooms"
-                title="The Campfire and the side rooms — see each other and talk, wherever you are working"
-                style={({ isActive }) => ({
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '10px 12px', borderRadius: '8px',
-                  color: isActive ? theme.accent : theme.textMuted,
-                  backgroundColor: isActive ? theme.accentBg : 'transparent',
-                  textDecoration: 'none', fontSize: '14px', fontWeight: '600',
-                  transition: 'all 0.15s ease'
-                })}
-              >
-                <Video size={20} />
-                Rooms
-              </NavLink>
+              {/* No "Rooms" item here. Bryce, 2026-10-22: "rooms and campfire
+                  UI should morph into one — don't show it in the menu, it's
+                  confusing." Two entries for one place made people choose
+                  between a door and the same door. The fire IS the way in: it
+                  puts you in The Campfire and opens the lobby behind it, so
+                  the side rooms are right there without ever being a second
+                  thing to find. /rooms still exists as a route. */}
               {/* The clock. Christopher (26 Aug): "I have to search for Field
                   Scout in the menu in order to find jobs and clock in." For a
                   field tech it is already the whole menu; for everyone else

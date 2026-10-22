@@ -146,6 +146,7 @@ export default function Rooms() {
           {all.map(room => {
             const here = headcount[room.slug] || 0
             const live = here > 0
+            const youAreHere = joined === room.slug
             return (
               <div
                 key={room.slug}
@@ -171,16 +172,24 @@ export default function Rooms() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
                   <button
-                    onClick={() => session?.join(room.slug)}
+                    onClick={() => { if (!youAreHere) session?.join(room.slug) }}
+                    disabled={youAreHere}
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      padding: '9px 12px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                      background: live ? theme.accent : theme.accentBg,
-                      color: live ? '#fff' : theme.accent,
-                      border: `1px solid ${theme.accent}`,
+                      padding: '9px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600,
+                      cursor: youAreHere ? 'default' : 'pointer',
+                      background: youAreHere ? 'transparent' : (live ? theme.accent : theme.accentBg),
+                      color: youAreHere ? theme.textMuted : (live ? '#fff' : theme.accent),
+                      border: `1px solid ${youAreHere ? theme.border : theme.accent}`,
                     }}
                   >
-                    <DoorOpen size={14} /> {live ? 'Join them' : 'Open it up'}
+                    {/* The fire drops you straight in, so by the time this
+                        page is on screen you are usually already in the main
+                        room. Asking you to "Open it up" again would be the
+                        page arguing with the dock. */}
+                    {youAreHere
+                      ? <>You&rsquo;re in here</>
+                      : <><DoorOpen size={14} /> {live ? 'Join them' : 'Open it up'}</>}
                   </button>
                   {!room.isMain && (
                     <button

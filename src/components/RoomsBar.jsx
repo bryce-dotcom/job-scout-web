@@ -50,6 +50,13 @@ export default function RoomsBar({ theme, compact = false }) {
 
   if (!companyId) return null
 
+  // One click does both jobs. Bryce, 2026-10-22: "I like that you click
+  // CampFire and you're in — but make the UI open to the rooms page." So the
+  // fire puts you in the room AND opens the lobby behind the dock, which is
+  // what lets the menu item go away: the side rooms are already on screen
+  // instead of being a second thing to go and find.
+  const enter = (slug) => { session?.join(slug); navigate('/rooms') }
+
   const here = counts[MAIN_ROOM.slug] || 0
   const busy = Object.keys(counts).filter(s => s !== MAIN_ROOM.slug && counts[s] > 0)
 
@@ -66,7 +73,7 @@ export default function RoomsBar({ theme, compact = false }) {
   if (compact) {
     return (
       <button
-        onClick={() => session?.join(MAIN_ROOM.slug)}
+        onClick={() => enter(MAIN_ROOM.slug)}
         aria-label={here > 0 ? `CampFire, ${here} inside` : 'CampFire'}
         style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: '4px 2px', cursor: 'pointer' }}
       >
@@ -79,7 +86,7 @@ export default function RoomsBar({ theme, compact = false }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
       <button
-        onClick={() => session?.join(MAIN_ROOM.slug)}
+        onClick={() => enter(MAIN_ROOM.slug)}
         title={here > 0 ? `${here} at the CampFire — click to join them` : 'CampFire — start it up'}
         style={{
           display: 'flex', alignItems: 'center', gap: 10, width: '100%',
@@ -105,7 +112,7 @@ export default function RoomsBar({ theme, compact = false }) {
           {busy.slice(0, 3).map(slug => (
             <button
               key={slug}
-              onClick={() => session?.join(slug)}
+              onClick={() => enter(slug)}
               title={`${counts[slug]} in ${roomMeta(slug).name}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4, padding: 0,

@@ -33,6 +33,29 @@ const USD_PER_PARTICIPANT_MINUTE = 0.0004
 const CREDIT_USD = 0.01   // matches _shared/compute.ts
 
 Deno.serve(async (req) => {
+  // A health probe that leaks nothing — booleans only, never a value.
+  //
+  // It exists because "a secret is present" and "a secret that works" are not
+  // the same thing, and the difference cost us a round trip: the example
+  // command was pasted verbatim, so all three names were set, to the literal
+  // placeholders. Every presence check passed and the rooms still could not
+  // connect. Shape is the cheapest thing that can tell those two apart
+  // without anyone reading a secret out loud.
+  if (req.method === 'GET') {
+    const url = (Deno.env.get('LIVEKIT_URL') || '').trim()
+    const key = (Deno.env.get('LIVEKIT_API_KEY') || '').trim()
+    const secret = (Deno.env.get('LIVEKIT_API_SECRET') || '').trim()
+    const placeholder = /your-project|yourproject|xxxx|example|changeme|\.\.\./i
+    return ok({
+      present: { url: !!url, key: !!key, secret: !!secret },
+      looksReal: {
+        url: !!url && /^wss:\/\/[a-z0-9.-]+$/i.test(url) && !placeholder.test(url),
+        key: !!key && /^API[A-Za-z0-9]{8,}$/.test(key) && !placeholder.test(key),
+        secret: !!secret && secret.length >= 24 && !placeholder.test(secret),
+      },
+    })
+  }
+
   if (req.method !== 'POST') return ok({ error: 'POST only' }, 405)
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
