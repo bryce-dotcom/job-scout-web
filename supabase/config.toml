@@ -395,6 +395,12 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+# LiveKit calls this one; it authenticates by the signature on every
+# delivery, not by a Supabase JWT. Left unpinned, a deploy flips it to
+# true and every usage event is rejected in silence.
+[functions.livekit-webhook]
+verify_jwt = false
+
 [functions.master-stripe-webhook]
 verify_jwt = false
 
