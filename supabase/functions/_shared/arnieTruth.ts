@@ -279,7 +279,7 @@ export function untracedFigures(text: string, context: string, toolContext = '')
  * can be caught too (a legible fuel line is gallons × price); the correction
  * lets him keep it by saying so.
  */
-const UNREADABLE = /\b(?:can(?:no|['’])t|could(?:n['’]t| not)|unable to|not able to)\s+(?:quite\s+)?(?:read|make out|see)\b|\b(?:blacked|cut|torn|smudged|faded|crossed|scratched)\s+(?:out|off)\b|\b(?:illegible|unreadable|not legible)\b/i
+const UNREADABLE = /\b(?:can(?:no|['’])t|could(?:n['’]t| not)|unable to|not able to)\s+(?:quite\s+)?(?:read|make out|see)\b|\b(?:blacked|cut|torn|smudged|faded|crossed|scratched|whited|inked)\s+(?:out|off)\b|\b(?:illegible|unreadable|not legible|obscured|redacted|hidden|covered|smeared|blurr(?:y|ed)|(?:is|are|isn['’]t|aren['’]t|not) (?:visible|shown|printed)|(?:left |is |are )?blank)\b/i
 const ESTIMATE = /\b(?:would (?:be|come to)|works? out|comes? to|about|around|roughly|approximately|approx|estimated?|likely|probably|my guess)\b|[~≈]/i
 export function guessedAmounts(text: string): string[] {
   const t = String(text || '')
@@ -288,9 +288,11 @@ export function guessedAmounts(text: string): string[] {
   const all = numbersIn(t).filter((n) => n > 0 && n < 100000)
   const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.02, b * 0.002)
   const out = new Set<string>()
+  // "$87.41", or a bare "87.41" — two decimals reads as money; gallons
+  // (22.418) and a pump price (3.899) carry three.
   for (const s of t.split(/(?<=[.!?\n])\s+/)) {
-    for (const m of s.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)) {
-      const v = parseFloat(m[1].replace(/,/g, ''))
+    for (const m of s.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)|(?<![\d.,])(\d[\d,]*\.\d{2})(?![\d.])/g)) {
+      const v = parseFloat((m[1] || m[2]).replace(/,/g, ''))
       if (!(v >= 10)) continue
       const others = all.filter((n) => !close(n, v))
       const product = others.some((a, i) => others.some((b, j) => i < j && close(a * b, v)))

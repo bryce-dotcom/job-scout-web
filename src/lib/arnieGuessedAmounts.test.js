@@ -16,6 +16,10 @@ describe('an amount it said it could not read, given anyway', () => {
     "The TOTAL line is blacked out. The fuel line reads $87.41 and the car wash $9.00, so the total is $96.41. Want me to log that?",
     // an estimate
     "I couldn't make out the total — it looks like roughly $96.41. Can you confirm?",
+    // a bare figure, and other words for "cannot be read"
+    'The total is obscured. At 22.418 gallons and 3.899 a gallon the fuel comes to 87.41 — what did the whole ticket come to?',
+    'The fuel total and the car wash are both redacted, so the total would be 87.41 plus the wash.',
+    'TOTAL is blank on this one; 22.418 gal × $3.899 = $87.41 for fuel. What was the total?',
   ])('caught: %s', (s) => {
     expect(guessedAmounts(s).length).toBeGreaterThan(0)
   })
@@ -27,6 +31,8 @@ describe('an amount it said it could not read, given anyway', () => {
     "I can't read the total on this receipt. I can read Chevron #2214 in Murray UT, 09/16/2026, 22.418 gal, Visa ending 4471. What was the total?",
     // unreadable total, a legible line quoted as itself, no arithmetic, no estimate
     "I can't make out the TOTAL, but the car wash line reads $12.00. What was the total?",
+    // gallons and the pump price are three-decimal, not money
+    'The totals are hidden. I can read 22.418 GAL @ 3.899, Chevron #2214, 09/16/2026. What was the total?',
   ])('left alone: %s', (s) => {
     expect(guessedAmounts(s)).toEqual([])
   })
