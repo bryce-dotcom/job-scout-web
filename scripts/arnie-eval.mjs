@@ -428,13 +428,14 @@ const CASES = [
     expect: { proposal: 'create', proposal_label: 'expense', text_match: [/96\.41/, /approv(e|ing)/i], text_not_match: [/\b(I'?ve|I have|it'?s been|has been) (logged|expensed|recorded)\b/i] } },
   { id: 'expense.tech.unreadable.total.asks.not.guesses', as: 'tech',
     run: async (ctx) => {
-      const png = await receiptPng({ total: '' })   // the total line is blank
+      // the total lines are blank; 18.204 × 4.129 = 75.16 is the guess to refuse
+      const png = await receiptPng({ total: '', station: 'MAVERIK #417', address: '1350 E Main St, Lehi UT', pump: '18.204 GAL @ 4.129' })
       return await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } },
         { type: 'text', text: 'Log this receipt.' },
       ] }])
     },
-    expect: { text_match: [/total|amount|how much|can'?t (read|make out)/i], text_not_match: [/96\.41|87\.41/] } },
+    expect: { text_match: [/total|amount|how much|can'?t (read|make out)/i], text_not_match: [/75\.1[67]/] } },
 
   // — company setup: four answers, the address does the rest; the card names every source; never applied here —
   { id: 'company_setup.owner.four.answers.card.derives.the.rest', as: 'owner',
@@ -1109,14 +1110,19 @@ const CASES = [
 // ─── a receipt, drawn — so the expense cases read real pixels, not a fixture string ──
 // sharp rasterises the SVG; { total: '' } blanks the amounts so the model has
 // nothing to read and must ask instead of guessing.
-async function receiptPng({ total = '$96.41' } = {}) {
+// The blacked-out receipt is a different station with different numbers: the
+// readable one before it leaves a drafted-and-undone $96.41 Chevron #2214 in
+// the demo's history every run, and Jenny rightly offered that real figure
+// back ("several Chevron #2214 expenses for $96.41 … if that's the right
+// total, tell me") — which the guard read as a guess (2026-10-22).
+async function receiptPng({ total = '$96.41', station = 'CHEVRON #2214', address = '4410 S State St, Murray UT', pump = '22.418 GAL @ 3.899' } = {}) {
   const { default: sharp } = await import('sharp')
   const money = total !== ''
   const line = (y, s, size = 20, bold = false) => `<text x='40' y='${y}' font-size='${size}'${bold ? " font-weight='bold'" : ''}>${s}</text>`
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='420' height='620'><rect width='420' height='620' fill='#fff'/><g font-family='Courier New, monospace' font-size='20' fill='#111'>
-<text x='210' y='60' text-anchor='middle' font-size='26' font-weight='bold'>CHEVRON #2214</text>
-<text x='210' y='90' text-anchor='middle' font-size='16'>4410 S State St, Murray UT</text>
-${line(140, '09/16/2026   07:42 AM')}${line(190, 'PUMP 04  UNLEADED')}${line(220, '22.418 GAL @ 3.899')}
+<text x='210' y='60' text-anchor='middle' font-size='26' font-weight='bold'>${station}</text>
+<text x='210' y='90' text-anchor='middle' font-size='16'>${address}</text>
+${line(140, '09/16/2026   07:42 AM')}${line(190, 'PUMP 04  UNLEADED')}${line(220, pump)}
 ${money ? line(270, 'FUEL TOTAL        87.41') + line(300, 'CAR WASH BASIC     9.00') + line(350, 'SUBTOTAL          96.41') + line(380, 'TAX                0.00') + line(430, `TOTAL            ${total}`, 26, true) : line(270, 'FUEL TOTAL        ▒▒▒▒▒') + line(300, 'CAR WASH BASIC     ▒▒▒▒') + line(430, 'TOTAL            ▒▒▒▒▒▒', 26, true)}
 ${line(480, 'VISA ****4471   APPROVED')}<text x='210' y='560' text-anchor='middle' font-size='16'>THANK YOU - DRIVE SAFE</text></g></svg>`
   return (await sharp(Buffer.from(svg)).png().toBuffer()).toString('base64')
@@ -1378,7 +1384,8 @@ try {
     if (!outcome.ok) for (const f of outcome.fails) console.log(`             - ${f}`)
     // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
     if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}`) }
-    if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}\n`)
+    // A failure prints the whole reply: the line that broke the rule is often past the first 300 characters.
+    if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, outcome.ok ? 300 : 2000)}\n`)
   }
 } finally {
   await unseed()
