@@ -961,12 +961,6 @@ export default function Layout() {
                 )}
               </div>
             </div>
-            {/* The front door to the lobby, right under the logo. Bryce,
-                2026-10-22: a room you have to go looking for is a room nobody
-                walks into — so the way in sits where the eye already lands. */}
-            <div style={{ marginTop: '14px' }}>
-              <RoomsBar theme={theme} />
-            </div>
           </div>
 
           {/* Navigation */}
@@ -1004,6 +998,14 @@ export default function Layout() {
                 <LayoutDashboard size={20} />
                 Dashboard
               </NavLink>
+              {/* Directly under Dashboard. It was up in the logo block, which
+                  reads as branding rather than somewhere you can go. A hover
+                  panel was the other idea and it is the messier one: the call
+                  dock already floats, and two floating things competing for
+                  the same corner is how you end up clicking the wrong one. */}
+              <div style={{ padding: '8px 12px 4px' }}>
+                <RoomsBar theme={theme} />
+              </div>
               {/* Directly under Dashboard, not buried in TEAM. It answers
                   "who is working and who is off today" — the question you ask
                   before anything else, so it belongs where the day starts. */}
