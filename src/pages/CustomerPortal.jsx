@@ -766,15 +766,25 @@ export default function CustomerPortal() {
                   </>
                 ) : (
                   <>
+                    {/* Every invoice lists its lines (Bryce, 2026-10-22) — with
+                        their notes, the part numbers. A summary-format invoice
+                        keeps its Materials/Labor box below instead: its
+                        line_items ARE those two rows, so listing them too would
+                        say everything twice. */}
+                    {!summaryMode && Array.isArray(line_items) && line_items.length > 0 && (
+                      <div style={{ borderTop: `1px solid ${theme.border}`, borderBottom: `1px solid ${theme.border}`, marginBottom: '6px' }}>
+                        {line_items.map(renderPortalInvoiceLine)}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ color: theme.textMuted, fontSize: '13px' }}>Subtotal</span>
                       <span style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>{formatCurrency(invoiceAmount)}</span>
                     </div>
-                    {/* Kept for BOTH modes here. This branch never itemises —
-                        it shows a subtotal and this box — so suppressing it in
-                        summary mode would leave the customer with no breakdown
-                        at all. Only the section layout above swaps line items
-                        for Materials/Labor rows. */}
+                    {/* Kept for BOTH modes here. In summary mode this box is the
+                        only breakdown (the lines above are skipped), so
+                        suppressing it would leave the customer with none.
+                        Only the section layout above swaps line items for
+                        Materials/Labor rows. */}
                     {matLabSplit && matLabSplit.total > 0 && (
                       <div style={{ padding: '10px 12px', backgroundColor: theme.bg, borderRadius: '6px', border: `1px solid ${theme.border}`, display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px', marginBottom: '2px' }}>
                         <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>

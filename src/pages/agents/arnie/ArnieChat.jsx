@@ -273,10 +273,22 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     setPendingCards((data || []).map((r) => ({ ...r, busy: false, error: null })))
   }, [])
   useEffect(() => { loadPending() }, [loadPending])
-  // A card already drawn in this conversation keeps its own buttons in place;
-  // listing it again at the top would be the same card twice.
-  const shownInline = new Set(messages.map((m) => m.proposal?.proposal?.id).filter(Boolean))
-  const waitingCards = pendingCards.filter((c) => !shownInline.has(c.id))
+  // EVERY undecided card, pinned above the message box (Alayda, 2026-10-22:
+  // "sometimes in the chat and sometimes at the top, and you have to scroll all
+  // the way up to approve them"). A card drawn this turn is ALSO inline, with
+  // its detail; the pinned row is the one you never have to scroll for. An
+  // inline card is decided through its message, so an expense still carries
+  // its receipt photo and the message shows the outcome.
+  const inlineMsgFor = (id) => messages.find((m) => m.proposal?.proposal?.id === id && !m.proposalStatus)
+  const waitingCards = pendingCards
+  const [showAllWaiting, setShowAllWaiting] = useState(false)
+  const decideWaiting = async (c, decision) => {
+    const m = inlineMsgFor(c.id)
+    if (!m) return decidePending(c.id, decision)
+    setPendingCards((prev) => prev.map((x) => (x.id === c.id ? { ...x, busy: true, error: null } : x)))
+    await decideProposal(decision, c.id, m.id)
+    loadPending()
+  }
 
   const decidePending = async (id, decision) => {
     setPendingCards((prev) => prev.map((c) => (c.id === id ? { ...c, busy: true, error: null } : c)))
@@ -368,6 +380,8 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
           : 'No sweat — tossed it. Nothing changed.',
       }
     }))
+    // Decided here: off the pinned "Waiting for you" list too.
+    if (!failed) setPendingCards((prev) => prev.filter((x) => x.id !== proposalId))
     // A successful apply changed a settings taxonomy list in the DB — refresh
     // the store so the new business unit / lead source / service type shows up
     // app-wide (dropdowns etc.) without a manual reload.
@@ -1113,48 +1127,6 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         padding: isPanel ? '16px 14px' : (isMobile ? '16px 10px' : '24px 16px'),
         display: 'flex', flexDirection: 'column', gap: 18, backgroundColor: dark.bg,
       }}>
-        {/* WAITING FOR YOU — every undecided card, always visible.
-            A card used to exist only in the turn that drew it: reload the
-            page, open the app on your phone, or come back tomorrow and it was
-            gone from the screen while still sitting in the database. Alayda
-            had one waiting and was told for an afternoon that cards were
-            broken. They were never broken; they were invisible. */}
-        {waitingCards.length > 0 && (
-          <div style={{
-            border: `1px solid ${dark.orange}`, borderRadius: 12, padding: '11px 12px',
-            background: 'rgba(249,115,22,0.07)',
-          }}>
-            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: dark.orange, marginBottom: 8 }}>
-              Waiting for you · {waitingCards.length}
-            </div>
-            {waitingCards.map((c) => (
-              <div key={c.id} style={{
-                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                padding: '8px 0', borderTop: `1px solid ${dark.border}`,
-              }}>
-                <div style={{ flex: '1 1 180px', minWidth: 0, fontSize: 13.5, color: dark.text, lineHeight: 1.4 }}>
-                  {c.summary || 'A change'}
-                  {c.error && <div style={{ fontSize: 12, color: dark.red, marginTop: 3 }}>{c.error}</div>}
-                </div>
-                <button
-                  onClick={() => decidePending(c.id, 'apply')}
-                  disabled={c.busy}
-                  style={{ border: 0, borderRadius: 9, padding: '8px 14px', minHeight: 40, cursor: 'pointer', background: dark.green, color: '#fff', fontWeight: 700, fontSize: 13 }}
-                >
-                  {c.busy ? '…' : 'Approve'}
-                </button>
-                <button
-                  onClick={() => decidePending(c.id, 'reject')}
-                  disabled={c.busy}
-                  style={{ border: `1px solid ${dark.border}`, borderRadius: 9, padding: '8px 12px', minHeight: 40, cursor: 'pointer', background: 'transparent', color: dark.textMuted, fontWeight: 600, fontSize: 13 }}
-                >
-                  Discard
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Welcome state */}
         {messages.length === 0 && !loading && (
           <div style={{ textAlign: 'center', padding: isPanel ? '28px 12px' : '6px 2px 0' }}>
@@ -1557,6 +1529,59 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* WAITING FOR YOU — pinned above the message box, never scrolled away.
+          It used to sit at the TOP of the conversation: in a long chat a card
+          from a routine, another device or before a reload was a scroll away,
+          while one drawn this turn showed inline — so cards seemed to appear
+          "sometimes in the chat, sometimes at the top" (Alayda, 2026-10-22).
+          Every undecided card is here; one drawn this turn is also inline
+          with its detail. Two show; the rest open on a tap. */}
+      {waitingCards.length > 0 && (
+        <div data-waiting style={{
+          flexShrink: 0, margin: isPanel ? '0 14px 8px' : (isMobile ? '0 10px 8px' : '0 16px 8px'),
+          border: `1px solid ${dark.orange}`, borderRadius: 12, padding: '9px 12px',
+          background: 'rgba(249,115,22,0.07)', maxHeight: '38vh', overflowY: 'auto',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: dark.orange }}>
+              Waiting for you · {waitingCards.length}
+            </div>
+            {waitingCards.length > 2 && (
+              <button onClick={() => setShowAllWaiting((v) => !v)}
+                style={{ border: 0, background: 'transparent', color: dark.orange, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 4 }}>
+                {showAllWaiting ? 'Show fewer' : `Show ${waitingCards.length - 2} more`}
+              </button>
+            )}
+          </div>
+          {(showAllWaiting ? waitingCards : waitingCards.slice(0, 2)).map((c) => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              padding: '8px 0 2px', borderTop: `1px solid ${dark.border}`, marginTop: 6,
+            }}>
+              <div style={{ flex: '1 1 180px', minWidth: 0, fontSize: 13.5, color: dark.text, lineHeight: 1.4 }}>
+                {c.summary || 'A change'}
+                {inlineMsgFor(c.id) && <span style={{ fontSize: 11.5, color: dark.textMuted }}> · details in the chat</span>}
+                {c.error && <div style={{ fontSize: 12, color: dark.red, marginTop: 3 }}>{c.error}</div>}
+              </div>
+              <button
+                onClick={() => decideWaiting(c, 'apply')}
+                disabled={c.busy}
+                style={{ border: 0, borderRadius: 9, padding: '8px 14px', minHeight: 40, cursor: 'pointer', background: dark.green, color: '#fff', fontWeight: 700, fontSize: 13 }}
+              >
+                {c.busy ? '…' : 'Approve'}
+              </button>
+              <button
+                onClick={() => decideWaiting(c, 'reject')}
+                disabled={c.busy}
+                style={{ border: `1px solid ${dark.border}`, borderRadius: 9, padding: '8px 12px', minHeight: 40, cursor: 'pointer', background: 'transparent', color: dark.textMuted, fontWeight: 600, fontSize: 13 }}
+              >
+                Discard
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Quick chips after first response */}
       {messages.length > 0 && !loading && (
