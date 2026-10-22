@@ -32,7 +32,8 @@
     "arnie:deploy": "node scripts/arnie-deploy.mjs",
     "agent:release": "node scripts/build-agent-release.mjs",
     "sweep": "node scripts/morning-sweep.mjs",
-    "arnie:model-watch": "node scripts/arnie-model-watch.mjs"
+    "arnie:model-watch": "node scripts/arnie-model-watch.mjs",
+    "board": "node scripts/board.mjs"
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.9",

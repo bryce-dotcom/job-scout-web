@@ -65,6 +65,18 @@ const findings = []   // { company, severity, line, detail? }
 const notes = []      // checks that could not run
 const add = (company, severity, line, detail) => findings.push({ company, severity, line, detail })
 
+// The build hash currently served, read off the live page by deployed().
+// client_errors.app_build is the same hash (lib/crashReport currentBuild()
+// scrapes it from the script tag), so the two compare directly.
+//
+// Why it matters: this report ran for the first time on 2026-10-22 and led
+// with "/payroll — Cannot access 'Gr' before initialization", a crash whose
+// fix had shipped two and a half hours before it. The crash was real; it was
+// also already dead. A report that cannot tell those apart cries wolf every
+// morning until somebody stops reading it, and then it is worth nothing on
+// the morning it is right.
+let liveBuild = null
+
 // ── 1. Did the app crash on anybody? ──────────────────────────────────
 async function crashes() {
   const rows = await pageAll(
@@ -79,7 +91,12 @@ async function crashes() {
     byKey.set(key, { ...r, seen_count: (prev?.seen_count || 0) + (r.seen_count || 1) })
   }
   for (const c of byKey.values()) {
-    add(c.company_id, 'crash', `${c.route} — ${String(c.message).slice(0, 70)} (${c.seen_count}x, build ${c.app_build})`)
+    // Only a crash on the build being served right now is still happening.
+    // One on a superseded build MAY already be fixed — it is not a claim that
+    // it is, so it still gets reported, just not at the top of the page.
+    const stale = liveBuild && c.app_build && c.app_build !== liveBuild
+    const where = stale ? `build ${c.app_build}, no longer live` : `build ${c.app_build}`
+    add(c.company_id, stale ? 'crash_old' : 'crash', `${c.route} — ${String(c.message).slice(0, 70)} (${c.seen_count}x, ${where})`)
   }
 }
 
@@ -156,6 +173,7 @@ async function deployed() {
     const html = await (await fetch(host, { redirect: 'follow' })).text()
     const asset = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0]
     if (!asset) { notes.push(`could not find the app bundle at ${host}`); return }
+    liveBuild = asset.match(/index-([A-Za-z0-9_-]+)\.js/)?.[1] || null
     const res = await fetch(`${host}/${asset}`)
     if (!res.ok) add(null, 'deploy', `the app bundle did not load (${res.status}) — the site may be down`)
   } catch (e) {
@@ -174,27 +192,36 @@ try {
   notes.push(`could not list companies: ${e.message}`)
 }
 
+// deployed() runs FIRST because it reads the live build hash that crashes()
+// needs to tell a crash still happening from one a deploy has already fixed.
+// If the site is unreachable the hash stays null and every crash reports as
+// live — the loud default, because an unknown is not an all-clear.
+await safely('deploy', deployed)
 await safely('crashes', crashes)
 await safely('feedback', feedback)
-await safely('deploy', deployed)
 for (const c of companies) await safely(`pay ledgers for ${c.company_name}`, () => payLedgers(c.id))
 
 const nameOf = new Map(companies.map((c) => [c.id, c.company_name]))
-const ORDER = ['crash', 'money', 'urgent', 'deploy', 'feedback']
+const ORDER = ['crash', 'money', 'urgent', 'deploy', 'feedback', 'crash_old']
 const LABEL = {
   crash: 'CRASHED ON SOMEBODY',
   money: 'SOMEONE\'S PAY IS WRONG',
   urgent: 'SAID URGENTLY',
   deploy: 'SHIPPING',
   feedback: 'NEW FEEDBACK',
+  crash_old: 'CRASHED, BUT ON A BUILD NO LONGER SERVED (a deploy may have fixed it)',
 }
 
 console.log(`\nMorning sweep — ${new Date().toISOString().slice(0, 16).replace('T', ' ')}  (last ${HOURS}h)`)
 console.log('='.repeat(72))
 
 if (!findings.length) {
-  console.log('\nNothing to report. No crashes, no new feedback, pay ledgers consistent,')
-  console.log('every migration applied, the app is up.')
+  // Says only what was actually checked. This line used to claim "every
+  // migration applied", which this script cannot see (see the note above
+  // payLedgers) — a clean report that overstates its own reach is how you
+  // get told nothing is wrong by something that never looked.
+  console.log('\nNothing to report. No crashes, no new feedback, pay ledgers')
+  console.log('consistent, the app is up.')
 } else {
   for (const sev of ORDER) {
     const rows = findings.filter((f) => f.severity === sev)
