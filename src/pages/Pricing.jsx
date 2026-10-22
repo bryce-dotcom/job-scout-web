@@ -753,7 +753,7 @@ export default function Pricing() {
             <div className="hero-grid">
               <div className="hero-left">
                 <span className="eb on-dark"><Icon id="i-bolt" style={{ fontSize: 13 }} /> Your AI executive team</span>
-                <h1>Don't rent a chatbot. Command a company of geniuses that <span className="hl">does the work</span>.</h1>
+                <h1>Don't rent a chatbot. Command a company of geniuses who <span className="hl">do the work</span>.</h1>
                 <p className="lede">One app runs your whole business — sales, jobs, books, payroll, the fleet — and every piece is a world-class AI expert. Arnie, the AI CEO, puts them to work, and even reaches onto your own computer to work the screen you're already signed into. You command it all from your phone.</p>
                 <div className="cta-row">
                   <button className="btn btn-viz" onClick={toPlans}>Start free — 30 days <Icon id="i-arrow" /></button>
