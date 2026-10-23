@@ -35,6 +35,7 @@ import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonu
 import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 import { employeeHours, computeEmployeePay } from '../lib/payrollEngine'
 import { loadPayrollPeriod, periodTimeOffRows } from '../lib/payrollLoader'
+import { buildRunPayload } from '../lib/payrollRun'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -2189,31 +2190,12 @@ export default function Payroll() {
     setRunningPayroll(true)
     const payDate = runPayDate
     try {
-      const { data: payrollRun, error: runError } = await supabase
-        .from('payroll_runs')
-        .insert({
-          company_id: companyId,
-          period_start: localDateStr(periodStart),
-          period_end: localDateStr(periodEnd),
-          pay_date: localDateStr(payDate),
-          total_gross: totalPayroll,
-          employee_count: activeEmployees.length,
-          created_by: user?.id
-        })
-        .select()
-        .single()
-
-      if (runError) throw runError
-      // So a second press for the same period hits the duplicate guard at once.
-      setPriorRuns(prev => [...prev, payrollRun])
-
       const paystubs = activeEmployees.map(emp => {
         const data = employeePayData[emp.id]
         const t = data?.tax || {}
         return {
           company_id: companyId,
           employee_id: emp.id,
-          payroll_run_id: payrollRun.id,
           period_start: localDateStr(periodStart),
           period_end: localDateStr(periodEnd),
           pay_date: localDateStr(payDate),
@@ -2251,160 +2233,48 @@ export default function Payroll() {
         }
       })
 
-      const { error: stubsError } = await supabase.from('paystubs').insert(paystubs)
-      if (stubsError) throw stubsError
-
-      // ── Move the PTO bank on the employee card: this period's accrual in,
-      //    the PTO days this run paid out. Guarded against a second run of
-      //    the same period — accruing and deducting twice would be wrong, and
-      //    the stubs above are the record either way. Failures are said out
-      //    loud at the end, like the mark-paid step below.
-      let ptoNote = ''
-      try {
-        const { data: priorRuns } = await supabase.from('payroll_runs')
-          .select('id').eq('company_id', companyId)
-          .eq('period_start', localDateStr(periodStart)).eq('period_end', localDateStr(periodEnd))
-          .neq('id', payrollRun.id).limit(1)
-        if (priorRuns?.length) {
-          ptoNote = 'PTO balances were left alone: this period had already been run once, and accruing or deducting it twice would be wrong.'
-        } else {
-          const moves = activeEmployees.map(emp => ({
-            emp,
-            accrue: ptoAccrualPerPeriod(emp, payrollConfig.pay_frequency),
-            use: employeePayData[emp.id]?.ptoDays || 0,
-          })).filter(m => m.accrue > 0 || m.use > 0)
-          const failed = []
-          for (const m of moves) {
-            const { error } = await supabase.from('employees').update(ptoBankAfterRun(m.emp, m)).eq('id', m.emp.id)
-            if (error) failed.push(`${m.emp.name} (${error.message})`)
-          }
-          if (failed.length) ptoNote = 'PTO balances could not be updated for ' + failed.join(', ') + '. Adjust them on the employee card.'
-          if (moves.length && fetchEmployees) fetchEmployees().catch(() => {})
-        }
-      } catch (ptoErr) {
-        console.warn('[runPayroll] PTO bank update crashed:', ptoErr)
-        ptoNote = 'PTO balances could not be updated (' + (ptoErr?.message || ptoErr) + '). Adjust them on the employee card.'
+      // ── One transaction (lib/payrollRun → process_payroll_run): the run,
+      //    the stubs, the PTO banks, the ledger marks and the liabilities are
+      //    written together or not at all. Nothing can be half done, so
+      //    nothing is paid twice next run and no stub exists without its run.
+      //    Salary-or-commission: the rows weighed are settled by outcome.
+      const settle = []
+      for (const emp of activeEmployees) {
+        if (!paysGreaterOf(emp)) continue
+        const data = calculateFullPay(emp)
+        const rows = data?.weighedCommissionRows
+        if (!rows) continue
+        settle.push({ covered: data.payBasis?.basis === 'salary', rep: rows.rep, lead: rows.lead })
       }
-
-      // ── Pay the earnings ADDED to this payroll (queued): mark them paid,
-      //    stamp the date, and clear the queue flag so they drop off "owed".
-      //    Only queued + eligible rows are touched — exactly the amount that
-      //    fed each gross above. Un-queued owed items stay owed for a later run.
-      //
-      //    If any of this fails, the run has still happened: the paystubs say
-      //    the money went out while the ledger still says it is owed. That
-      //    used to be a console warning nobody reads. Now it is said out loud
-      //    at the end, naming what to mark paid by hand.
+      const adminEmp = employees.find(e => e.email === user?.email)
+      const payload = buildRunPayload({
+        companyId,
+        periodStart, periodEnd, payDate,
+        createdBy: user?.id, paidBy: adminEmp?.id || null,
+        totalGross: totalPayroll,
+        employees: activeEmployees,
+        payrollConfig,
+        stubs: paystubs,
+        ptoDaysFor: (id) => employeePayData[id]?.ptoDays || 0,
+        settle,
+        liabilities: aggregateTaxLiabilities({ companyId, payrollRunId: null, periodStart, periodEnd, payDate, employees: activeEmployees, employeePayData, company }),
+      })
+      const { data: result, error: runError } = await supabase.rpc('process_payroll_run', { p: payload })
+      if (runError) throw runError
+      const payrollRun = result.run
+      // So a second press for the same period hits the duplicate guard at once.
+      setPriorRuns(prev => [...prev, payrollRun])
+      const ptoNote = result.pto_note || ''
+      if (result.counts?.pto && fetchEmployees) fetchEmployees().catch(() => {})
+      // Nothing can be left half-marked any more; the list stays so the
+      // message below reads the same.
       const notMarkedPaid = []
-      try {
-        const adminEmp = employees.find(e => e.email === user?.email)
-        const paidEmpIds = activeEmployees.map(e => e.id)
-        const stamp = {
-          paid_pay_period_start: localDateStr(periodStart),
-          paid_pay_period_end: localDateStr(periodEnd),
-          updated_at: new Date().toISOString(),
-        }
-        if (paidEmpIds.length) {
-          // Bonuses: queued + accrued + verified -> paid. The verified test is
-          // the same one bonusOwed applies to the gross above. Without it, a
-          // bonus queued while clear and re-flagged for review by a later
-          // ledger sync was stamped paid with nothing on the paystub.
-          const bonusPaid = (b) => paidEmpIds.includes(b.employee_id) && isPayableNow(b)
-          // paid_payroll_run_id is what makes "what have we paid on?"
-          // answerable afterwards. Every other ledger below this stamps it;
-          // bonuses alone did not, so a paid bonus recorded a date and a
-          // person but nothing tying it to the cheque. Alayda, 2026-10-19:
-          // "I have no way of seeing what we have paid on." With no run on
-          // the row, a bonus knocked off `paid` by any later recompute is
-          // unrecoverable — 81 HHH rows carry a paid_at whose run nobody can
-          // name, and only the 8 that matched a paystub to the cent could be
-          // put back.
-          const { error: bonusErr } = await supabase.from('job_bonuses')
-            .update({ status: 'paid', paid_at: payDate.toISOString(), paid_by: adminEmp?.id || null, paid_payroll_run_id: payrollRun.id, queued_for_payroll: false, ...stamp })
-            .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('status', 'accrued').eq('queued_for_payroll', true).eq('needs_verification', false)
-          if (bonusErr) { console.warn('[runPayroll] bonus mark-paid failed:', bonusErr); notMarkedPaid.push(`efficiency bonuses (${bonusErr.message})`) }
-          else setLedgerBonuses(prev => prev.map(b => bonusPaid(b) ? { ...b, status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : b))
-
-          // Setter/lead commissions: queued -> paid. (Restored: a line-range
-          // edit on 5 Oct swallowed these two statements, which would have left
-          // every ordinary employee's staged commission sitting 'earned' and
-          // queued after its run — ready to be paid a second time by the next.)
-          const { error: commErr } = await supabase.from('lead_commissions')
-            .update({ payment_status: 'paid', queued_for_payroll: false, paid_payroll_run_id: payrollRun.id })
-            .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (commErr) { console.warn('[runPayroll] setter commission mark-paid failed:', commErr); notMarkedPaid.push(`setter commissions (${commErr.message})`) }
-          else setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
-
-          // Rep (%) commissions: queued -> paid, tagged with the run that paid
-          // them so the pay history can say which jobs were in this cheque.
-          const { error: repErr } = await supabase.from('rep_commissions')
-            .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, paid_payroll_run_id: payrollRun.id })
-            .eq('company_id', companyId).in('employee_id', paidEmpIds)
-            .eq('queued_for_payroll', true).neq('payment_status', 'paid')
-          if (repErr) { console.warn('[runPayroll] rep commission mark-paid failed:', repErr); notMarkedPaid.push(`rep commissions (${repErr.message})`) }
-          else setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false } : r))
-          // Greater-of employees: the period's commission is SETTLED whichever
-          // way the comparison went, staged or not. The statements above close
-          // only queued rows, which would leave an unstaged commission alive
-          // to be paid on top of a later salary - the same money twice.
-          //
-          // The rows settled are the ones the comparison actually weighed, not
-          // a date filter's best guess: earned_at is a timestamp that the
-          // comparison reads as a local day, so a UTC bound can miss the last
-          // evening of a period and pay it again next time.
-          const settleGroups = [{ covered: true, rep: [], lead: [] }, { covered: false, rep: [], lead: [] }]
-          for (const id of paidEmpIds) {
-            const emp = activeEmployees.find(e => e.id === id)
-            if (!emp || !paysGreaterOf(emp)) continue
-            const data = calculateFullPay(emp)
-            const rows = data?.weighedCommissionRows
-            if (!rows) continue
-            const group = settleGroups[data.payBasis?.basis === 'salary' ? 0 : 1]
-            group.rep.push(...rows.rep)
-            group.lead.push(...rows.lead)
-          }
-          for (const g of settleGroups) {
-            if (g.rep.length) {
-              const { error } = await supabase.from('rep_commissions')
-                .update({ payment_status: 'paid', paid_at: payDate.toISOString(), queued_for_payroll: false, covered_by_salary: g.covered, paid_payroll_run_id: payrollRun.id })
-                .in('id', g.rep).eq('company_id', companyId)
-              if (error) { console.warn('[runPayroll] greater-of settle failed on rep_commissions:', error.message); notMarkedPaid.push('rep commissions settled by salary (' + error.message + ')') }
-            }
-            if (g.lead.length) {
-              const { error } = await supabase.from('lead_commissions')
-                .update({ payment_status: 'paid', queued_for_payroll: false, covered_by_salary: g.covered, paid_payroll_run_id: payrollRun.id })
-                .in('id', g.lead).eq('company_id', companyId)
-              if (error) { console.warn('[runPayroll] greater-of settle failed on lead_commissions:', error.message); notMarkedPaid.push('setter commissions settled by salary (' + error.message + ')') }
-            }
-          }
-        }
-      } catch (payErr) {
-        console.warn('[runPayroll] earnings mark-paid crashed:', payErr)
-        notMarkedPaid.push(`earnings (${payErr?.message || payErr})`)
-      }
-
-      // ── Write payroll_tax_liabilities so the Payroll Inbox knows
-      //    what to deposit and when. Aggregates each tax kind across
-      //    all employees on this run.
-      try {
-        const liabilities = aggregateTaxLiabilities({
-          companyId,
-          payrollRunId: payrollRun.id,
-          periodStart, periodEnd, payDate,
-          employees: activeEmployees,
-          employeePayData,
-          company,
-        })
-        if (liabilities.length) {
-          const { error: liabErr } = await supabase
-            .from('payroll_tax_liabilities')
-            .insert(liabilities)
-          if (liabErr) console.warn('[runPayroll] tax liability insert failed:', liabErr)
-        }
-      } catch (liabErr) {
-        console.warn('[runPayroll] tax liability aggregation crashed:', liabErr)
+      {
+        const paidEmpIds = payload.paid_employee_ids
+        const paidAtIso = payload.paid_at
+        setLedgerBonuses(prev => prev.map(b => (paidEmpIds.includes(b.employee_id) && isPayableNow(b)) ? { ...b, status: 'paid', paid_at: paidAtIso, queued_for_payroll: false } : b))
+        setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
+        setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: paidAtIso, queued_for_payroll: false } : r))
       }
 
       setShowRunPayrollModal(false)

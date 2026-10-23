@@ -113,14 +113,16 @@ describe('the wiring', () => {
   })
 
   it('the run marks the settled commissions as covered by the salary', () => {
-    expect(payroll).toMatch(/covered: true/)   // the salary-won settle group
     // the rows weighed are the rows settled — not whatever a date filter
     // catches, because earned_at is a timestamp read as a local day
     expect(payroll).toMatch(/weighedCommissionRows/)
-    expect(payroll).toMatch(/covered_by_salary: g\.covered/)
-    // both commission tables, or a setter fee quietly pays twice
-    expect(payroll).toMatch(/from\('rep_commissions'\)[\s\S]{0,300}covered_by_salary/)
-    expect(payroll).toMatch(/from\('lead_commissions'\)[\s\S]{0,300}covered_by_salary/)
+    // the page says which outcome each group had; the one-transaction
+    // function (process_payroll_run) writes it on both commission tables,
+    // or a setter fee quietly pays twice
+    expect(payroll).toMatch(/covered: data\.payBasis\?\.basis === 'salary'/)
+    const sql = read('supabase/migrations/20261023200000_process_payroll_run.sql')
+    expect(sql).toMatch(/update public\.rep_commissions[\s\S]{0,300}covered_by_salary = coalesce\(\(r->>'covered'\)::boolean/)
+    expect(sql).toMatch(/update public\.lead_commissions[\s\S]{0,300}covered_by_salary = coalesce\(\(r->>'covered'\)::boolean/)
     // and the whole period counts for them, staged or not
     expect(engine).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
   })

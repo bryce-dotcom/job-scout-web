@@ -38,6 +38,8 @@ For each of the five (Aug 5 ×4 catch-up, Aug 20 ×2, Sep 20, Oct 5 Gusto, Oct 2
 ### 4. Run = one transaction (week 2)
 `handleRunPayroll` does eleven writes in sequence from the browser (run, stubs, PTO, bonus marks, commission marks, liabilities, typed-hours watermark, stub PDFs, email). A failure halfway leaves bonuses unmarked and gets them paid twice. Replace with one RPC, `process_payroll_run(payload)`, that writes all of it or none of it, and returns the run id. The browser renders what the RPC returns.
 
+**Status 2026-10-23:** done. `process_payroll_run(jsonb)` (migration 20261023200000, security invoker) writes the run, the stubs, the PTO banks, the bonus / setter / rep marks, the greater-of settles and the liabilities in one transaction and returns the run and the counts. The page builds the payload with `src/lib/payrollRun.js` and makes one call; stub delivery (an edge function) still follows after the commit, and a delivery problem is said, not thrown. Proven on the demo tenant: one call wrote run, 5 stubs, 7 liability rows and 5 PTO accruals, every stub figure equal to the page's; the test run was then removed.
+
 ### 5. Preflight and postflight that cannot be skipped (week 2)
 Before processing (extends `payrollRunGuards`): every employee's gross equals its parts; no open punch; no typed hours uncounted; no queued ledger row outside the period; no duplicate period; YTD caps applied; deposit schedule set; every W-2 has a W-4 or an acknowledgement. After processing: a reconciliation report — stubs vs ledger marks vs liabilities vs prior period — emailed to Bryce and Alayda, exceptions first. A payroll is not done until that report has zero exceptions.
 
