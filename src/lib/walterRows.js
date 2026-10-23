@@ -8,7 +8,7 @@
 // This file maps and delegates. It does not price: every figure comes back
 // from windowEstimator.walterEstimate().
 
-import { walterEstimate } from './windowEstimator'
+import { walterEstimate, registerCounts } from './windowEstimator'
 
 /**
  * glass_damage_items rows → the zones the engine counts.
@@ -69,32 +69,9 @@ export function priceAssessment(assessment, itemRows) {
     replacement_high: a.replacement_cost_high || 0,
   })
 
-  return { bid, zones, counts: registerCounts(zones, bid), rows: items.length }
-}
-
-/**
- * What a register is made of, in the four numbers a person actually asks for.
- *
- * The engine's `excluded` is every row it did not resurface — duplicate
- * photographs, L0s routed to cleaning and marks that must not be touched, all
- * together. That is the right number for the engine and the wrong one for a
- * screen: on the demo register it is 54 of 68, which reads like something
- * broke when 45 of those are simply the same scratches photographed twice.
- * So the kinds are separated here, once, rather than subtracted back apart on
- * each page.
- */
-export function registerCounts(zones, bid) {
-  const list = Array.isArray(zones) ? zones : []
-  const dupes = list.filter((z) => z?.duplicate_of).length
-  return {
-    rows: list.length,
-    dupes,
-    // One entry per real mark, however many times it was photographed.
-    marks: list.length - dupes,
-    // Marks that will not be resurfaced at all, and for a stated reason —
-    // a coating that cannot be abraded, a factory defect, a crack through.
-    blocked: list.filter((z) => !z?.duplicate_of && z?.not_restorable_reason).length,
-    to_resurface: bid?.restoration?.zones_counted ?? 0,
-    to_clean: bid?.restoration?.zones_to_clean ?? 0,
-  }
+  // The engine owns the register split now — it was raised from here and
+  // moved in, so there is one rule rather than two that can drift. Called
+  // directly rather than read off bid.restoration.register, because a
+  // cleaning-only visit has no restoration block and still has a register.
+  return { bid, zones, counts: registerCounts(zones), rows: items.length }
 }

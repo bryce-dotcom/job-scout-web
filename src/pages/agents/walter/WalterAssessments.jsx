@@ -133,18 +133,28 @@ export default function WalterAssessments() {
                     </div>
 
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                      <Pill bg={t.bg} fg={t.fg}>{a.status || 'draft'}</Pill>
+                      <Pill bg={t.bg} fg={t.fg} cap>{a.status || 'draft'}</Pill>
                       {a.vertical && (
-                        <Pill bg={theme.accentBg} fg={theme.accent}>
+                        <Pill bg={theme.accentBg} fg={theme.accent} cap>
                           <Layers size={11} /> {a.vertical}
                         </Pill>
                       )}
-                      {counts.blocked > 0 && (
+                      {counts.excluded > 0 && (
                         <Pill bg="rgba(234,179,8,0.14)" fg="#a16207">
-                          <AlertTriangle size={11} /> {counts.blocked} of {counts.marks} excluded
+                          <AlertTriangle size={11} /> {counts.excluded} of{' '}
+                          {counts.rows - counts.duplicates} excluded
                         </Pill>
                       )}
-                      {bid.value?.below_typical_band && (
+                      {/* The moment value pricing stopped applying: a share of
+                          replacement came out under cost plus margin. */}
+                      {bid.pricing_basis === 'cost_floor' && (
+                        <Pill bg="rgba(234,179,8,0.14)" fg="#a16207">
+                          <AlertTriangle size={11} /> cost floor
+                        </Pill>
+                      )}
+                      {/* Only meaningful when restoration is in scope — a
+                          cleaning bid is not an alternative to new glass. */}
+                      {bid.restoration && bid.value?.below_typical_band && (
                         <Pill bg="rgba(239,68,68,0.12)" fg="#dc2626">
                           <AlertTriangle size={11} /> under the band
                         </Pill>
@@ -170,12 +180,16 @@ export default function WalterAssessments() {
   )
 }
 
-function Pill({ children, bg, fg }) {
+// `cap` is for the single-word pills that come out of the database lowercase
+// (a status, a vertical). Capitalising a sentence word by word turns
+// "5 of 23 excluded" into "5 Of 23 Excluded".
+function Pill({ children, bg, fg, cap }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 4,
       background: bg, color: fg, borderRadius: 999,
-      padding: '3px 9px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize',
+      padding: '3px 9px', fontSize: 11, fontWeight: 700,
+      textTransform: cap ? 'capitalize' : 'none',
     }}>
       {children}
     </span>

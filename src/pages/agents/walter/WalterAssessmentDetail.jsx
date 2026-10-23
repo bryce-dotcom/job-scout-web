@@ -9,7 +9,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, AlertTriangle, Copy, Sparkles, Layers, Info,
+  ArrowLeft, AlertTriangle, Copy, Sparkles, Layers, Info, Scale,
 } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/ThemeContext'
@@ -109,6 +109,30 @@ export default function WalterAssessmentDetail() {
   // divide the bid by anything.
   const value = bid?.value || null
 
+  // The engine counts the marks it will WORK; one logged mark can still be a
+  // duplicate photograph. Rows less duplicates is how many real marks the
+  // building has, which is the number the "68 is really 23" line is about.
+  const distinctMarks = counts.rows - counts.duplicates
+
+  const BASIS = {
+    value: {
+      label: 'What the glass is worth',
+      tone: 'accent',
+      body: 'Priced against what replacing this glass would cost, not against our labour — which is how the trade sells it.',
+    },
+    cost_floor: {
+      label: 'Cost floor',
+      tone: 'warning',
+      body: 'Value pricing stopped applying here: a share of replacement came out BELOW cost plus margin, so the floor set the price instead. Cheap glass with a lot of marks on it does this.',
+    },
+    cost_plus: {
+      label: 'Cost plus margin',
+      tone: 'warning',
+      body: 'The lines already add up to more than a share of replacement would, so this is priced on what the work costs plus margin. That happens when the glass is cheap against the number of marks on it — or when nobody priced the replacement at all.',
+    },
+  }
+  const basis = BASIS[bid?.pricing_basis] || null
+
   return (
     <Shell theme={theme} isMobile={isMobile}>
       <button
@@ -185,7 +209,10 @@ export default function WalterAssessmentDetail() {
           bid is not cost-plus. The customer's alternative is not a cheaper
           polisher, it is new glass. A demo that shows three tiers without this
           is showing half the product. */}
-      {value && (
+      {/* Only when restoration is actually in scope. A window-cleaning bid is
+          not an alternative to new glass, so comparing the two would be a
+          meaningless number with a scary flag attached to it. */}
+      {value && bid.restoration && (
         <>
           <SectionLabel theme={theme}>Against replacing the glass</SectionLabel>
           <Card theme={theme}>
@@ -217,6 +244,16 @@ export default function WalterAssessmentDetail() {
                 value={`${money(value.gross_margin)} · ${pct(value.gross_margin_pct)}`}
               />
             </div>
+
+            {basis && (
+              <Note theme={theme} tone={basis.tone} icon={basis.tone === 'accent' ? Scale : AlertTriangle}>
+                <strong>Priced on: {basis.label}.</strong> {basis.body}
+                {bid.pricing_basis !== 'value' && bid.cost_floor != null && (
+                  <> The floor is {money(bid.cost_floor)} against a direct cost of{' '}
+                  {money(bid.direct_cost)}.</>
+                )}
+              </Note>
+            )}
 
             <Note theme={theme} tone="info" icon={Info}>
               Replacing this glass would run{' '}
@@ -292,16 +329,16 @@ export default function WalterAssessmentDetail() {
           gap: 12,
         }}>
           <MiniStat theme={theme} label="Rows logged" value={counts.rows} />
-          <MiniStat theme={theme} label="Distinct marks" value={counts.marks} />
+          <MiniStat theme={theme} label="Duplicate photos" value={counts.duplicates} />
           <MiniStat theme={theme} label="Zones to resurface" value={counts.to_resurface} strong />
-          <MiniStat theme={theme} label="Excluded with a reason" value={counts.blocked} />
+          <MiniStat theme={theme} label="Excluded with a reason" value={counts.excluded} />
         </div>
 
-        {counts.dupes > 0 && (
+        {counts.duplicates > 0 && (
           <Note theme={theme} tone="accent" icon={Copy}>
-            <strong>{counts.rows} rows logged across {counts.marks} marks is not {counts.rows}{' '}
+            <strong>{counts.rows} rows logged across {distinctMarks} marks is not {counts.rows}{' '}
             scratches.</strong> The same mark was photographed from several angles, so{' '}
-            {counts.dupes} row{counts.dupes === 1 ? ' is a duplicate and is' : 's are duplicates and are'}{' '}
+            {counts.duplicates} row{counts.duplicates === 1 ? ' is a duplicate and is' : 's are duplicates and are'}{' '}
             never counted twice. Bidding all {counts.rows} would have roughly tripled the tech days.
           </Note>
         )}
@@ -349,7 +386,7 @@ export default function WalterAssessmentDetail() {
           </Note>
         )}
 
-        {counts.blocked === 0 && counts.dupes === 0 ? (
+        {counts.excluded === 0 && counts.duplicates === 0 ? (
           <div style={{ fontSize: 14, color: theme.textMuted }}>
             Every logged mark was counted.
           </div>
@@ -357,7 +394,10 @@ export default function WalterAssessmentDetail() {
           <div style={{ marginTop: 4 }}>
             {Object.entries(
               excluded
-                .filter((z) => z.not_restorable_reason)
+                // Duplicates inherit their parent's reason, so listing them
+                // here would name A20, A20-b and A20-c for one mark and print
+                // thirteen codes under a count of five.
+                .filter((z) => z.not_restorable_reason && !z.duplicate_of)
                 .reduce((acc, z) => {
                   acc[z.not_restorable_reason] = (acc[z.not_restorable_reason] || []).concat(z.id)
                   return acc
