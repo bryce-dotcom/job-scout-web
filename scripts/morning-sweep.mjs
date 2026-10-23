@@ -136,6 +136,45 @@ async function payLedgers(companyId) {
     add(companyId, 'money', `${stagedAndHeld.length} bonuses are staged for payroll AND held — they will show as coming and pay nothing (${money(stagedAndHeld.reduce((s, b) => s + (+b.amount || 0), 0))})`)
   }
 
+  // Commission a rep has earned that no payroll run will ever pick up.
+  //
+  // Payroll pays what is QUEUED. A commission that is earned but never staged
+  // sits there forever, silently, and nobody is told — there is no screen that
+  // says "you are owed this and it is not coming".
+  //
+  // Found 2026-10-23 because Tracy chased $431.41 for one rep. Underneath it
+  // were 56 rows going back to 27 April and $27,296.45 owed across FIVE reps,
+  // not one, with queued_for_payroll false on every single row. Two of them
+  // had never been paid a commission at all. Alayda's note on the ticket was
+  // "I am not sure why its only him"; it was not only him, he was the one
+  // somebody happened to look at.
+  //
+  // Reported per rep, because "$27k across the team" is a number nobody can
+  // act on and "Doug Webb is owed $8,447.41, oldest 27 April" is.
+  const reps = await pageAll(
+    'rep_commissions',
+    'id, employee_id, amount, payment_status, earned_at, queued_for_payroll, covered_by_salary',
+    (q) => q.eq('company_id', companyId).neq('payment_status', 'paid'),
+  )
+  const owed = reps.filter((r) => !r.queued_for_payroll && !r.covered_by_salary)
+  if (owed.length) {
+    const names = new Map(
+      (await pageAll('employees', 'id, name', (q) => q.eq('company_id', companyId))).map((e) => [e.id, e.name]),
+    )
+    const byRep = new Map()
+    for (const r of owed) {
+      const cur = byRep.get(r.employee_id) || { total: 0, n: 0, oldest: null }
+      cur.total += +r.amount || 0
+      cur.n += 1
+      if (r.earned_at && (!cur.oldest || r.earned_at < cur.oldest)) cur.oldest = r.earned_at
+      byRep.set(r.employee_id, cur)
+    }
+    for (const [empId, v] of [...byRep.entries()].sort((a, b) => b[1].total - a[1].total)) {
+      add(companyId, 'money',
+        `${names.get(empId) || `employee ${empId}`}: ${money(v.total)} of commission earned and never staged for payroll — ${v.n} row${v.n === 1 ? '' : 's'}, oldest ${String(v.oldest).slice(0, 10)}`)
+    }
+  }
+
   // A setter's fee stranded on the lead the quote never reached.
   const rule = (await db.from('companies').select('setter_qualification_rule').eq('id', companyId).maybeSingle()).data?.setter_qualification_rule
   if (rule === 'quote_created') {
