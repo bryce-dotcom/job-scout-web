@@ -16,6 +16,7 @@ import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
 import { costingJobId, displayCategory } from './transferRule.ts'
 import { isMaterialSpend, materialCostOf, bonusCostByJob, jobHoursFromPunches } from './jobCostRules.ts'
+import { costRatesByEmployee } from './laborRate.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -857,9 +858,17 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     }
     lines.push(...l); plaid.push(...t); manual.push(...m); punches.push(...tc); jobBonuses.push(...jb)
   }
-  const [products, components] = await Promise.all([
+  // `co` is always `company_id=eq.<id>`, and companies keys on `id`.
+  const thisCompany = `id=eq.${co.split('eq.')[1] || ''}`
+  const [products, components, employees, companies] = await Promise.all([
     readAll(r, `products_services?${co}&select=id,cost,material_or_labor`, 10000),
     readAll(r, `product_components?${co}&select=parent_product_id,component_product_id,quantity`, 10000),
+    // What an hour of each person COSTS, not what it pays: lib/laborRate walks
+    // a salary into an hourly rate and adds the employer's own taxes, capped
+    // at each wage base. Reading the company is what makes the burden real —
+    // without it this would be the bare wage and ~8% light.
+    readAll(r, `employees?${co}&select=id,hourly_rate,salary,annual_salary,pay_type,is_salary`, 2000),
+    readAll(r, `companies?${thisCompany}&select=futa_rate_pct,sui_rate_pct,sui_wage_base,workers_comp_class_codes`, 1),
   ])
   const productMap = new Map(products.map((p: any) => [p.id, p]))
   const kids = new Map<number, any[]>()
@@ -909,8 +918,17 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     add(isMaterialSpend(e.category) ? partsBy : expBy, e.job_id, num(e.amount))
   }
   const bonusBy = bonusCostByJob(jobBonuses)
-  const hoursBy = new Map<number, number>()
-  for (const h of jobHoursFromPunches(punches)) add(hoursBy, h.job_id, h.hours)
+  // Punched hours priced at each employee's loaded cost rate REPLACE the
+  // line-derived estimate wherever a job has punches — the same rule, and now
+  // the same code, as lib/reports jobCosting. Until 2026-10-23 this tool could
+  // not reach lib/laborRate at all, so it always reported the estimate and was
+  // $138,285.38 light across 270 HHH jobs.
+  const rateByEmployee = costRatesByEmployee(employees, companies[0] || null)
+  const hoursBy = new Map<number, number>(), actualLaborBy = new Map<number, number>()
+  for (const h of jobHoursFromPunches(punches)) {
+    add(hoursBy, h.job_id, h.hours)
+    add(actualLaborBy, h.job_id, h.hours * (rateByEmployee.get(h.employee_id) || 0))
+  }
   for (const l of lines) { const arr = linesBy.get(l.job_id) || []; arr.push(l); linesBy.set(l.job_id, arr) }
 
   const rows = jobs.map((j: any) => {
@@ -921,6 +939,8 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     material = parts.cost
     const bonuses = bonusBy.get(j.id) || 0
     const clockedHours = hoursBy.get(j.id) || 0
+    const laborBasis = clockedHours > 0 ? 'actual' : (labor > 0 ? 'estimate' : null)
+    if (clockedHours > 0) labor = actualLaborBy.get(j.id) || 0
     const hasCost = material > 0 || labor > 0 || tagged > 0 || bonuses > 0
     const revenue = (revenueBy.get(j.id) || 0) + num(j.prepaid_revenue)
     const cost = material + labor + tagged + bonuses
@@ -928,7 +948,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
       job: j.job_id || `#${j.id}`, title: j.job_title || '', customer: custNames[j.customer_id] || null, status: j.status, team: j.assigned_team || null,
       contract: num(j.job_total), revenue: money(revenue),
       material: hasCost ? money(material) : null, material_basis: parts.source,
-      labor: hasCost ? money(labor) : null, labor_basis: 'estimate', labor_hours_clocked: clockedHours || null,
+      labor: hasCost ? money(labor) : null, labor_basis: laborBasis, labor_hours_clocked: clockedHours || null,
       bonuses: hasCost ? money(bonuses) : null, tagged_expenses: hasCost ? money(tagged) : null,
       total_cost: hasCost ? money(cost) : null, profit: hasCost ? money(revenue - cost) : null,
       margin_pct: hasCost && revenue > 0 ? Math.round((revenue - cost) / revenue * 1000) / 10 : null,
@@ -948,7 +968,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     totals: { revenue: money(rows.reduce((s, x) => s + x.revenue, 0)), cost: money(withCost.reduce((s, x) => s + (x.total_cost || 0), 0)), profit: money(withCost.reduce((s, x) => s + (x.profit || 0), 0)) },
     by_team: Object.fromEntries(Object.entries(teams).map(([k, v]) => [k, { jobs: v.jobs, revenue: money(v.revenue), cost: money(v.cost), profit: money(v.revenue - v.cost), margin_pct: v.revenue > 0 ? Math.round((v.revenue - v.cost) / v.revenue * 1000) / 10 : null }])),
     jobs: rows.slice(0, limit),
-    scope: `${rows.length} job(s), ${withCost.length} with cost captured. Revenue is payments tagged to the job or to one of its invoices. Cost is job lines (bundle components walked), parts receipts compared with the catalog rather than added to it, other tagged spend, and crew bonuses owed or paid. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data. IMPORTANT: labor here is the LINE ESTIMATE — labor_basis is always 'estimate'. The Job Costing report prices clocked hours at each employee's loaded cost rate and uses that instead wherever a job has punches, so on any job with labor_hours_clocked set this total_cost is LOW and the report is the figure of record. Say so rather than quoting this as the job's cost.`,
+    scope: `${rows.length} job(s), ${withCost.length} with cost captured. The same figures as the Job Costing report, from the same code: revenue is payments tagged to the job or to one of its invoices; cost is job lines (bundle components walked), parts receipts compared with the catalog rather than added to it, other tagged spend, crew bonuses owed or paid, and labor. labor_basis says where labor came from — 'actual' means punched hours priced at each employee's loaded cost rate (wage plus the employer's taxes), which replaces the line estimate wherever a job has punches; 'estimate' means the job has none. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data.`,
   }
 }
 

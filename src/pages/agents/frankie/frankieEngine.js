@@ -175,7 +175,7 @@ async function loadBigPicture(role) {
       return data || []
     } catch (e) { console.warn('[Frankie Engine] ' + table + ' not available:', e?.message); return [] }
   }
-  const [liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance] = await Promise.all([
+  const [liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance, timeClock] = await Promise.all([
     read('liabilities', 'id, name, lender, liability_type, current_balance, monthly_payment, interest_rate, next_payment_due, next_payment_amount, status'),
     read('loan_payments', 'id, liability_id, date, amount, principal, interest', q => q.gte('date', since)),
     read('assets', 'id, name, asset_type, purchase_price, current_value, status, purchase_date'),
@@ -184,8 +184,23 @@ async function loadBigPicture(role) {
     read('payroll_tax_liabilities', 'id, jurisdiction, agency, kind, amount_total, due_date, paid_at'),
     read('job_bonuses', 'id, job_id, employee_id, amount, status, accrued_at, paid_at'),
     read('fleet_maintenance', 'id, asset_id, type, date, cost, description', q => q.gte('date', since)),
+    // Closed punches on a job, so the context's Job Profitability section can
+    // price real labour instead of the line estimate — the same query
+    // ReportsPanel runs for the Job Costing report. NOT through read(): its
+    // 2,000-row cap would silently truncate the punches (HHH already has
+    // 1,747) and quietly understate every job's labour.
+    (async () => {
+      try {
+        const { data, error } = await supabase.from('time_clock')
+          .select('employee_id, job_id, clock_in, clock_out, lunch_start, lunch_end, total_hours')
+          .eq('company_id', companyId).not('job_id', 'is', null).not('clock_out', 'is', null)
+          .limit(50000)
+        if (error) throw error
+        return data || []
+      } catch (e) { console.warn('[Frankie Engine] time_clock not available:', e?.message); return [] }
+    })(),
   ])
-  return { liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance }
+  return { liabilities, loanPayments, assets, bills, purchaseOrders, payrollTaxLiabilities, jobBonuses, fleetMaintenance, timeClock }
 }
 
 export async function sendMessageStream(message, history = [], onChunk, attachments = []) {

@@ -161,3 +161,49 @@ describe('the whole context', () => {
     expect(p).toMatch(/If a tool says restricted, say who can see it and stop/)
   })
 })
+
+// Until 2026-10-23 this section called jobCosting WITHOUT timeClock,
+// employees, company or jobBonuses, so the figures Frankie READ priced labour
+// from the line estimate and charged no crew bonuses — the same gap his tool
+// had, worth $138,285.38 across 270 HHH jobs. The engine now loads the punches
+// (not through its 2,000-row read() helper, which would truncate them) and
+// this section feeds them in.
+describe('the context prices clocked labour, like the report', () => {
+  const jobs = [{ id: 1, job_id: 'J-1', job_title: 'Punched', status: 'Completed' }]
+  const base = {
+    payments: [{ id: 1, job_id: 1, amount: 10000, date: '2026-08-01' }],
+    invoices: [], jobLines: [{ job_id: 1, item_id: 101, quantity: 10, labor_cost: 0 }],
+    products: [{ id: 101, cost: 150, material_or_labor: 'labor' }],
+    productComponents: [], plaidTransactions: [],
+  }
+  const punches = {
+    timeClock: [{ employee_id: 5, job_id: 1, total_hours: 10 }],
+    employees: [{ id: 5, hourly_rate: 20, pay_type: 'hourly' }],
+  }
+  const now = new Date('2026-10-23T12:00:00Z')
+  const run = (data) => jobProfitabilitySection({ jobs, completedJobs: jobs, data, now })
+
+  it('uses the line estimate when there are no punches', () => {
+    expect(run(base)).toContain('cost $1,500.00')          // 10 x $150 of catalog labour
+  })
+
+  it('prices the punches instead once the clock has them', () => {
+    const s = run({ ...base, ...punches })
+    expect(s).toContain('cost $200.00')                    // 10 h x $20
+    expect(s).not.toContain('cost $1,500.00')              // not the estimate any more
+  })
+
+  it('charges a crew bonus the job owes, and not one still pending', () => {
+    const s = run({ ...base, ...punches,
+      jobBonuses: [{ job_id: 1, amount: 100, status: 'accrued' }, { job_id: 1, amount: 999, status: 'pending' }] })
+    expect(s).toContain('cost $300.00')                    // 200 labour + 100 bonus
+  })
+
+  it('charges the employer burden on the hour when the company is known', () => {
+    // The whole point of moving laborRate: the hour costs the wage PLUS the
+    // employer's own taxes, capped at each wage base by lib/payrollTax.
+    const company = { futa_rate_pct: 0.6, sui_rate_pct: 0.2, sui_wage_base: 50700 }
+    expect(run({ ...base, ...punches })).toContain('cost $200.00')
+    expect(run({ ...base, ...punches, company })).not.toContain('cost $200.00')
+  })
+})

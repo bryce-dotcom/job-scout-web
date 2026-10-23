@@ -158,15 +158,23 @@ const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFract
  */
 export function jobProfitabilitySection({ jobs = [], completedJobs = [], data = {}, now = new Date() }) {
   if (!jobs.length) return ''
+  // The labour inputs matter as much as the spend ones. Without timeClock,
+  // employees and company this section priced labour from the line estimate
+  // and charged no crew bonuses — so the numbers Frankie READ differed from
+  // the Job Costing report on the same jobs, the same way his tool did before
+  // 2026-10-23 ($138,285.38 across 270 HHH jobs). company is what turns a
+  // wage into what the hour COSTS; see lib/laborRate.
   const report = jobCosting({
     jobs, jobLines: data.jobLines || [], payments: data.payments || [], invoices: data.invoices || [],
     products: data.products || [], productComponents: data.productComponents || [],
     plaidTransactions: data.plaidTransactions || [], manualExpenses: data.expenses || [],
+    timeClock: data.timeClock || [], employees: data.employees || [],
+    jobBonuses: data.jobBonuses || [], company: data.company || null,
     from: null, to: now,
   })
   const rows = report.rows || []
   const withCost = rows.filter(r => r.total_cost != null)
-  let s = `### Job Profitability (the Job Costing report: revenue from payments tagged to the job, cost from job lines and tagged expenses)\n`
+  let s = `### Job Profitability (the Job Costing report: revenue from payments tagged to the job, cost from job lines, tagged spend, crew bonuses, and punched hours priced at what they cost the company)\n`
   s += `- Completed jobs: ${completedJobs.length}; jobs with revenue or cost recorded: ${rows.length}; with cost captured: ${withCost.length}\n`
   s += `- Revenue across those jobs: ${money(report.summary?.totalRevenue)}\n`
   if (withCost.length) {

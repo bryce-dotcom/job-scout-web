@@ -41,11 +41,14 @@ const jobBonuses = [
 ]
 const payments = [{ id: 1, job_id: 1, amount: 10000, date: '2026-10-06' }]
 const timeClock = [{ employee_id: 5, job_id: 2, total_hours: 10 }]
-const employees = [{ id: 5, hourly_rate: 50 }]
+const employees = [{ id: 5, hourly_rate: 50, pay_type: 'hourly' }]
+// Real FUTA/SUI rates, so an hour costs the wage PLUS the employer's taxes
+// and the figure has to come through lib/laborRate -> payrollTax -> suiRate.
+const company = { futa_rate_pct: 0.6, sui_rate_pct: 0.2, sui_wage_base: 50700 }
 
 const TABLES = {
   jobs, job_lines: jobLines, payments, invoices: [], expenses, time_clock: timeClock,
-  job_bonuses: jobBonuses, plaid_transactions: plaid,
+  job_bonuses: jobBonuses, plaid_transactions: plaid, employees, companies: [company],
   products_services: products, product_components: [], customers: [],
 }
 
@@ -59,9 +62,10 @@ function stubFetch() {
 }
 afterEach(() => vi.unstubAllGlobals())
 
+const money2 = (n) => Math.round(n * 100) / 100   // frankieTools' money()
 const report = () => jobCosting({
   jobs, jobLines, payments, invoices: [], products, productComponents: [],
-  plaidTransactions: plaid, manualExpenses: expenses, timeClock, employees, jobBonuses, company: null,
+  plaidTransactions: plaid, manualExpenses: expenses, timeClock, employees, jobBonuses, company,
 })
 
 describe('Frankie agrees with the Job Costing report', () => {
@@ -107,27 +111,44 @@ describe('Frankie agrees with the Job Costing report', () => {
   })
 })
 
-describe('the one rule Frankie still cannot apply: clocked labor', () => {
-  it('shows the punched hours and says the labor figure is the estimate', async () => {
+// This block used to assert the DIVERGENCE: Frankie reported the line
+// estimate because he could not reach lib/laborRate. Since the tax and wage
+// maths moved to _shared he prices the punches himself, so the same cases now
+// assert parity. The inversion is the fix landing.
+describe('clocked labor: Frankie prices the punches, like the report', () => {
+  it('uses the punched hours, not the line estimate', async () => {
     stubFetch()
     const f = await execFrankieTool('query_job_profitability', {}, CALLER, REST)
     const fj = f.jobs.find(x => x.job === 'J-2')
     expect(fj.labor_hours_clocked).toBe(10)
-    expect(fj.labor_basis).toBe('estimate')
-    expect(fj.labor).toBe(1000)                       // the line estimate
+    expect(fj.labor_basis).toBe('actual')
+    expect(fj.labor).not.toBe(1000)                   // not the estimate any more
   })
 
-  it('the report prices those hours instead, so the two differ by design', async () => {
+  it('agrees with the report to the cent, burden included', async () => {
+    stubFetch()
+    const f = await execFrankieTool('query_job_profitability', {}, CALLER, REST)
+    const fj = f.jobs.find(x => x.job === 'J-2')
     const rj = report().rows.find(x => x.job === 'J-2')
     expect(rj.labor_source).toBe('actual')
-    expect(rj.labor).toBe(500)                        // 10 h x $50
-    expect(rj.labor).not.toBe(1000)
+    expect(fj.labor).toBe(money2(rj.labor))
+    expect(fj.total_cost).toBe(money2(rj.total_cost))
+    // The employer's taxes are in there: a $50 hour costs more than $500 for 10.
+    expect(rj.labor).toBeGreaterThan(500)
   })
 
-  it('says so in the scope line, so Frankie never quotes it as the job cost', async () => {
+  it('still says estimate on a job with no punches', async () => {
+    stubFetch()
+    const f = await execFrankieTool('query_job_profitability', {}, CALLER, REST)
+    const fj = f.jobs.find(x => x.job === 'J-1')
+    expect(fj.labor_basis).toBe('estimate')
+    expect(fj.labor_hours_clocked).toBeNull()
+  })
+
+  it('no longer warns Frankie off its own figure', async () => {
     stubFetch()
     const f = await execFrankieTool('query_job_profitability', {}, CALLER, REST)
     expect(f.scope).toMatch(/labor_basis/)
-    expect(f.scope).toMatch(/LOW/)
+    expect(f.scope).not.toMatch(/LOW/)
   })
 })
