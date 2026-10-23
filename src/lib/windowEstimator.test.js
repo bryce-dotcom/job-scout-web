@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   ACCESS_PROFILES, CONDITION_PROFILES, SEVERITY_PROFILES, EDGE_FACTOR,
-  countableZones, excludedZones, splitBySeverity,
-  cleaningMinutes, restorationMinutes, techDays, techDayCost, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT,
+  countableZones, excludedZones, splitBySeverity, registerCounts,
+  cleaningMinutes, restorationMinutes, techDays, techDayCost, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT, valuePrice,
   threeTiers, computeCalibrationFactor, walterEstimate, quoteTotalFromLines,
 } from './windowEstimator'
 
@@ -361,3 +361,180 @@ describe('a whole Walter bid', () => {
 })
 
 const round = (n) => Math.round(n * 100) / 100
+
+// Bryce chose value-based pricing against replacement cost on 2026-10-22.
+describe('value pricing: the job is worth what not replacing the glass is worth', () => {
+  const zones = () => {
+    const z = []
+    for (let i = 1; i <= 23; i++) z.push({ id: `A${i}`, severity: i <= 14 ? 'L1' : 'L2', face: i % 2 ? 'out' : 'in', lite_id: `L${i}` })
+    return z
+  }
+  const pricing = {
+    crew_rate_per_hour: 55, crew_cost_per_hour: 38,
+    tech_hourly_rate: 32.5, paid_hours_per_day: 8,
+    assessment_fee: 1450, mobilization: 0,
+  }
+
+  it('prices at a share of mid-replacement, which is AGR to the dollar', () => {
+    // $45k-$110k replacement, midpoint $77,500, 25% = $19,375. AGR: $19,400.
+    expect(valuePrice({ replacement_low: 45000, replacement_high: 110000 })).toBe(19375)
+  })
+
+  it('one price read against each end of the range IS the 17-43% claim', () => {
+    const bid = valuePrice({ replacement_low: 45000, replacement_high: 110000 })
+    expect(round(bid / 110000 * 100) / 100).toBeCloseTo(0.176, 2)
+    expect(round(bid / 45000 * 100) / 100).toBeCloseTo(0.431, 2)
+  })
+
+  it('takes one figure when a company knows its replacement cost exactly', () => {
+    expect(valuePrice({ replacement_low: 80000, replacement_high: 80000 })).toBe(20000)
+  })
+
+  it('bids the value, not the cost, and says so', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: zones() },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(r.pricing_basis).toBe('value')
+    expect(r.expected).toBeCloseTo(19375, 0)
+    // The cost-plus number is still reported, so the gap is visible.
+    expect(r.cost_plus_total).toBeLessThan(r.expected / 2)
+  })
+
+  it('NEVER bids under cost, however cheap the glass is to replace', () => {
+    // Cheap glass, extensive damage: value says $1,250, cost says more.
+    const r = walterEstimate({
+      restoration: { zones: zones() },
+      pricing, replacement_low: 5000, replacement_high: 5000,
+    })
+    // The invariant that matters is not which label it wears, it is that
+    // the bid never goes out under what the work costs us.
+    expect(r.expected).toBeGreaterThan(r.direct_cost)
+    expect(r.expected).toBeGreaterThanOrEqual(r.cost_floor)
+    expect(r.pricing_basis).not.toBe('value')
+  })
+
+  it('falls back to cost-plus when nobody said what replacement costs', () => {
+    const r = walterEstimate({ restoration: { zones: zones() }, pricing })
+    expect(r.pricing_basis).toBe('cost_plus')
+    expect(r.expected).toBe(r.cost_plus_total)
+  })
+
+  it('leaves a cleaning-only bid on cost-plus — there is no glazier to beat', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2 },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(r.pricing_basis).toBe('cost_plus')
+  })
+
+  it('a company can put restoration back on cost-plus', () => {
+    const r = walterEstimate({
+      restoration: { zones: zones() },
+      pricing: { ...pricing, pricing_model: 'cost_plus' },
+      replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(r.pricing_basis).toBe('cost_plus')
+  })
+
+  it('the lines still add to the bid, and still multiply out', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: zones(), access: 'lift' },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(quoteTotalFromLines(r.lines)).toBe(r.expected)
+    for (const l of r.lines) {
+      expect(l.line_total).toBeCloseTo(round(l.quantity * l.price), 2)
+    }
+  })
+
+  it('leaves cleaning at the rate a customer can shop, and the fee flat', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: zones() },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    const clean = r.lines.find((l) => l.work_type === 'residue')
+    const fee = r.lines.find((l) => l.work_type === 'assessment')
+    // The first cut scaled these too and produced ./hr window cleaning
+    // and a ,127 assessment fee. Both are numbers a customer checks.
+    expect(clean.price).toBe(pricing.crew_rate_per_hour)
+    expect(fee.line_total).toBe(pricing.assessment_fee)
+  })
+
+  it('puts the premium on the restoration, where the value is', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: zones() },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    const resurface = r.lines.find((l) => l.work_type === 'resurface')
+    expect(resurface.line_total).toBeGreaterThan(r.restoration.amount)
+  })
+
+  it('does not mark up the lift inside a labour line', () => {
+    const cost = { ...pricing }
+    const a = walterEstimate({ restoration: { zones: zones(), access: 'lift' }, pricing: cost, replacement_low: 45000, replacement_high: 110000 })
+    const lift = a.lines.find((l) => l.work_type === 'access')
+    expect(lift.price).toBe(ACCESS_PROFILES.lift.equipment_day)
+  })
+
+  it('keeps the biggest package the biggest after scaling', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: zones() },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    const resurface = r.lines.find((l) => l.work_type === 'resurface')
+    const finish = r.lines.find((l) => l.work_type === 'optical_finish')
+    expect(resurface.line_total).toBeGreaterThan(finish.line_total)
+  })
+})
+
+// Raised by the Walter session: one "excluded" number put 54 of 68 on screen
+// and read like a fault, when 45 of them were duplicate photographs.
+describe('the register tells its three kinds apart', () => {
+  const reg = [
+    { id: 'A01', severity: 'L1' },
+    { id: 'A02', severity: 'L2' },
+    { id: 'A03', severity: 'L0' },
+    { id: 'A04', severity: 'L2', not_restorable_reason: 'coated_surface' },
+    { id: 'A05', severity: 'L2', not_restorable_reason: 'factory_defect' },
+    { id: 'd1', severity: 'L1', duplicate_of: 'A01' },
+    { id: 'd2', severity: 'L1', duplicate_of: 'A01' },
+    { id: 'd3', severity: 'L2', duplicate_of: 'A02' },
+  ]
+
+  it('counts rows, marks, duplicates, work and exclusions separately', () => {
+    const c = registerCounts(reg)
+    expect(c.rows).toBe(8)
+    expect(c.duplicates).toBe(3)
+    expect(c.excluded).toBe(2)
+    expect(c.marks).toBe(3)        // A01, A02, A03 — A04/A05 cannot be touched
+    expect(c.to_resurface).toBe(2) // A01, A02
+    expect(c.to_clean).toBe(1)     // A03 is an L0
+  })
+
+  it('says WHY a mark is excluded, by reason', () => {
+    expect(registerCounts(reg).excluded_reasons).toEqual({ coated_surface: 1, factory_defect: 1 })
+  })
+
+  it('a duplicate is not an exclusion — that is the whole point', () => {
+    const c = registerCounts(reg)
+    expect(c.duplicates).not.toBe(c.excluded)
+    expect(c.rows - c.duplicates - c.excluded).toBe(c.marks)
+  })
+
+  it('rides along on a bid', () => {
+    const r = walterEstimate({ restoration: { zones: reg }, pricing: { tech_hourly_rate: 32.5, assessment_fee: 0 } })
+    expect(r.restoration.register.marks).toBe(3)
+    expect(r.restoration.register.duplicates).toBe(3)
+  })
+
+  it('an empty register is zeros, not a crash', () => {
+    expect(registerCounts([]).rows).toBe(0)
+    expect(registerCounts(null).marks).toBe(0)
+  })
+})

@@ -132,6 +132,46 @@ export function countableZones(items) {
   return out
 }
 
+/**
+ * What the register adds up to, told apart.
+ *
+ * "54 of 68 not counted" reads like a fault. Forty-five of those are the same
+ * scratches photographed twice, which is the register working. The three
+ * reasons a row does not become billable work are completely different things
+ * and a bid has to say which is which:
+ *
+ *   rows          every line in the register, duplicates and all
+ *   marks         distinct restorable marks — the real count
+ *   duplicates    the same mark photographed again
+ *   to_resurface  marks the tech works
+ *   to_clean      L0s that go to the cleaning crew instead
+ *   excluded      marks nobody may touch, with the reasons
+ *
+ * Raised by the Walter session after it put the single number on screen and
+ * saw how it read.
+ */
+export function registerCounts(zones) {
+  const list = Array.isArray(zones) ? zones : []
+  const duplicates = list.filter((z) => z?.duplicate_of).length
+  const blocked = list.filter((z) => !z?.duplicate_of && z?.not_restorable_reason)
+  const marks = countableZones(list)
+  const split = splitBySeverity(list)
+  const reasons = {}
+  for (const z of blocked) {
+    const r = String(z.not_restorable_reason)
+    reasons[r] = (reasons[r] || 0) + 1
+  }
+  return {
+    rows: list.length,
+    marks: marks.length,
+    duplicates,
+    to_resurface: split.restoration.length,
+    to_clean: split.cleaning.length,
+    excluded: blocked.length,
+    excluded_reasons: reasons,
+  }
+}
+
 /** Marks that will NOT be restored, with why — a bid has to say so out loud. */
 export function excludedZones(items) {
   return (Array.isArray(items) ? items : []).filter(
@@ -280,6 +320,104 @@ export const DEFAULT_TIER_SPREAD = { favourable: 0.78, expected: 1.00, difficult
 
 export const TYPICAL_SHARE_OF_REPLACEMENT = { low: 0.17, high: 0.43 }
 
+// The share of replacement a restoration bid is priced at. AGR's UGR Eden bid
+// was $19,400 against $45,000–$110,000, so 25% of the midpoint — and their
+// "17–43% of replacement cost" is that same one price read against each end of
+// the range, not three different prices.
+export const DEFAULT_TARGET_SHARE = 0.25
+
+/**
+ * What the job is worth, before asking what it costs.
+ *
+ * Replacement is a range because nobody prices 23 panes of LoE³-366 to the
+ * dollar before they have to. The midpoint is the anchor; a company that knows
+ * its replacement number exactly passes the same figure for both ends.
+ */
+export function valuePrice({ replacement_low, replacement_high, target_share = DEFAULT_TARGET_SHARE }) {
+  const lo = num(replacement_low)
+  const hi = num(replacement_high)
+  if (lo <= 0 && hi <= 0) return 0
+  const mid = lo > 0 && hi > 0 ? (lo + hi) / 2 : Math.max(lo, hi)
+  return round2(mid * num(target_share, DEFAULT_TARGET_SHARE))
+}
+
+/**
+ * Which number wins: what the work is worth, or what it costs plus a margin.
+ *
+ * Value-based pricing is the right model for this trade and it is also the one
+ * that can quietly bid UNDER cost — a building with cheap glass and 40 marks
+ * on it is a lot of tech days against a small replacement figure. So the cost
+ * floor is not optional, and the result says which bound decided the price, so
+ * a person can see when value pricing stopped applying.
+ */
+export function resolveBid({ value, cost, min_margin_over_cost = 0.35 }) {
+  const floor = round2(num(cost) * (1 + num(min_margin_over_cost)))
+  const v = num(value)
+  if (v <= 0) return { amount: floor, basis: 'cost_plus', floor }
+  if (v < floor) return { amount: floor, basis: 'cost_floor', floor }
+  return { amount: round2(v), basis: 'value', floor }
+}
+
+// Which lines carry the value premium. The restoration work, and only that:
+// it is the specialist pass being priced against replacing the glass.
+export const VALUE_BEARING = new Set(['resurface', 'optical_finish'])
+
+/**
+ * Spread a target total across the lines that carry the value.
+ *
+ * Value pricing sets ONE number; a customer reads a list. Scaling every line
+ * to reach it produces a bid nobody would sign — the first cut of this put
+ * window cleaning at $156 an hour and turned a $1,450 assessment fee into
+ * $4,127. Both are numbers a customer can check against the market, and both
+ * were wrong.
+ *
+ * So the premium lands where the value is. Cleaning stays at the company's
+ * billed hourly rate, because a customer can and will compare it to another
+ * window cleaner. A fixed assessment fee stays fixed. Equipment stays at cost,
+ * since marking up a lift inside a labour line hides it. What absorbs the
+ * difference is the resurfacing and finishing — the work whose alternative is
+ * a glazier and $45,000.
+ *
+ * That is also exactly how AGR's own estimate reads: residue at a cleaning
+ * rate, a flat assessment, travel at cost, and the money in the two
+ * restoration packages.
+ *
+ * The last scaled line absorbs the rounding so the lines add to the target
+ * exactly, the same arrangement digEstimator uses for mobilization.
+ */
+export function scaleLinesTo(lines, target, { bearing = VALUE_BEARING } = {}) {
+  const rows = (lines || []).map((l) => ({ ...l }))
+  const labour = rows.filter((l) => bearing.has(l.work_type))
+  const fixed = round2(rows.filter((l) => !bearing.has(l.work_type)).reduce((s, l) => s + num(l.line_total), 0))
+  const want = round2(num(target) - fixed)
+  const have = round2(labour.reduce((s, l) => s + num(l.line_total), 0))
+  // Nothing to scale, or the fixed lines already exceed the target — leave the
+  // bid alone rather than inventing a negative line.
+  if (!(labour.length && have > 0 && want > 0)) return rows
+  const k = want / have
+  let running = 0
+  labour.forEach((l, i) => {
+    const isLast = i === labour.length - 1
+    const total = isLast ? round2(want - running) : round2(num(l.line_total) * k)
+    running = round2(running + total)
+    l.line_total = total
+    // The invariant a customer can check with a calculator: quantity times
+    // unit price is the line total, on every line.
+    l.price = num(l.quantity) > 0 ? round2(total / num(l.quantity)) : total
+    if (num(l.quantity) > 0) l.line_total = round2(l.price * num(l.quantity))
+  })
+  // Re-settle any cent the per-line rounding moved, on the last labour line.
+  const got = round2(labour.reduce((s, l) => s + num(l.line_total), 0))
+  const drift = round2(want - got)
+  if (drift !== 0 && labour.length) {
+    const last = labour[labour.length - 1]
+    last.line_total = round2(num(last.line_total) + drift)
+    last.price = num(last.quantity) > 0 ? round2(last.line_total / num(last.quantity)) : last.line_total
+    last.line_total = num(last.quantity) > 0 ? round2(last.price * num(last.quantity)) : last.line_total
+  }
+  return rows
+}
+
 export function valueCheck({ bid, replacement_low, replacement_high, direct_cost }) {
   const b = num(bid)
   const lo = num(replacement_low)
@@ -377,6 +515,14 @@ export function walterEstimate({
     productive_minutes_per_day: 390,
     // Finishing against resurfacing. AGR's own split was $1,850 to $8,250.
     optical_finish_share: 0.22,
+    // Restoration is priced against what replacing the glass would cost, not
+    // against our labour — 'cost_plus' puts it back on labour for a company
+    // that wants that. min_margin_over_cost is the floor either way: no bid
+    // goes out under cost, however cheap the glass turns out to be.
+    pricing_model: 'value',
+    target_share_of_replacement: DEFAULT_TARGET_SHARE,
+    min_margin_over_cost: 0.35,
+    crew_cost_per_hour: 38,
     ...pricing,
   }
 
@@ -427,6 +573,7 @@ export function walterEstimate({
       zones_counted: split.restoration.length,
       zones_to_clean: split.cleaning.length,
       excluded: excludedZones(restoration.zones).length,
+      register: registerCounts(restoration.zones),
       day_cost: dayCost,
       sub_cost: subCost,
       amount,
@@ -500,15 +647,48 @@ export function walterEstimate({
     })
   }
 
-  out.expected = quoteTotalFromLines(out.lines)
-  out.tiers = threeTiers(out.expected, tier_spread)
-
   // What it costs us, so the margin is never a mystery: the sub at his rate,
   // and our own crew at what they actually cost rather than what they bill.
   const crewCost = out.cleaning
     ? round2(out.cleaning.hours * num(p.crew_cost_per_hour, p.crew_rate_per_hour))
     : 0
   out.direct_cost = round2(crewCost + (out.restoration?.sub_cost || 0))
+  out.cost_plus_total = quoteTotalFromLines(out.lines)
+
+  // ── What the bid is actually worth ───────────────────────────────────
+  // Restoration is priced against the customer's alternative — replacing the
+  // glass — not against our labour. Four tech days at $32.50/hr costs about
+  // a thousand dollars; AGR charged $8,250 for that work and sold the job at
+  // 25% of mid-replacement. Cost-plus on this trade gives the job away.
+  //
+  // Cleaning alone stays cost-plus: a window cleaner's alternative is another
+  // window cleaner, not a glazier, and there is no replacement cost to price
+  // against. Value pricing applies when there is restoration AND somebody has
+  // said what the glass would cost to replace.
+  const wantsValue = (p.pricing_model || 'value') === 'value' && !!out.restoration
+  const value = wantsValue ? valuePrice({ replacement_low, replacement_high, target_share: p.target_share_of_replacement }) : 0
+  let target = null
+  if (value > 0) {
+    const resolved = resolveBid({ value, cost: out.direct_cost, min_margin_over_cost: p.min_margin_over_cost })
+    out.pricing_basis = resolved.basis
+    out.cost_floor = resolved.floor
+    out.lines = scaleLinesTo(out.lines, resolved.amount)
+    target = resolved.amount
+  } else {
+    out.pricing_basis = 'cost_plus'
+    out.cost_floor = round2(out.direct_cost * (1 + num(p.min_margin_over_cost)))
+  }
+
+  out.expected = quoteTotalFromLines(out.lines)
+  // The fixed lines — a flat assessment, equipment at cost — can on a small
+  // job already add up to more than the value target. Nothing is scaled down
+  // to meet it (that would mean billing a fee at less than the fee), so the
+  // lines win, and the basis says so rather than claiming a price the bid
+  // does not have.
+  if (target != null && out.expected > round2(target) + 0.01) {
+    out.pricing_basis = 'cost_plus'
+  }
+  out.tiers = threeTiers(out.expected, tier_spread)
   if (num(replacement_low) > 0 || num(replacement_high) > 0) {
     out.value = valueCheck({
       bid: out.expected,
