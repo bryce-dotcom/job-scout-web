@@ -97,12 +97,15 @@ describe('golden replays', () => {
 
     it(`${d}: ${gusto ? 'JobScout inputs against what Gusto paid' : 'the engine reproduces every stub to the cent, except where it was corrected since'}`, () => {
       const got = replayFixture(inputs)
-      const all = diffs(expected.stubs, got, EXACT)
       if (gusto) {
-        // Hours were typed into Gusto; the comparison is informational.
+        // Hours were typed into Gusto, and an imported stub's hours are its
+        // gross over the card's rate, not what Gusto was given — so the
+        // comparison is money only, and informational.
+        const all = diffs(expected.stubs, got, EXACT.filter(f => !/hours/.test(f)))
         if (all.length) console.log(`[golden ${d}] ${all.length} difference(s) vs Gusto:\n  ${all.join('\n  ')}`)
         return
       }
+      const all = diffs(expected.stubs, got, EXACT)
       // An accepted line is the whole line, figures included: the engine
       // moving from one wrong number to another is still a move.
       const unexplained = all.filter(line => !accepted.some(a => line === a.diff))

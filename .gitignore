@@ -46,3 +46,6 @@ scripts/frankie-eval/runs/
 scripts/geocode-misses.json
 scripts/geocode-job-misses.json
 dist-agent/
+
+# Built by scripts/build-rehearsal.mjs for api/cron/payroll-rehearsal.js
+api/_lib/payrollRehearsal.bundle.cjs

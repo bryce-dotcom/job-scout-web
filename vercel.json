@@ -93,10 +93,17 @@
     {
       "path": "/api/cron/arnie-review",
       "schedule": "0 14 * * 1"
+    },
+    {
+      "path": "/api/cron/payroll-rehearsal",
+      "schedule": "0 13 * * *"
     }
   ],
   "functions": {
     "api/cron/drain-migrations.js": {
+      "maxDuration": 300
+    },
+    "api/cron/payroll-rehearsal.js": {
       "maxDuration": 300
     },
     "api/cron/arnie-review.js": {
