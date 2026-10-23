@@ -212,7 +212,11 @@ const LABEL = {
   crash_old: 'CRASHED, BUT ON A BUILD NO LONGER SERVED (a deploy may have fixed it)',
 }
 
-console.log(`\nMorning sweep — ${new Date().toISOString().slice(0, 16).replace('T', ' ')}  (last ${HOURS}h)`)
+// Local clock, like the board. This is read by a person at six in the
+// morning, not by a log aggregator: the first real run stamped itself 13:52
+// inside a file the scheduler had already headed 07:52, which is a report
+// arguing with itself on line one.
+console.log(`\nMorning sweep — ${new Date().toLocaleString('sv-SE').slice(0, 16)}  (last ${HOURS}h)`)
 console.log('='.repeat(72))
 
 if (!findings.length) {
