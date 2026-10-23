@@ -21,7 +21,7 @@
 // auth token and the signature is checked before anything is written.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createHmac } from 'node:crypto'
+
 
 const ok = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -31,9 +31,19 @@ const ok = (body: unknown, status = 200) =>
  * POST field, sorted by name and concatenated as name+value, keyed by the
  * account's auth token.
  */
-function expectedSignature(authToken: string, url: string, params: Record<string, string>) {
+// Web Crypto, not node:crypto. Buffer is not a global in the edge runtime
+// (reaching for it threw a 500 that looked from outside exactly like a
+// signature failure), and the node shim's createHmac did not reproduce
+// Twilio's digest even given identical input. crypto.subtle does, and it is
+// what livekit-webhook already verifies with.
+async function expectedSignature(authToken: string, url: string, params: Record<string, string>) {
   const data = Object.keys(params).sort().reduce((acc, k) => acc + k + params[k], url)
-  return createHmac('sha1', authToken).update(Buffer.from(data, 'utf-8')).digest('base64')
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(authToken),
+    { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data))
+  return btoa(String.fromCharCode(...new Uint8Array(sig)))
 }
 
 // Twilio's vocabulary, reduced to what a person reading an invoice needs.
@@ -76,12 +86,17 @@ Deno.serve(async (req) => {
   try { authToken = JSON.parse(cfgRows?.[0]?.value || '{}').auth_token || '' } catch { /* malformed */ }
   if (!authToken) return ok({ error: 'company not configured' }, 403)
 
-  // Twilio signs the URL it was GIVEN. Supabase terminates TLS in front of
-  // the function, so req.url can arrive as http — rebuild it as https or
-  // every signature fails and the whole feature looks broken.
-  const signedUrl = `https://${url.host}${url.pathname}${url.search}`
+  // Twilio signs the URL it was GIVEN, so sign the one we GAVE it — built
+  // from the same env var send-sms used to build the StatusCallback.
+  //
+  // Reconstructing it from req.url does not work: inside the edge runtime
+  // that is an internal address, not the public function URL, so the digest
+  // never matched and every genuine delivery came back "bad signature" —
+  // indistinguishable from an attack, and it would have looked like Twilio
+  // was simply never calling.
+  const signedUrl = `${SUPABASE_URL}/functions/v1/sms-status?c=${companyId}`
   const given = req.headers.get('x-twilio-signature') || ''
-  if (given !== expectedSignature(authToken, signedUrl, params)) {
+  if (given !== await expectedSignature(authToken, signedUrl, params)) {
     return ok({ error: 'bad signature' }, 401)
   }
 
