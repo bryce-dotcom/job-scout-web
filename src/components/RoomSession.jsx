@@ -15,9 +15,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   FocusLayout, FocusLayoutContainer, CarouselLayout,
-  useTracks, useSpeakingParticipants, useLocalParticipant, ControlBar,
+  useTracks, useLocalParticipant, ControlBar,
 } from '@livekit/components-react'
-import { Track, ScreenSharePresets } from 'livekit-client'
+import { Track, ScreenSharePresets, VideoPresets } from 'livekit-client'
 import '@livekit/components-styles'
 import { Minus, Maximize2, PhoneOff, VideoOff, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -114,7 +114,9 @@ export function RoomSessionProvider({ theme, children }) {
             // Names, not just a tally: the lobby draws people sitting round
             // the fire, and "3 people" cannot be sat anywhere.
             if (!who[entry.room]) who[entry.room] = []
-            who[entry.room].push(entry.name || 'Someone')
+            // name AND id: the lobby draws a face at the fire, and a
+            // headshot has to be looked up on the employee record.
+            who[entry.room].push({ name: entry.name || 'Someone', id: entry.id ?? null })
           }
         }
         setCounts(next)
@@ -123,7 +125,7 @@ export function RoomSessionProvider({ theme, children }) {
       // An open tab is not a person: room is null until you are actually in
       // one, and the count above skips anyone whose room is null.
       .subscribe(async (s) => {
-        if (s === 'SUBSCRIBED') await channel.track({ room: slug || null, name: displayName, at: Date.now() })
+        if (s === 'SUBSCRIBED') await channel.track({ room: slug || null, name: displayName, id: me?.id ?? null, at: Date.now() })
       })
     return () => { supabase.removeChannel(channel) }
   }, [companyId, slug, displayName, me?.id, user?.email])
@@ -370,8 +372,21 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             // are all already on by default, and "fixing" them would be
             // theatre.
             options={{
-              adaptiveStream: true,
-              dynacast: true,
+              // Both OFF again, deliberately.
+              //
+              // I turned them on to stop video starving audio, and Bryce's
+              // report after was "super laggy and the sound is worse than
+              // ever" — two people, both on wifi. adaptiveStream renegotiates
+              // the layer every time a tile changes size, and dynacast churns
+              // subscriptions; in a two-person call they buy almost nothing
+              // and the renegotiation is itself the stutter.
+              //
+              // The same end is reached by making video cheap by
+              // construction instead: capture at 540p rather than 720p, so
+              // there is simply less to send and nothing to renegotiate. A
+              // dock-sized tile cannot tell the difference.
+              adaptiveStream: false,
+              dynacast: false,
               // Screen share ships at 1080p FIFTEEN frames a second by
               // default, which is why a scrolling spreadsheet judders.
               // 30fps costs more bandwidth and is the whole point of
@@ -380,7 +395,16 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               // The camera we already proved opens, rather than whatever
               // Windows calls "default" — which on a machine with a virtual
               // camera installed may be a device that times out.
-              ...(cameraId ? { videoCaptureDefaults: { deviceId: cameraId } } : {}),
+              videoCaptureDefaults: {
+                // 540p, not the 720p default: 800kbps against 1.7Mbps, for a
+                // picture nobody can tell apart in a dock. Video is the thing
+                // that makes audio stutter on a domestic connection, and the
+                // cheapest fix is to send less of it.
+                resolution: VideoPresets.h540,
+                // The camera we already proved opens, rather than whatever
+                // Windows calls "default".
+                ...(cameraId ? { deviceId: cameraId } : {}),
+              },
             }}
             onDisconnected={onLeave}
             // Without this a blocked camera is completely silent: you connect,
@@ -524,7 +548,6 @@ function Stage({ expanded, setExpanded }) {
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
   )
-  const speaking = useSpeakingParticipants()
 
   const share = tracks.find(t => t.source === Track.Source.ScreenShare)
   const cams = tracks.filter(t => t.source === Track.Source.Camera)
@@ -555,24 +578,44 @@ function Stage({ expanded, setExpanded }) {
     )
   }
 
-  // Expanded, there is room for everyone. GridLayout works out the rows and
-  // columns for however many are in, so 2 and 9 both come out even.
+  // THE RULE, and it is the one FaceTime and Messenger use: the people you
+  // are talking TO fill the frame, and you are a small square in the corner,
+  // always.
+  //
+  // Bryce, 2026-10-23: "what it should do is show everyone else big and me
+  // small all the time." The speaker-switching this replaces was actively
+  // wrong — hero preferred whoever was SPEAKING, so the moment he opened his
+  // mouth he replaced Alayda with himself, which is the opposite of what a
+  // call is for. Nobody needs to watch themselves talk.
+  const me = cams.find(t => t.participant?.isLocal)
+  const remotes = cams.filter(t => !t.participant?.isLocal)
+  // Alone in the room, you are the only thing to show — a black rectangle
+  // would read as broken.
+  const stage = remotes.length > 0 ? remotes : (me ? [me] : [])
+  const selfIsOnStage = remotes.length === 0
+
   if (expanded) {
     return (
-      <GridLayout tracks={cams} style={{ height: "100%" }}>
-        <ParticipantTile />
-      </GridLayout>
+      <div style={{ position: 'relative', height: '100%' }}>
+        <GridLayout tracks={stage} style={{ height: '100%' }}>
+          <ParticipantTile />
+        </GridLayout>
+        {me && !selfIsOnStage && (
+          <span style={{
+            position: 'absolute', right: 12, bottom: 12, zIndex: 2,
+            width: 128, height: 96, borderRadius: 9, overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.5)', background: '#000',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.45)', display: 'flex',
+          }}>
+            <ParticipantTile trackRef={me} style={{ flex: 1, minWidth: 0 }} />
+          </span>
+        )}
+      </div>
     )
   }
 
-  // Collapsed: one face — whoever is speaking, else anybody but you, else
-  // you — and a count so you know how many others are round the fire.
-  const talking = new Set(speaking.map(p => p.identity))
-  const hero = cams.find(t => talking.has(t.participant?.identity))
-    || cams.find(t => !t.participant?.isLocal)
-    || cams[0]
-  const me = cams.find(t => t.participant?.isLocal)
-  const others = Math.max(0, cams.length - 1)
+  const hero = stage[0]
+  const others = Math.max(0, remotes.length - 1)
 
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 160, background: '#000', display: 'flex' }}>
@@ -588,7 +631,7 @@ function Stage({ expanded, setExpanded }) {
           — you cannot tell you are badly lit, off-centre or frozen unless
           you can see it. Hidden when you are the hero, so you never appear
           twice. */}
-      {me && hero !== me && (
+      {me && !selfIsOnStage && (
         <span style={{
           position: 'absolute', left: 8, bottom: 8, zIndex: 2,
           width: 72, height: 54, borderRadius: 7, overflow: 'hidden',

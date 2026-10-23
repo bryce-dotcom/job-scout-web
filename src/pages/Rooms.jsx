@@ -180,23 +180,56 @@ export default function Rooms() {
             </button>
 
             {/* The people sitting round it */}
+            {/* Faces, not name tags.
+                Bryce, 2026-10-23: "use the employee picture to be the person
+                at the fire with the name." A ring of names is a list drawn in
+                a circle; a ring of faces is people sitting round a fire, and
+                you recognise who is there before you read anything. */}
             {seatedAtFire.map((person, i) => {
               const pos = onCircle(i, seatedAtFire.length, 27)
+              const emp = (employees || []).find(e => e.id === person.id)
+              const first = String(person.name || '').split(/\s+/)[0]
               return (
-                <span
-                  key={person + i}
-                  title={person}
+                <div
+                  key={(person.id ?? person.name) + '-' + i}
+                  title={person.name}
                   style={{
                     position: 'absolute', left: pos.left, top: pos.top,
                     transform: 'translate(-50%, -50%)',
-                    padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
-                    background: theme.bgCard, border: '1px solid ' + theme.accent,
-                    color: theme.text, fontSize: 11.5, fontWeight: 600,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                   }}
                 >
-                  {person.split(/\s+/)[0]}
-                </span>
+                  {emp?.headshot_url ? (
+                    <img
+                      src={emp.headshot_url}
+                      alt={person.name}
+                      style={{
+                        width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
+                        border: '2px solid ' + theme.accent, background: theme.bgCard,
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                      }}
+                    />
+                  ) : (
+                    // No headshot is the common case on a new company, so the
+                    // fallback has to look deliberate rather than broken.
+                    <span style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 44, height: 44, borderRadius: '50%',
+                      border: '2px solid ' + theme.accent, background: theme.accentBg,
+                      color: theme.accent, fontSize: 15, fontWeight: 800,
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+                    }}>
+                      {first.charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <span style={{
+                    padding: '1px 7px', borderRadius: 999, whiteSpace: 'nowrap',
+                    background: theme.bgCard, border: '1px solid ' + theme.border,
+                    color: theme.text, fontSize: 11, fontWeight: 600,
+                  }}>
+                    {first}
+                  </span>
+                </div>
               )
             })}
 
@@ -273,7 +306,7 @@ export default function Rooms() {
               }
               const here = headcount[node.slug] || 0
               const youAreHere = joined === node.slug
-              const sitting = (occupants[node.slug] || []).map(n => n.split(/\s+/)[0])
+              const sitting = (occupants[node.slug] || []).map(p => String(p?.name || '').split(/\s+/)[0]).filter(Boolean)
               return (
                 <div
                   key={node.slug}
