@@ -122,18 +122,26 @@ describe('the payroll history list', () => {
 // ready for the next run to pay it again. Nobody had run payroll in between,
 // so no money moved, but nothing in the suite noticed either.
 describe('a run closes what it paid', () => {
+  // The closes moved out of the page into the one-transaction function
+  // (process_payroll_run, docs/PAYROLL_PLAN.md step 4): the same statements,
+  // now all-or-nothing with the stubs they pay.
+  const sql = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', 'supabase/migrations/20261023200000_process_payroll_run.sql'), 'utf8')
   const payroll = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', 'src/pages/Payroll.jsx'), 'utf8')
 
+  it('the page makes the one call', () => {
+    expect(payroll).toMatch(/supabase\.rpc\('process_payroll_run', \{ p: payload \}\)/)
+  })
+
   it('marks queued rep commissions paid', () => {
-    expect(payroll).toMatch(/from\('rep_commissions'\)[\s\S]{0,260}payment_status: 'paid'[\s\S]{0,200}queued_for_payroll', true\)/)
+    expect(sql).toMatch(/update public\.rep_commissions[\s\S]{0,260}payment_status = 'paid'[\s\S]{0,200}queued_for_payroll and payment_status is distinct from 'paid'/)
   })
 
   it('marks queued setter commissions paid', () => {
-    expect(payroll).toMatch(/from\('lead_commissions'\)[\s\S]{0,260}payment_status: 'paid'[\s\S]{0,200}queued_for_payroll', true\)/)
+    expect(sql).toMatch(/update public\.lead_commissions[\s\S]{0,260}payment_status = 'paid'[\s\S]{0,200}queued_for_payroll and payment_status is distinct from 'paid'/)
   })
 
   it('tags every close with the run that did it, so history can group them', () => {
-    const tagged = payroll.match(/paid_payroll_run_id: payrollRun\.id/g) || []
+    const tagged = sql.match(/paid_payroll_run_id = v_run\.id/g) || []
     // setter, rep, both greater-of settle groups — and efficiency bonuses,
     // which were the one close that recorded a date and a person but no
     // cheque, so a paid bonus knocked off `paid` by a later recompute could

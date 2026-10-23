@@ -498,18 +498,21 @@ describe('a paid bonus names the cheque that paid it', () => {
   // Payroll.jsx is CRLF — an anchor written with \n matches nothing in it.
   const read = (p) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../..', p), 'utf8').replace(/\r\n/g, '\n')
 
+  // The marks moved out of the page into the one-transaction function
+  // (process_payroll_run, docs/PAYROLL_PLAN.md step 4), so this reads the
+  // function: the same rule, now impossible to half-apply.
   it('stamps the payroll run, like every other ledger in the same block', () => {
-    const page = read('src/pages/Payroll.jsx')
-    const at = page.indexOf("from('job_bonuses')\n            .update({ status: 'paid'")
+    const sql = read('supabase/migrations/20261023200000_process_payroll_run.sql')
+    const at = sql.indexOf('update public.job_bonuses')
     expect(at, 'the bonus mark-paid block moved').toBeGreaterThan(-1)
-    expect(page.slice(at, at + 400)).toMatch(/paid_payroll_run_id: payrollRun\.id/)
+    expect(sql.slice(at, at + 400)).toMatch(/paid_payroll_run_id = v_run\.id/)
   })
 
   it('still only pays what was queued, accrued and verified', () => {
     // Widening this is how a bonus gets stamped paid with nothing on the
     // paystub, which is the other half of the same mess.
-    const page = read('src/pages/Payroll.jsx')
-    expect(page).toMatch(/\.eq\('status', 'accrued'\)\.eq\('queued_for_payroll', true\)\.eq\('needs_verification', false\)/)
+    const sql = read('supabase/migrations/20261023200000_process_payroll_run.sql')
+    expect(sql).toMatch(/status = 'accrued' and queued_for_payroll and needs_verification = false/)
   })
 })
 
