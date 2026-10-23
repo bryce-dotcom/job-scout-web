@@ -281,3 +281,51 @@ describe('an AI job guess does not charge the job', () => {
     expect(r ?? null).toBeNull()
   })
 })
+
+// ── The category a PERSON set drives the materials split ──────────────────
+// jobCosting read `t.category || t.ai_category`, but plaid_transactions has no
+// `category` column at all, so the expression always fell through to the AI's
+// guess and the owner's own answer never reached the split. That split decides
+// whether a parts receipt is COMPARED with the catalog parts or ADDED on top of
+// them, so getting it from a guess is a real cost error either way.
+// Measured 2026-10-22: 67 rows / $175,242 platform-wide were being classified
+// by the guess while a person had said otherwise — none of them tagged to a job
+// yet, so the fix moved no reported number.
+describe("a person's own category drives the materials split", () => {
+  const catJobs = [{ id: 40, job_id: 'J-40', status: 'Completed' }]
+  const catLines = [{ job_id: 40, item_id: 400, quantity: 1, labor_cost: 0 }]
+  const catProducts = [{ id: 400, cost: 5000, material_or_labor: 'material' }]
+  const run = (plaidTransactions) => jobCosting({
+    jobs: catJobs, jobLines: catLines, products: catProducts,
+    productComponents: [], payments: [], invoices: [], plaidTransactions,
+  }).rows.find(r => r.job === 'J-40')
+
+  it('compares a receipt the person called materials with the catalog parts', () => {
+    // AI said Fuel, the owner corrected it to Materials: $5,000 of catalog
+    // parts plus a $400 parts receipt is still $5,000 of parts.
+    const r = run([{ id: 70, amount: 400, date: '2026-10-06', job_id: 40, ai_category: 'Fuel', user_category: 'Materials' }])
+    expect(r.material).toBe(5000)
+    expect(r.tagged_expense).toBe(0)
+    expect(r.total_cost).toBe(5000)
+  })
+
+  it('adds a receipt the person moved OFF materials', () => {
+    // AI said Job Materials, the owner corrected it to Equipment Rental —
+    // extra money the job really did cost, so it adds.
+    const r = run([{ id: 71, amount: 400, date: '2026-10-06', job_id: 40, ai_category: 'Job Materials', user_category: 'Equipment Rental' }])
+    expect(r.material).toBe(5000)
+    expect(r.tagged_expense).toBe(400)
+    expect(r.total_cost).toBe(5400)
+  })
+
+  it('still uses the guess when nobody has set a category', () => {
+    const r = run([{ id: 72, amount: 400, date: '2026-10-06', job_id: 40, ai_category: 'Materials' }])
+    expect(r.material).toBe(5000)
+    expect(r.tagged_expense).toBe(0)
+  })
+
+  it('treats a row with no category at all as not-parts, which always adds', () => {
+    const r = run([{ id: 73, amount: 400, date: '2026-10-06', job_id: 40 }])
+    expect(r.tagged_expense).toBe(400)
+  })
+})

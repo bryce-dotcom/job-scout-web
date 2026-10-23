@@ -26,7 +26,7 @@ import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: p
 
 import { timeClockToJobHours } from './bonusCalc'
 import { costRatesByEmployee } from './laborRate.js'   // explicit extension: plain Node runners import this file
-import { costingJobId } from '../../supabase/functions/_shared/transferRule.ts'   // one rule for which job a bank row's money counts against
+import { costingJobId, displayCategory } from '../../supabase/functions/_shared/transferRule.ts'   // which job a bank row's money counts against, and the category a person actually set
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
@@ -501,7 +501,14 @@ export function jobCosting({
     const jid = costingJobId(t)
     if (!jid) continue
     if (from && !inRange(t.date, fromD, toD)) continue
-    add(isMaterialSpend(t.category || t.ai_category) ? materialSpendByJob : expensesByJob, jid, amt)
+    // displayCategory, not `t.category || t.ai_category`: plaid_transactions has
+    // no `category` column at all, so that expression always fell through to the
+    // AI's guess and ignored the category a PERSON set. unifiedExpenses above,
+    // lib/overhead and journalExport all read the person first; this line did
+    // not, so a receipt the owner recategorised AS materials kept being added on
+    // top of the catalog parts it already describes, and one they moved OFF
+    // materials vanished into the estimate comparison instead of adding.
+    add(isMaterialSpend(displayCategory(t)) ? materialSpendByJob : expensesByJob, jid, amt)
     countedTxnIds.add(t.id)
   }
   for (const e of manualExpenses || []) {
