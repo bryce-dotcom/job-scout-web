@@ -131,6 +131,31 @@ function schemaCheck() {
   say(code === 0 ? '  schema:check ok' : `  note: schema:check could not complete (exit ${code}) — shipping anyway.`)
 }
 
+// ── payroll: the goldens decide ──────────────────────────────────────────
+// docs/PAYROLL_PLAN.md step 7. A change to the pay engine, the loader, the
+// run, the guards, the tax maths or the fixtures ships only if every payroll
+// test, the golden replays included, is green on this tree. A golden number
+// that moved is a decision somebody has to write into accepted.json with a
+// reason; it is not something ship lets through on a build that compiled.
+payrollGate()
+function payrollGate() {
+  if (process.env.JS_PAYROLL_OK) { say('\nJS_PAYROLL_OK set — skipping the payroll tests.'); return }
+  const files = shas.flatMap(s => tryGit(['show', '--name-only', '--format=', s]).out.split('\n')).filter(Boolean)
+  const touches = files.some(f => /^(src\/lib\/payroll|src\/lib\/payBasis|src\/lib\/bonusLedger|src\/lib\/repCommissions|src\/lib\/setterCommissions|src\/lib\/ptoThisPeriod|src\/lib\/benefitDeductions|src\/lib\/suiRate|src\/pages\/Payroll\.jsx|src\/pages\/MyPay\.jsx|supabase\/functions\/_shared\/(payrollTax|suiRate)|supabase\/migrations\/.*payroll|test\/fixtures\/payroll\/)/.test(f))
+  if (!touches) return
+  say('\npayroll tests — the engine, loader, run, guards, postflight and the golden replays (~20s, JS_PAYROLL_OK=1 skips)')
+  const r = spawnSync('npx', ['vitest', 'run', 'src/lib/payrollEngine.test.js', 'src/lib/payrollLoader.test.js', 'src/lib/payrollRun.test.js', 'src/lib/payrollRunGuards.test.js', 'src/lib/payrollPostflight.test.js', 'src/lib/payrollGolden.test.js', 'src/lib/payBasis.test.js', 'src/lib/bonusLedger.test.js', 'src/lib/payHistory.test.js', 'src/lib/payrollTax.test.js', 'src/lib/benefitDeductions.test.js', '--passWithNoTests'],
+    { cwd: ROOT, encoding: 'utf8', shell: true, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, env: { ...process.env, CI: '1' } })
+  if (r.status !== 0) {
+    const out = ((r.stdout || '') + (r.stderr || '')).trim().split('\n')
+    console.error(out.slice(-60).join('\n'))
+    die('a payroll test is red — a golden number moved or a rule broke. Nothing was pushed.\n' +
+        'If the new number is the right one, say so in that fixture\'s accepted.json with the reason, then ship again.\n' +
+        'Override, knowing a payroll could be wrong: JS_PAYROLL_OK=1 npm run ship')
+  }
+  say('  payroll tests ok')
+}
+
 // ── sweep what an earlier ship left behind ───────────────────────────────
 // A ship that was hard-killed — terminal closed, kill from a shell, a Windows
 // lock beating cleanup — leaves its staging tree on disk, and inside it the
