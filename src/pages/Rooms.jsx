@@ -19,6 +19,7 @@ import { toast } from '../lib/toast'
 import { MAIN_ROOM, nextRoomName, occupancyLabel, fireSideName, fireSideSlug } from '../lib/conferenceRooms'
 import { useRoomSession } from '../components/RoomSession'
 import CampfireMark from '../components/CampfireMark'
+import { signedPhotoUrls } from '../lib/employeePhoto'
 
 export default function Rooms() {
   const theme = useTheme()
@@ -64,6 +65,10 @@ export default function Rooms() {
   // once, about the same person.
   const headcount = session?.counts || {}
   const occupants = session?.occupants || {}
+  // Signed, because employee-photos is a private bucket and every stored
+  // headshot_url points at the PUBLIC path, which 400s. Signing keeps the
+  // bucket closed and still shows the face.
+  const [photoUrls, setPhotoUrls] = useState({})
   const seatedAtFire = occupants[MAIN_ROOM.slug] || []
 
   // The creator names it, in the ring, with no modal. A room called The Ridge
@@ -116,6 +121,16 @@ export default function Rooms() {
   // a slot in the same circle as joining, because a feature nobody can find
   // the entrance to may as well not exist.
   const outerRing = [...rooms, { isCreate: true }]
+
+  // Sign every roster photo once, not per face: the same person can be at
+  // the fire and in a FireSide, and a signature costs a round trip.
+  useEffect(() => {
+    const urls = (employees || []).map(e => e.headshot_url).filter(Boolean)
+    if (urls.length === 0) return
+    let cancelled = false
+    signedPhotoUrls(urls).then(map => { if (!cancelled) setPhotoUrls(map) })
+    return () => { cancelled = true }
+  }, [employees])
 
   return (
     <div style={{ padding: '20px', maxWidth: 1000, margin: '0 auto' }}>
@@ -199,29 +214,11 @@ export default function Rooms() {
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                   }}
                 >
-                  {emp?.headshot_url ? (
-                    <img
-                      src={emp.headshot_url}
-                      alt={person.name}
-                      style={{
-                        width: 44, height: 44, borderRadius: '50%', objectFit: 'cover',
-                        border: '2px solid ' + theme.accent, background: theme.bgCard,
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-                      }}
-                    />
-                  ) : (
-                    // No headshot is the common case on a new company, so the
-                    // fallback has to look deliberate rather than broken.
-                    <span style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: 44, height: 44, borderRadius: '50%',
-                      border: '2px solid ' + theme.accent, background: theme.accentBg,
-                      color: theme.accent, fontSize: 15, fontWeight: 800,
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-                    }}>
-                      {first.charAt(0).toUpperCase()}
-                    </span>
-                  )}
+                  <FaceAtFire
+                    src={emp?.headshot_url ? photoUrls[emp.headshot_url] : null}
+                    name={person.name}
+                    theme={theme}
+                  />
                   <span style={{
                     padding: '1px 7px', borderRadius: 999, whiteSpace: 'nowrap',
                     background: theme.bgCard, border: '1px solid ' + theme.border,
@@ -397,4 +394,43 @@ function onCircle(i, total, radiusPct) {
     left: `${50 + radiusPct * Math.cos(angle)}%`,
     top: `${50 + radiusPct * Math.sin(angle)}%`,
   }
+}
+
+// One person at the fire.
+//
+// Draws the photo when there is a working one and a clean initial when there
+// is not — and treats "the image failed to load" as the same thing as "no
+// photo", because the alternative is what Bryce saw: the browser's broken
+// icon and the alt text, inside a circle, looking like a bug in the circle.
+// alt is deliberately empty for that reason; the name is already underneath.
+function FaceAtFire({ src, name, theme }) {
+  const [broken, setBroken] = useState(false)
+  const initial = String(name || '?').trim().charAt(0).toUpperCase()
+
+  const ring = {
+    width: 44, height: 44, borderRadius: '50%',
+    border: '2px solid ' + theme.accent,
+    boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+  }
+
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        onError={() => setBroken(true)}
+        style={{ ...ring, objectFit: 'cover', background: theme.bgCard }}
+      />
+    )
+  }
+
+  return (
+    <span style={{
+      ...ring,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: theme.accentBg, color: theme.accent, fontSize: 15, fontWeight: 800,
+    }}>
+      {initial}
+    </span>
+  )
 }
