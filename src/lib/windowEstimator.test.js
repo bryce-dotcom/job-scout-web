@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ACCESS_PROFILES, CONDITION_PROFILES, SEVERITY_PROFILES, EDGE_FACTOR,
-  countableZones, excludedZones, splitBySeverity, registerCounts,
+  countableZones, excludedZones, splitBySeverity, registerCounts, validateRegister, nextZoneCode, newZone,
   cleaningMinutes, restorationMinutes, techDays, techDayCost, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT, valuePrice,
   threeTiers, computeCalibrationFactor, walterEstimate, quoteTotalFromLines,
 } from './windowEstimator'
@@ -613,5 +613,88 @@ describe('the register names what a person actually counts', () => {
     const r = walterEstimate({ restoration: { zones: reg }, pricing: { tech_hourly_rate: 32.5, assessment_fee: 0 } })
     expect(r.restoration.register.distinct_marks).toBe(4)
     expect(r.restoration.excluded).toBe(1)
+  })
+})
+
+// An editor hands register-writing to a person on a ladder with a phone.
+// Every fault here removes a mark from the PRICE without removing it from
+// the screen, which is the worst shape a bug can have on a bid.
+describe('a register somebody typed', () => {
+  it('a dangling duplicate_of does NOT delete the mark', () => {
+    // A02 says it repeats A99, which nobody logged. Dropping A02 would lose a
+    // mark somebody climbed a ladder for, silently, out of the price.
+    const reg = [{ id: 'A01', severity: 'L1' }, { id: 'A02', severity: 'L2', duplicate_of: 'A99' }]
+    expect(countableZones(reg).map((z) => z.id)).toEqual(['A01', 'A02'])
+    const v = validateRegister(reg)
+    expect(v.ok).toBe(false)
+    expect(v.problems[0].kind).toBe('dangling_duplicate')
+  })
+
+  it('a real duplicate_of still collapses, as it always did', () => {
+    const reg = [{ id: 'A01', severity: 'L1' }, { id: 'A02', severity: 'L1', duplicate_of: 'A01' }]
+    expect(countableZones(reg).map((z) => z.id)).toEqual(['A01'])
+    expect(validateRegister(reg).ok).toBe(true)
+  })
+
+  it('catches a mark marked as a repeat of itself', () => {
+    const v = validateRegister([{ id: 'A01', severity: 'L1', duplicate_of: 'A01' }])
+    expect(v.problems.map((p) => p.kind)).toContain('self_duplicate')
+  })
+
+  it('catches two marks repeating each other, which loses both', () => {
+    const reg = [
+      { id: 'A01', severity: 'L1', duplicate_of: 'A02' },
+      { id: 'A02', severity: 'L1', duplicate_of: 'A01' },
+    ]
+    expect(countableZones(reg).length).toBe(0)   // the damage this prevents
+    const v = validateRegister(reg)
+    expect(v.problems.some((p) => p.kind === 'duplicate_cycle')).toBe(true)
+  })
+
+  it('catches two marks sharing one code', () => {
+    const v = validateRegister([{ id: 'A01', severity: 'L1' }, { id: 'A01', severity: 'L2' }])
+    expect(v.problems.some((p) => p.kind === 'duplicate_code')).toBe(true)
+  })
+
+  it('catches a severity the engine cannot price', () => {
+    const v = validateRegister([{ id: 'A01', severity: 'L7' }])
+    expect(v.problems.some((p) => p.kind === 'unknown_severity')).toBe(true)
+    expect(v.problems[0].message).toContain('L0, L1, L2')
+  })
+
+  it('catches a not-restorable reason nothing recognises', () => {
+    const v = validateRegister([{ id: 'A01', severity: 'L2', not_restorable_reason: 'too_shiny' }])
+    expect(v.problems.some((p) => p.kind === 'unknown_reason')).toBe(true)
+  })
+
+  it('accepts the shapes the seed script writes', () => {
+    expect(validateRegister([
+      { id: 'A01', code: 'A01', severity: 'L1', face: 'out', lite_id: 'L1' },
+      { id: 'A02', code: 'A02', severity: 'L2', edge: true, face: 'in', lite_id: 'L1' },
+      { id: 'A03', code: 'A03', severity: 'L2', not_restorable_reason: 'coated_surface' },
+      { id: 'A01-b', code: 'A01-b', severity: 'L1', duplicate_of: 'A01' },
+    ]).ok).toBe(true)
+  })
+
+  it('reports problems rather than throwing, so a half-typed register still prices', () => {
+    const reg = [{ id: 'A01', severity: 'L1' }, { id: '', severity: 'L1' }]
+    expect(() => validateRegister(reg)).not.toThrow()
+    expect(validateRegister(reg).problems.some((p) => p.kind === 'missing_code')).toBe(true)
+    expect(() => walterEstimate({ restoration: { zones: reg }, pricing: { tech_hourly_rate: 32.5 } })).not.toThrow()
+  })
+
+  it('hands an editor the next free code', () => {
+    expect(nextZoneCode([])).toBe('A01')
+    expect(nextZoneCode([{ code: 'A01' }, { code: 'A02' }])).toBe('A03')
+    expect(nextZoneCode([{ code: 'A01' }, { code: 'A03' }])).toBe('A02')  // fills a gap
+  })
+
+  it('a new mark defaults the way the trade logs one', () => {
+    const z = newZone([{ code: 'A01' }])
+    expect(z.code).toBe('A02')
+    expect(z.severity).toBe('L1')
+    expect(z.edge).toBe(false)
+    expect(z.duplicate_of).toBe(null)
+    expect(validateRegister([{ code: 'A01', severity: 'L1' }, z]).ok).toBe(true)
   })
 })

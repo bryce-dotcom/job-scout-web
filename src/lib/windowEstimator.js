@@ -117,10 +117,21 @@ export const NOT_RESTORABLE = ['coated_surface', 'factory_defect', 'through_crac
 
 export function countableZones(items) {
   const list = Array.isArray(items) ? items : []
+  // A duplicate_of is plain text naming another row's code, with no foreign
+  // key behind it. A person typing a register will eventually point one at a
+  // code that is not there, and dropping the row on that basis DELETES a mark
+  // somebody stood on a ladder to log — silently, from the price.
+  //
+  // So a reference is only honoured when the thing it names exists. A dangling
+  // one is treated as not-a-duplicate and the mark is counted; validateRegister
+  // is what tells the person their reference is broken. Counting a mark that
+  // may be a repeat is a visible argument about a price; losing one is not an
+  // argument at all, because nobody can see it happen.
+  const codes = new Set(list.map((z) => z?.id ?? z?.code).filter((c) => c != null).map(String))
   const seen = new Set()
   const out = []
   for (const z of list) {
-    if (z?.duplicate_of) continue
+    if (z?.duplicate_of != null && z.duplicate_of !== '' && codes.has(String(z.duplicate_of))) continue
     if (z?.not_restorable_reason) continue
     const id = z?.id ?? z?.code
     if (id != null) {
@@ -130,6 +141,100 @@ export function countableZones(items) {
     out.push(z)
   }
   return out
+}
+
+export const SEVERITIES = Object.keys(SEVERITY_PROFILES)
+
+/**
+ * What is wrong with a register somebody typed.
+ *
+ * The seed script got every reference right because it generated them. An
+ * editor hands that job to a person on a ladder with a phone, and every one of
+ * these faults removes a mark from the PRICE without removing it from the
+ * screen:
+ *
+ *   dangling     duplicate_of names a code that is not in the register
+ *   self         a mark marked as a duplicate of itself
+ *   cycle        A repeats B and B repeats A, so neither is ever counted
+ *   duplicate    two marks sharing one code, so one is dropped as a repeat
+ *   severity     a severity the engine does not price
+ *   reason       a not_restorable_reason nothing recognises
+ *
+ * Returns problems rather than throwing: a half-finished register is the
+ * normal state of an editor, and refusing to price it while somebody types
+ * would make the running total useless.
+ */
+export function validateRegister(items) {
+  const list = Array.isArray(items) ? items : []
+  const problems = []
+  const codeOf = (z) => (z?.id ?? z?.code)
+  const codes = new Map()
+  for (const z of list) {
+    const c = codeOf(z)
+    if (c == null || c === '') { problems.push({ code: null, kind: 'missing_code', message: 'A mark with no code cannot be referred to.' }); continue }
+    const key = String(c)
+    if (codes.has(key)) problems.push({ code: key, kind: 'duplicate_code', message: `Two marks share the code ${key}; one will be dropped as a repeat.` })
+    else codes.set(key, z)
+  }
+  for (const z of list) {
+    const c = codeOf(z)
+    const key = c == null ? null : String(c)
+    const dup = z?.duplicate_of
+    if (dup != null && dup !== '') {
+      const d = String(dup)
+      if (key != null && d === key) problems.push({ code: key, kind: 'self_duplicate', message: `${key} is marked as a repeat of itself.` })
+      else if (!codes.has(d)) problems.push({ code: key, kind: 'dangling_duplicate', message: `${key} repeats ${d}, which is not in the register.` })
+    }
+    if (z?.severity != null && !SEVERITY_PROFILES[z.severity]) {
+      problems.push({ code: key, kind: 'unknown_severity', message: `${key} has severity "${z.severity}" — expected one of ${SEVERITIES.join(', ')}.` })
+    }
+    if (z?.not_restorable_reason && !NOT_RESTORABLE.includes(z.not_restorable_reason)) {
+      problems.push({ code: key, kind: 'unknown_reason', message: `${key} cannot be restored for reason "${z.not_restorable_reason}", which nothing recognises.` })
+    }
+  }
+  // Cycles: follow each chain and see whether it comes back to where it began.
+  for (const [key] of codes) {
+    const path = new Set([key])
+    let at = key
+    for (;;) {
+      const next = codes.get(at)?.duplicate_of
+      if (next == null || next === '') break
+      const n = String(next)
+      if (!codes.has(n)) break
+      if (path.has(n)) {
+        if (n === key) problems.push({ code: key, kind: 'duplicate_cycle', message: `${key} and ${at} repeat each other, so neither is ever counted.` })
+        break
+      }
+      path.add(n)
+      at = n
+    }
+  }
+  return { ok: problems.length === 0, problems }
+}
+
+/** The next free code in a register — A01, A02, … — so an editor can label a new mark. */
+export function nextZoneCode(items, prefix = 'A') {
+  const taken = new Set((Array.isArray(items) ? items : []).map((z) => String(z?.code ?? z?.id ?? '')))
+  for (let n = 1; n < 1000; n++) {
+    const c = `${prefix}${String(n).padStart(2, '0')}`
+    if (!taken.has(c)) return c
+  }
+  return `${prefix}${Date.now()}`
+}
+
+/** A new mark, defaulted the way the trade logs one: light abrasion, not an edge. */
+export function newZone(items, overrides = {}) {
+  return {
+    code: nextZoneCode(items),
+    location: '',
+    lite_id: '',
+    face: 'out',
+    severity: 'L1',
+    edge: false,
+    duplicate_of: null,
+    not_restorable_reason: null,
+    ...overrides,
+  }
 }
 
 /**
