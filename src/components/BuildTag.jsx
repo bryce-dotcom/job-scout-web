@@ -22,6 +22,7 @@
 //     centred flex row that shrinks with its container.
 
 import { useState, useEffect, useCallback } from 'react'
+import { applyUpdate } from '../lib/appUpdate'
 
 const RUNNING = import.meta.env.VITE_APP_BUILD || ''
 
@@ -44,24 +45,17 @@ export default function BuildTag({ theme }) {
 
   const behind = !!served && !!RUNNING && served !== RUNNING
 
-  // Everything a stuck client can do, in order. The service worker is
-  // unregistered because it is the thing holding the old build — leaving it
-  // in place is how somebody "updates" three times and sees the same screen.
+  // Everything a stuck client can do, in order — now lib/appUpdate's
+  // applyUpdate, because this was the ONLY copy that did it properly. The
+  // banner everyone actually sees called plain reload(), which the worker
+  // answers from precache, so that button changed nothing and people pressed
+  // it again and again. One rule, one place; the comment that used to live
+  // here ("leaving it in place is how somebody updates three times and sees
+  // the same screen") moved with it.
   const update = async () => {
     if (busy) return
     setBusy(true)
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations().catch(() => [])
-        await Promise.all(regs.map((r) => r.unregister().catch(() => false)))
-      }
-      if (typeof caches !== 'undefined') {
-        const keys = await caches.keys().catch(() => [])
-        await Promise.all(keys.map((k) => caches.delete(k).catch(() => false)))
-      }
-    } finally {
-      window.location.replace(`${window.location.pathname}?u=${Date.now()}`)
-    }
+    await applyUpdate()
   }
 
   const muted = theme?.textMuted || '#7d8a7f'

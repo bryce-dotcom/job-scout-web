@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { updateDecision, AWAY_MS } from './appUpdate'
+import { updateDecision, AWAY_MS, STALE_MS } from './appUpdate'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,9 +15,19 @@ describe('what an open app does when the server has a newer build', () => {
     expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: AWAY_MS })).toBe('reload')
     expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: AWAY_MS * 10 })).toBe('reload')
   })
-  it('offers a banner to someone mid-session instead of pulling the page out from under them', () => {
-    expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: 0 })).toBe('banner')
-    expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: AWAY_MS - 1 })).toBe('banner')
+  it('says NOTHING to someone mid-session — the update waits for a door', () => {
+    // This used to banner, and that is the complaint: we ship ~40 times on a
+    // busy day, so a rep working through the afternoon met the bar ~40 times
+    // and lost their place to every one of them. Being minutes behind costs
+    // nobody anything; the next navigation picks it up silently.
+    expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: 0 })).toBe('defer')
+    expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: AWAY_MS - 1 })).toBe('defer')
+  })
+  it('but asks once someone has been behind for most of an hour', () => {
+    // Somebody parked on one screen never hits a navigation, so the deferral
+    // has to end somewhere.
+    expect(updateDecision({ running: 'a1', served: 'b2', pendingForMs: STALE_MS })).toBe('banner')
+    expect(updateDecision({ running: 'a1', served: 'b2', pendingForMs: STALE_MS - 1 })).toBe('defer')
   })
   it('never reload-loops when the served stamp and the bundle keep disagreeing', () => {
     expect(updateDecision({ running: 'a1', served: 'b2', hiddenForMs: AWAY_MS, reloadedFor: 'b2' })).toBe('banner')
@@ -57,7 +67,7 @@ describe('a stale cold start fixes itself', () => {
     const { updateDecision } = await import('./appUpdate')
     expect(updateDecision({ running: 'old', served: 'new', hiddenForMs: 0, firstCheck: true })).toBe('reload')
     // the same situation later in the session still asks
-    expect(updateDecision({ running: 'old', served: 'new', hiddenForMs: 0, firstCheck: false })).toBe('banner')
+    expect(updateDecision({ running: 'old', served: 'new', hiddenForMs: 0, firstCheck: false })).toBe('defer')
   })
 
   it('but never over unsaved work, even on a cold start', async () => {
@@ -89,7 +99,7 @@ describe('an app left open and untouched updates itself', () => {
   it('ten minutes with no tap, still visible, reloads — unless something holds it', async () => {
     const { updateDecision, IDLE_MS } = await import('./appUpdate')
     expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS })).toBe('reload')
-    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS - 1 })).toBe('banner')
+    expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS - 1 })).toBe('defer')
     expect(updateDecision({ running: 'a', served: 'b', hiddenForMs: 0, idleMs: IDLE_MS, held: true })).toBe('banner')
   })
   it('the Arnie chat holds updates during a takeoff, a reply, speech, the mic or a draft', async () => {
@@ -97,5 +107,57 @@ describe('an app left open and untouched updates itself', () => {
     const chat = readFileSync(new URL('../pages/agents/arnie/ArnieChat.jsx', import.meta.url), 'utf8')
     expect(chat).toMatch(/const busyForUpdate = takeoff \|\| loading \|\| speaking \|\| listening \|\| !!input\.trim\(\)/)
     expect(chat).toMatch(/busyForUpdate \? holdAppUpdate\('Arnie chat in use'\)/)
+  })
+})
+
+describe('one press applies every commit since', () => {
+  const read = (p) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), p), 'utf8')
+
+  it('the banner Refresh goes through applyUpdate, not a plain reload', () => {
+    // THE BUG. There is no queue to work through — a load fetches whatever is
+    // served now, so ten pushes are caught up by one refresh. But the banner's
+    // button called window.location.reload(), which the service worker is
+    // entitled to answer out of its own precache, so the page came back
+    // identical and people pressed it again. And again.
+    const src = read('./appUpdate.js')
+    const onclick = src.slice(src.indexOf('btn.onclick'), src.indexOf('btn.onclick') + 320)
+    expect(onclick).toMatch(/applyUpdate\(\)/)
+    expect(onclick).not.toMatch(/location\.reload\(\)/)
+  })
+
+  it('applyUpdate drops the worker and the caches BEFORE reloading', () => {
+    const src = read('./appUpdate.js')
+    const fn = src.slice(src.indexOf('export async function applyUpdate'))
+    const body = fn.slice(0, fn.indexOf('\n}'))
+    expect(body).toMatch(/unregister\(\)/)
+    expect(body).toMatch(/caches\.delete/)
+    // The reload is in a finally, so a failure above still ends in a reload
+    // rather than a button that does nothing at all.
+    expect(body).toMatch(/finally[\s\S]*location\.replace/)
+    expect(body.indexOf('unregister()')).toBeLessThan(body.indexOf('location.replace'))
+  })
+
+  it('BuildTag no longer keeps its own copy of the dance', () => {
+    // These two drifted, and the weaker copy was the one in front of everyone.
+    const src = read('../components/BuildTag.jsx')
+    expect(src).toMatch(/import \{ applyUpdate \}/)
+    expect(src).not.toMatch(/caches\.delete/)
+    expect(src).not.toMatch(/getRegistrations\(\)/)
+  })
+
+  it('the banner offers a way to say not now', () => {
+    const src = read('./appUpdate.js')
+    expect(src).toMatch(/later\.textContent = 'Later'/)
+    expect(src).toMatch(/later\.onclick[\s\S]{0,60}snooze\(SNOOZE_MS\)/)
+  })
+
+  it('a pending update lands on navigation, unless work is held', () => {
+    const src = read('./appUpdate.js')
+    const nav = src.slice(src.indexOf('const onNavigate'), src.indexOf('const onNavigate') + 220)
+    expect(nav).toMatch(/appUpdateHeld\(\)/)
+    expect(nav).toMatch(/reloadFor\(pending\)/)
+    // React Router moves with pushState, which fires no event of its own.
+    expect(src).toMatch(/wrap\('pushState'\)/)
+    expect(src).toMatch(/addEventListener\('popstate', onNavigate\)/)
   })
 })

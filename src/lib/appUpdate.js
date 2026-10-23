@@ -49,6 +49,24 @@ export const POLL_MS = 5 * 60 * 1000
  * days. Ten minutes with no tap and no key is nobody mid-form.
  */
 export const IDLE_MS = 10 * 60 * 1000
+/**
+ * How long a new build may wait quietly before it is worth interrupting for.
+ *
+ * This is the number that was missing. Every rule below was about WHETHER a
+ * person is mid-task; none was about how OFTEN to ask. We ship forty times on
+ * a busy day, so somebody working through the afternoon met the banner forty
+ * times — "i will say refresh like 10 times before they can finish what they
+ * were doing". Each refresh costs them their place, and five minutes later
+ * another deploy lands.
+ *
+ * Being three minutes behind harms nobody. So a pending update now waits for
+ * the person to move between pages and lands invisibly there; the banner is
+ * only for someone who has sat on one screen for the best part of an hour and
+ * genuinely is falling behind.
+ */
+export const STALE_MS = 45 * 60 * 1000
+/** How long "Later" buys. Long enough that a busy afternoon is not a queue of banners. */
+export const SNOOZE_MS = 60 * 60 * 1000
 
 /**
  * The rule. Pure, so it is tested.
@@ -59,9 +77,10 @@ export const IDLE_MS = 10 * 60 * 1000
  * @param {string|null} a.reloadedFor  build id this tab already reloaded for
  * @param {boolean} a.held  a page has unsaved work (holdAppUpdate)
  * @param {boolean} a.firstCheck  the check a few seconds after a cold start
- * @returns {'reload'|'banner'|'none'}
+ * @param {number} a.pendingForMs  how long this page has been behind the server
+ * @returns {'reload'|'banner'|'defer'|'none'}  defer = say nothing, catch it on the next navigation
  */
-export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false, firstCheck = false, idleMs = 0 }) {
+export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor = null, held = false, firstCheck = false, idleMs = 0, pendingForMs = 0 }) {
   if (!running || !served || typeof served !== 'string') return 'none'
   if (served === running) return 'none'
   // Reloading once for a build that still reads as different afterwards means
@@ -82,7 +101,16 @@ export function updateDecision({ running, served, hiddenForMs = 0, reloadedFor =
   // banner is protecting work that does not exist yet. Reload instead. Later
   // checks, when someone is actually using the app, still ask.
   if (firstCheck) return 'reload'
-  return hiddenForMs >= AWAY_MS || idleMs >= IDLE_MS ? 'reload' : 'banner'
+  if (hiddenForMs >= AWAY_MS || idleMs >= IDLE_MS) return 'reload'
+  // SOMEBODY MID-TASK IS NOT INTERRUPTED FOR A BUILD THAT IS MINUTES OLD.
+  //
+  // This used to return 'banner' here, which meant every deploy put a bar in
+  // front of everyone working. Being a few minutes behind costs nothing, and
+  // the update lands by itself the next time they move between pages — which
+  // in this app is constantly. 'defer' is that: no bar, no reload, wait for a
+  // door. Only someone who has sat on one screen for most of an hour is
+  // genuinely falling behind, and they get asked.
+  return pendingForMs >= STALE_MS ? 'banner' : 'defer'
 }
 
 const RELOADED_KEY = 'app_reloaded_for_build'
@@ -103,6 +131,51 @@ function reloadFor(build) {
   window.location.reload()
 }
 
+/**
+ * Actually land the newest build. One press, every commit since.
+ *
+ * There is no queue of updates to work through: a load fetches whatever is
+ * served NOW, so ten pushes are caught up by one refresh. The reason it did
+ * not feel that way is that this was written twice and the weaker copy was the
+ * one people saw. BuildTag's menu item unregistered the worker and cleared the
+ * caches; the banner — the thing that appears unprompted in front of everyone
+ * — called plain window.location.reload(), which the service worker is
+ * entitled to answer out of its own precache. So the page came back identical,
+ * and you pressed it again. BuildTag's own comment had already named it:
+ * "leaving it in place is how somebody 'updates' three times and sees the same
+ * screen."
+ *
+ * The worker goes first because it is the thing holding the old build, then
+ * the caches, then a URL the browser cannot mistake for one it already has.
+ * Every step is best-effort: a failure here must still end in a reload, or the
+ * button does nothing at all.
+ */
+export async function applyUpdate() {
+  try {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations().catch(() => [])
+      await Promise.all(regs.map((r) => r.unregister().catch(() => false)))
+    }
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys().catch(() => [])
+      await Promise.all(keys.map((k) => caches.delete(k).catch(() => false)))
+    }
+  } finally {
+    window.location.replace(`${window.location.pathname}?u=${Date.now()}`)
+  }
+}
+
+/** Quiet until this timestamp — set by Later, and by a silent deferral. */
+const SNOOZE_KEY = 'app_update_snoozed_until'
+function snoozedUntil() {
+  try { return Number(sessionStorage.getItem(SNOOZE_KEY)) || 0 } catch { return 0 }
+}
+function snooze(ms) {
+  try { sessionStorage.setItem(SNOOZE_KEY, String(Date.now() + ms)) } catch { /* private mode */ }
+  const bar = typeof document !== 'undefined' && document.getElementById('app-update-banner')
+  if (bar) bar.remove()
+}
+
 /** A plain-DOM banner: works even when React is the thing that is stale. */
 export function showBanner(build) {
   if (document.getElementById('app-update-banner')) return
@@ -117,12 +190,30 @@ export function showBanner(build) {
   ].join(';')
   const text = document.createElement('span')
   text.textContent = 'A new version of JobScout is ready.'
+  const actions = document.createElement('span')
+  actions.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0'
+  // Somewhere to put "not now". Without it the only way to clear the bar was
+  // to refresh, so every deploy cost whoever was working their place on the
+  // page — and we ship forty times on a busy day.
+  const later = document.createElement('button')
+  later.type = 'button'
+  later.textContent = 'Later'
+  later.style.cssText = 'min-height:44px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:#cfd6cb;font:500 14px system-ui,sans-serif;cursor:pointer'
+  later.onclick = () => snooze(SNOOZE_MS)
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.textContent = 'Refresh'
   btn.style.cssText = 'min-height:44px;padding:0 18px;border:0;border-radius:10px;background:#5a6349;color:#fff;font:600 14px system-ui,sans-serif;cursor:pointer'
-  btn.onclick = () => (build ? reloadFor(build) : window.location.reload())
-  bar.append(text, btn)
+  // applyUpdate, not reload: the worker will happily serve the old build back
+  // from precache, which is why pressing this used to change nothing.
+  btn.onclick = () => {
+    try { if (build) sessionStorage.setItem(RELOADED_KEY, build) } catch { /* private mode */ }
+    btn.disabled = true
+    btn.textContent = 'Updating…'
+    applyUpdate()
+  }
+  actions.append(later, btn)
+  bar.append(text, actions)
   document.body.appendChild(bar)
 }
 
@@ -135,6 +226,8 @@ export function installAppUpdateCheck({ running } = {}) {
   let hiddenAt = 0
   let checking = false
   let lastTouch = Date.now()
+  let pendingSince = 0
+  let pending = null
   const touched = () => { lastTouch = Date.now() }
   for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, touched, { passive: true, capture: true })
 
@@ -150,9 +243,19 @@ export function installAppUpdateCheck({ running } = {}) {
       const served = await servedBuild()
       let reloadedFor = null
       try { reloadedFor = sessionStorage.getItem(RELOADED_KEY) } catch { /* private mode */ }
-      const d = updateDecision({ running, served, hiddenForMs, reloadedFor, held: appUpdateHeld(), firstCheck, idleMs: Date.now() - lastTouch })
+      // When the pending build CHANGES, the clock does not restart. Forty
+      // deploys in an afternoon must not keep a person permanently fresh and
+      // therefore permanently un-asked; what matters is how long they have
+      // been behind, not which build they are behind.
+      if (served && served !== running) { if (!pendingSince) pendingSince = Date.now() } else { pendingSince = 0 }
+      pending = served && served !== running ? served : null
+      const d = updateDecision({
+        running, served, hiddenForMs, reloadedFor, held: appUpdateHeld(), firstCheck,
+        idleMs: Date.now() - lastTouch,
+        pendingForMs: pendingSince ? Date.now() - pendingSince : 0,
+      })
       if (d === 'reload') reloadFor(served)
-      else if (d === 'banner') showBanner(served)
+      else if (d === 'banner' && Date.now() >= snoozedUntil()) showBanner(served)
     } finally {
       checking = false
     }
@@ -165,6 +268,36 @@ export function installAppUpdateCheck({ running } = {}) {
     check(away)
   }
   const onOnline = () => check(0)
+
+  // THE DOOR. Moving between pages is the one moment nothing is half-typed,
+  // so a pending update lands there and nobody is asked anything. In a CRM
+  // people navigate constantly, which is why deferring is cheap: the banner
+  // becomes the exception rather than the thing everyone meets after a deploy.
+  //
+  // Held work still blocks it — a draft survives a navigation in this app, so
+  // reloading over one would lose exactly what holdAppUpdate exists to protect.
+  const onNavigate = () => {
+    if (!pending || appUpdateHeld()) return
+    reloadFor(pending)
+  }
+  // React Router moves with pushState, which fires no event of its own.
+  const wrap = (name) => {
+    const orig = history[name]
+    if (typeof orig !== 'function' || orig.__appUpdateWrapped) return orig
+    const patched = function (...args) {
+      const r = orig.apply(this, args)
+      try { window.dispatchEvent(new Event('app:navigated')) } catch { /* no-op */ }
+      return r
+    }
+    patched.__appUpdateWrapped = true
+    history[name] = patched
+    return orig
+  }
+  const origPush = wrap('pushState')
+  const origReplace = wrap('replaceState')
+  window.addEventListener('app:navigated', onNavigate)
+  window.addEventListener('popstate', onNavigate)
+
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('online', onOnline)
   const timer = setInterval(() => { if (document.visibilityState === 'visible') check(0) }, POLL_MS)
@@ -176,6 +309,12 @@ export function installAppUpdateCheck({ running } = {}) {
     for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.removeEventListener(ev, touched, { capture: true })
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('online', onOnline)
+    window.removeEventListener('app:navigated', onNavigate)
+    window.removeEventListener('popstate', onNavigate)
+    // Put history back exactly as found, or a test that installs twice leaves
+    // a stack of wrappers behind and every navigation fires several times.
+    if (typeof origPush === 'function') history.pushState = origPush
+    if (typeof origReplace === 'function') history.replaceState = origReplace
     clearInterval(timer); clearTimeout(first)
   }
 }
