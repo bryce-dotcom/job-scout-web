@@ -30,7 +30,7 @@ import SearchableSelect from '../components/SearchableSelect'
 import useSmartBack from '../lib/useSmartBack'
 import { auditAreasToIntakeLines } from '../lib/auditAreaLine'
 import { createEstimateFromIntake } from '../lib/estimateIntake'
-import { localDateStr } from '../lib/localDate'
+import { localDateStr } from '../lib/localDate'
 import { SignedImg } from '../lib/storageUrl'
 
 const defaultTheme = {
@@ -215,12 +215,19 @@ export default function LeadDetail() {
       .order('created_at', { ascending: false })
     setAudits(auditData || [])
 
-    // Fetch quotes linked to this lead
+    // Fetch quotes linked to this lead, in the order they were built.
+    //
+    // Newest-first reads well for revisions of one estimate and badly for the
+    // thing reps actually do here: several estimates for one customer, one per
+    // building. Lead 5188 is "Connor Holden BLD A", "Bld 2", "BLD D", entered
+    // in that order and shown back to front. Cole: "can you allow it to
+    // orginize each line by the way we put it in" — he guessed alphabetical;
+    // it was reverse-chronological, which on a single day looks the same.
     const { data: quoteData } = await supabase
       .from('quotes')
       .select('*, quote_lines(*)')
       .eq('lead_id', id)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: true })
     setQuotes(quoteData || [])
 
     // Fetch file attachments linked to this lead
@@ -1916,7 +1923,22 @@ export default function LeadDetail() {
                       alignItems: isMobile ? 'stretch' : 'center',
                       gap: isMobile ? '12px' : '16px'
                     }}>
-                      <div>
+                      <div style={{ minWidth: 0 }}>
+                        {/* What this estimate IS, above what it costs.
+                            Several estimates on one customer are told apart by
+                            name and nothing else — "Connor Holden BLD A" from
+                            "BLD D" — and the card used to lead with the price,
+                            so three buildings read as three numbers. Cole:
+                            "it only tells me job price, can you allow me to
+                            tell me the name of the estimate as well". */}
+                        {quote.estimate_name && (
+                          <div style={{
+                            fontSize: isMobile ? '15px' : '16px', fontWeight: '600', color: theme.text,
+                            marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {quote.estimate_name}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                           <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: '700', color: theme.text }}>
                             ${(quote.quote_amount || 0).toLocaleString()}
