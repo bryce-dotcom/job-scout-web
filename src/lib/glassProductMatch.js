@@ -30,7 +30,19 @@ export const GLASS_WORK_KEYWORDS = {
   partition:         ['partition glass', 'partition'],
   window_well:       ['window well'],
   mirror:            ['mirror'],
+  // A FAMILY probe — "does this tenant do restoration at all?" — not a
+  // pricing key. It matches every severity, so asking it for one product
+  // returns whichever sorts first, which is arbitrary. Price from the
+  // severity keys below; use this one to ask whether the trade exists here.
   restoration:       ['glass restoration', 'scratch', 'resurfac'],
+  // Severity is a different PRODUCT, not a modifier on one. A deep mark near
+  // an edge is roughly two and a half times the work of a light one, so a
+  // single "restoration" rate under-prices an all-L2 register and overprices
+  // an all-L1 one. Deliberately matched on the words rather than on "L1"/"L2"
+  // — those are two characters and would collide with half the price book.
+  restoration_light: ['light abrasion'],
+  restoration_deep:  ['deep or edge', 'deep abrasion'],
+  optical_finish:    ['optical finishing', 'final polish'],
 }
 
 /**

@@ -159,3 +159,35 @@ describe('the SMBE Panels collision', () => {
     expect(all.map((m) => m.product.id)).toEqual([2])
   })
 })
+
+// The products added to HHH's book on 2026-10-23, in the shape they were added.
+describe('restoration severity is three products, not one rate', () => {
+  const GROUPS3 = [{ id: 37, name: 'Glass Restoration' }, { id: 12, name: 'Residential Windows' }]
+  const BOOK3 = [
+    { id: 1, name: 'Glass Restoration — Light Abrasion (L1)', group_id: 37, type: 'Glass Restoration', unit_price: 225, active: true },
+    { id: 2, name: 'Glass Restoration — Deep or Edge (L2)', group_id: 37, type: 'Glass Restoration', unit_price: 565, active: true },
+    { id: 3, name: 'Glass Restoration — Optical Finishing', group_id: 37, type: 'Glass Restoration', unit_price: 80, active: true },
+    { id: 4, name: 'Shower Glass Restoration', group_id: 12, type: 'Window Cleaning', unit_price: 15, active: true },
+  ]
+
+  it('prices a light mark and a deep one differently', () => {
+    expect(bestGlassProduct(BOOK3, { groups: GROUPS3, work: 'restoration_light' }).unit_price).toBe(225)
+    expect(bestGlassProduct(BOOK3, { groups: GROUPS3, work: 'restoration_deep' }).unit_price).toBe(565)
+  })
+
+  it('finds the finishing pass as its own product', () => {
+    expect(bestGlassProduct(BOOK3, { groups: GROUPS3, work: 'optical_finish' }).unit_price).toBe(80)
+  })
+
+  it('does not confuse a shower with architectural glass', () => {
+    // $15 a pane for hard water on a shower screen is a different trade from
+    // $565 a zone for resurfacing a scratched curtain wall.
+    expect(bestGlassProduct(BOOK3, { groups: GROUPS3, work: 'restoration_deep' }).id).not.toBe(4)
+  })
+
+  it('the family probe finds the trade without being a price', () => {
+    // It matches every severity, so it answers "do they do this?" and nothing
+    // more. Pricing goes through the severity keys.
+    expect(matchGlassProducts(BOOK3, { groups: GROUPS3, work: 'restoration' }).length).toBeGreaterThan(1)
+  })
+})
