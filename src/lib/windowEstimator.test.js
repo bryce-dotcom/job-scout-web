@@ -1,0 +1,310 @@
+import { describe, it, expect } from 'vitest'
+import {
+  ACCESS_PROFILES, CONDITION_PROFILES, SEVERITY_PROFILES, EDGE_FACTOR,
+  countableZones, excludedZones, splitBySeverity,
+  cleaningMinutes, restorationMinutes, techDays,
+  threeTiers, computeCalibrationFactor, walterEstimate, quoteTotalFromLines,
+} from './windowEstimator'
+
+// The AGR UGR Eden bid, as tests. Its numbers are a worked example, not
+// defaults — what is pinned here is the SHAPE of the arithmetic, because that
+// is the part a photo-reading AI or a well-meaning refactor will break.
+// See WALTER_AGR_FACTS.md.
+
+// 68 marks photographed across 23 groups: the same scratch from several
+// angles. A register exactly that shape.
+const ugrRegister = () => {
+  const zones = []
+  for (let i = 1; i <= 23; i++) {
+    const code = `A${String(i).padStart(2, '0')}`
+    zones.push({ id: code, code, severity: i <= 14 ? 'L1' : 'L2', face: i % 2 ? 'out' : 'in', lite_id: `L${i}` })
+  }
+  // 45 duplicate photographs of marks already in the register.
+  for (let i = 0; i < 45; i++) {
+    const of = zones[i % 23]
+    zones.push({ id: `${of.code}-dup${i}`, code: of.code, severity: of.severity, face: of.face, lite_id: of.lite_id, duplicate_of: of.id })
+  }
+  return zones
+}
+
+describe('counting what is actually there', () => {
+  it('68 marks across 23 photo groups is 23 zones, not 68', () => {
+    const reg = ugrRegister()
+    expect(reg.length).toBe(68)
+    expect(countableZones(reg).length).toBe(23)
+  })
+
+  it('a mark that cannot be restored is not counted, and says why', () => {
+    const reg = [
+      { id: 'A01', severity: 'L1' },
+      { id: 'A02', severity: 'L2', not_restorable_reason: 'coated_surface' },
+      { id: 'A03', severity: 'L2', not_restorable_reason: 'factory_defect' },
+    ]
+    expect(countableZones(reg).map((z) => z.id)).toEqual(['A01'])
+    expect(excludedZones(reg).length).toBe(2)
+  })
+
+  it('the same id twice is one zone', () => {
+    expect(countableZones([{ id: 'A01', severity: 'L1' }, { id: 'A01', severity: 'L1' }]).length).toBe(1)
+  })
+
+  it('survives a register that is empty or not a list', () => {
+    expect(countableZones([])).toEqual([])
+    expect(countableZones(null)).toEqual([])
+    expect(countableZones(undefined)).toEqual([])
+  })
+})
+
+describe('L0 is cleaning work, not restoration', () => {
+  it('routes L0 to the cleaning side and leaves the rest to restoration', () => {
+    const reg = [
+      { id: 'A01', severity: 'L0' },
+      { id: 'A02', severity: 'L0' },
+      { id: 'A03', severity: 'L1' },
+      { id: 'A04', severity: 'L2' },
+    ]
+    const split = splitBySeverity(reg)
+    expect(split.cleaning.map((z) => z.id)).toEqual(['A01', 'A02'])
+    expect(split.restoration.map((z) => z.id)).toEqual(['A03', 'A04'])
+  })
+
+  it('an L0 costs no restoration minutes even if it reaches the engine', () => {
+    expect(SEVERITY_PROFILES.L0.minutes_per_zone).toBe(0)
+    expect(SEVERITY_PROFILES.L0.restorable).toBe(false)
+    const m = restorationMinutes({ zones: [{ id: 'A01', severity: 'L0', lite_id: 'L1', face: 'out' }], setup_minutes_per_face: 0 })
+    expect(m).toBe(0)
+  })
+})
+
+describe('restoration minutes', () => {
+  it('a deep mark costs more than a light one, and an edge costs more again', () => {
+    const one = (severity, edge) => restorationMinutes({
+      zones: [{ id: 'A01', severity, edge, lite_id: 'L1', face: 'out' }],
+      setup_minutes_per_face: 0,
+    })
+    expect(one('L2')).toBeGreaterThan(one('L1'))
+    expect(one('L1', true)).toBeCloseTo(one('L1') * EDGE_FACTOR, 1)
+  })
+
+  it('setup is charged per FACE, not per zone', () => {
+    // Ten marks on one face set up once. Ten marks on ten faces set up ten
+    // times. Charging setup per zone is how a 23-zone job grows days it does
+    // not have.
+    const sameFace = Array.from({ length: 10 }, (_, i) => ({ id: `A${i}`, severity: 'L1', lite_id: 'L1', face: 'out' }))
+    const tenFaces = Array.from({ length: 10 }, (_, i) => ({ id: `B${i}`, severity: 'L1', lite_id: `L${i}`, face: 'out' }))
+    const setup = 18
+    const a = restorationMinutes({ zones: sameFace, setup_minutes_per_face: setup })
+    const b = restorationMinutes({ zones: tenFaces, setup_minutes_per_face: setup })
+    expect(round(b - a)).toBe(round(setup * 9))
+  })
+
+  it('counts the inside and outside of one pane as two faces', () => {
+    const z = [
+      { id: 'A01', severity: 'L1', lite_id: 'L1', face: 'in' },
+      { id: 'A02', severity: 'L1', lite_id: 'L1', face: 'out' },
+    ]
+    const both = restorationMinutes({ zones: z, setup_minutes_per_face: 18 })
+    const oneFace = restorationMinutes({
+      zones: [{ id: 'A01', severity: 'L1', lite_id: 'L1', face: 'in' }, { id: 'A02', severity: 'L1', lite_id: 'L1', face: 'in' }],
+      setup_minutes_per_face: 18,
+    })
+    expect(both).toBeGreaterThan(oneFace)
+  })
+
+  it('ignores the duplicates, so the bid does not triple', () => {
+    const reg = ugrRegister()
+    const all = restorationMinutes({ zones: reg.map((z) => ({ ...z, duplicate_of: null })), setup_minutes_per_face: 0 })
+    const counted = restorationMinutes({ zones: reg, setup_minutes_per_face: 0 })
+    expect(counted).toBeLessThan(all / 2)
+  })
+
+  it('reaching the glass costs time', () => {
+    const z = [{ id: 'A01', severity: 'L2', lite_id: 'L1', face: 'out' }]
+    const ground = restorationMinutes({ zones: z, access: 'ground', setup_minutes_per_face: 0 })
+    const lift = restorationMinutes({ zones: z, access: 'lift', setup_minutes_per_face: 0 })
+    expect(lift).toBeCloseTo(ground * ACCESS_PROFILES.lift.factor, 1)
+  })
+})
+
+describe('cleaning minutes', () => {
+  it('construction residue is far slower than a maintenance clean', () => {
+    const base = { panes: 100, faces: 2, minutes_per_pane_face: 3.5 }
+    const maint = cleaningMinutes({ ...base, condition: 'maintenance' })
+    const post = cleaningMinutes({ ...base, condition: 'post_construction' })
+    expect(post).toBeCloseTo(maint * CONDITION_PROFILES.post_construction.factor, 0)
+    expect(post).toBeGreaterThan(maint * 2)
+  })
+
+  it('inside and out is twice one side', () => {
+    const one = cleaningMinutes({ panes: 50, faces: 1 })
+    const two = cleaningMinutes({ panes: 50, faces: 2 })
+    expect(two).toBeCloseTo(one * 2, 1)
+  })
+
+  it('tracks and screens are billed, because they are the forgotten half', () => {
+    const bare = cleaningMinutes({ panes: 40 })
+    const withExtras = cleaningMinutes({ panes: 40, tracks: 40, screens: 40 })
+    expect(withExtras).toBeGreaterThan(bare)
+  })
+
+  it('a condition multiplier does not apply to tracks and screens', () => {
+    // A dirty track is a dirty track whatever is on the glass.
+    const a = cleaningMinutes({ panes: 0, tracks: 10, condition: 'maintenance' })
+    const b = cleaningMinutes({ panes: 0, tracks: 10, condition: 'post_construction' })
+    expect(a).toBe(b)
+  })
+})
+
+describe('days, because you buy a tech by the day', () => {
+  it('rounds part of a day up to a whole one', () => {
+    expect(techDays(10, { productive_minutes_per_day: 390 }).billable).toBe(1)
+    expect(techDays(391, { productive_minutes_per_day: 390 }).billable).toBe(2)
+  })
+
+  it('exactly one day is one day, not two', () => {
+    expect(techDays(390, { productive_minutes_per_day: 390 }).billable).toBe(1)
+  })
+
+  it('no work is no days', () => {
+    expect(techDays(0).billable).toBe(0)
+  })
+
+  it('keeps the exact figure alongside the billable one', () => {
+    const d = techDays(585, { productive_minutes_per_day: 390 })
+    expect(d.exact).toBeCloseTo(1.5, 2)
+    expect(d.billable).toBe(2)
+  })
+})
+
+describe('three tiers', () => {
+  it('the middle tier IS the bid, not a markup on it', () => {
+    const t = threeTiers(19400)
+    expect(t.expected).toBe(19400)
+    expect(t.favourable).toBeLessThan(t.expected)
+    expect(t.difficult).toBeGreaterThan(t.expected)
+  })
+
+  it('reproduces the AGR spread closely enough to recognise', () => {
+    const t = threeTiers(19400)
+    expect(t.favourable).toBeGreaterThan(14000)
+    expect(t.favourable).toBeLessThan(16500)
+    expect(t.difficult).toBeGreaterThan(25000)
+    expect(t.difficult).toBeLessThan(28000)
+  })
+
+  it("takes a company's own spread", () => {
+    const t = threeTiers(1000, { favourable: 0.9, expected: 1, difficult: 1.1 })
+    expect(t.favourable).toBe(900)
+    expect(t.difficult).toBe(1100)
+  })
+})
+
+describe('calibration learns, but is not stampeded by one job', () => {
+  it('does nothing until there are enough finished jobs', () => {
+    const r = computeCalibrationFactor([{ estimated_minutes: 100, actual_minutes: 200 }])
+    expect(r.applied).toBe(false)
+    expect(r.factor).toBe(1)
+  })
+
+  it("uses the company's measured ratio once there are", () => {
+    const h = [
+      { estimated_minutes: 100, actual_minutes: 120 },
+      { estimated_minutes: 100, actual_minutes: 120 },
+      { estimated_minutes: 100, actual_minutes: 120 },
+    ]
+    const r = computeCalibrationFactor(h)
+    expect(r.applied).toBe(true)
+    expect(r.factor).toBeCloseTo(1.2, 2)
+  })
+
+  it('clamps a catastrophe so it cannot triple every future bid', () => {
+    const h = [
+      { estimated_minutes: 10, actual_minutes: 1000 },
+      { estimated_minutes: 10, actual_minutes: 1000 },
+      { estimated_minutes: 10, actual_minutes: 1000 },
+    ]
+    expect(computeCalibrationFactor(h).factor).toBe(2)
+  })
+})
+
+describe('a whole Walter bid', () => {
+  const pricing = { crew_rate_per_hour: 55, tech_day_rate: 1200, sub_markup: 0.35, assessment_fee: 1450, mobilization: 0 }
+
+  it('the quote is worth the sum of its lines', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: ugrRegister() },
+      pricing,
+    })
+    expect(r.expected).toBe(quoteTotalFromLines(r.lines))
+    expect(r.tiers.expected).toBe(r.expected)
+  })
+
+  it('every line multiplies out — quantity times price is the line total', () => {
+    const r = walterEstimate({ cleaning: { panes: 100 }, restoration: { zones: ugrRegister() }, pricing })
+    for (const l of r.lines) {
+      expect(l.line_total).toBeCloseTo(Math.round(l.quantity * l.price * 100) / 100, 2)
+    }
+  })
+
+  it("prices residue removal as our crew's hours, not a subbed package", () => {
+    // The whole margin case: AGR billed $4,950 for a specialist to scrape
+    // glass. That is post-construction window cleaning, which our own crew
+    // already does, so it must land on the cleaning side at crew rate.
+    const r = walterEstimate({ cleaning: { panes: 220, faces: 2, condition: 'post_construction' }, pricing })
+    expect(r.cleaning.work_type).toBe('residue')
+    const line = r.lines.find((l) => l.work_type === 'residue')
+    expect(line.unit_of_measure).toBe('HR')
+    expect(line.price).toBe(pricing.crew_rate_per_hour)
+    expect(r.restoration).toBe(null)
+  })
+
+  it('marks up the sub, and says what the sub costs underneath', () => {
+    const r = walterEstimate({ restoration: { zones: ugrRegister() }, pricing })
+    expect(r.restoration.sub_cost).toBe(r.restoration.days.billable * pricing.tech_day_rate)
+    expect(r.restoration.amount).toBeCloseTo(r.restoration.sub_cost * 1.35, 2)
+  })
+
+  it('reports what it did not count, so the bid can say so', () => {
+    const reg = [...ugrRegister(), { id: 'X1', severity: 'L2', not_restorable_reason: 'coated_surface' }]
+    const r = walterEstimate({ restoration: { zones: reg }, pricing })
+    expect(r.restoration.zones_counted).toBe(23)
+    expect(r.restoration.excluded).toBeGreaterThan(0)
+  })
+
+  it('bills optical finishing as its own line, not folded into resurfacing', () => {
+    const r = walterEstimate({ restoration: { zones: ugrRegister() }, pricing })
+    const resurface = r.lines.find((l) => l.work_type === 'resurface')
+    const finish = r.lines.find((l) => l.work_type === 'optical_finish')
+    expect(finish).toBeTruthy()
+    expect(finish.line_total).toBeGreaterThan(0)
+    // The two lines add back to the restoration total exactly.
+    expect(round(resurface.line_total + finish.line_total)).toBe(round(r.restoration.amount))
+    // And finishing is the smaller pass, the way the trade prices it.
+    expect(finish.line_total).toBeLessThan(resurface.line_total)
+  })
+
+  it('passes a lift through as its own line', () => {
+    const r = walterEstimate({ restoration: { zones: ugrRegister(), access: 'lift' }, pricing })
+    expect(r.lines.some((l) => l.work_type === 'access')).toBe(true)
+  })
+
+  it('does not invent an access line when nobody leaves the ground', () => {
+    const r = walterEstimate({ cleaning: { panes: 10, access: 'ground' }, pricing })
+    expect(r.lines.some((l) => l.work_type === 'access')).toBe(false)
+  })
+
+  it('says which numbers it used', () => {
+    const r = walterEstimate({ cleaning: { panes: 10 }, pricing })
+    expect(r.pricing_used.crew_rate_per_hour).toBe(55)
+    expect(r.pricing_used.productive_minutes_per_day).toBe(390)
+  })
+
+  it('an empty ask is a zero bid, not a crash', () => {
+    const r = walterEstimate({ pricing: { assessment_fee: 0 } })
+    expect(r.expected).toBe(0)
+    expect(r.lines).toEqual([])
+  })
+})
+
+const round = (n) => Math.round(n * 100) / 100
