@@ -212,21 +212,52 @@ export default function WalterAssessmentDetail() {
       {/* ── the bid, in three tiers ────────────────────────────────── */}
       <SectionLabel>The bid</SectionLabel>
       <Card>
-        <p style={{ fontSize: 13, color: theme.textMuted, margin: '0 0 14px', lineHeight: 1.55 }}>
-          Quoted as a range and said to be a range. What is under construction residue is not
-          known until someone stands there with a test patch, so this is not a per-scratch,
-          per-pane or per-square-foot price. The middle tier <strong>is</strong> the bid; the
-          others are a spread around it, not a markup on top.
-        </p>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(3, minmax(0,1fr))',
-          gap: 10,
-        }}>
-          <Tier theme={theme} label="Favourable conditions" amount={bid?.tiers?.favourable} />
-          <Tier theme={theme} label="Expected scope" amount={bid?.tiers?.expected} primary />
-          <Tier theme={theme} label="Difficult conditions" amount={bid?.tiers?.difficult} />
-        </div>
+        {bid?.tiers?.varies ? (
+          <>
+            <p style={{ fontSize: 13, color: theme.textMuted, margin: '0 0 14px', lineHeight: 1.55 }}>
+              Quoted as a range because nobody knows how much damage is under the residue until
+              someone stands there with a test patch. What varies across these three is{' '}
+              <strong>how many zones the tech works</strong> — not what working one costs. The
+              middle column is the bid.
+            </p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(3, minmax(0,1fr))',
+              gap: 10,
+            }}>
+              <Tier
+                theme={theme} label="Favourable conditions"
+                amount={bid.tiers.favourable} zones={bid.tiers.quantities?.favourable}
+              />
+              <Tier
+                theme={theme} label="Expected scope" primary
+                amount={bid.tiers.expected} zones={bid.tiers.quantities?.expected}
+              />
+              <Tier
+                theme={theme} label="Difficult conditions"
+                amount={bid.tiers.difficult} zones={bid.tiers.quantities?.difficult}
+              />
+            </div>
+          </>
+        ) : (
+          /* Nothing on this bid is uncertain, so the engine reports varies:false
+             and three identical totals. Showing those as a range would quote a
+             spread on quantities somebody counted. */
+          <>
+            <p style={{ fontSize: 13, color: theme.textMuted, margin: '0 0 14px', lineHeight: 1.55 }}>
+              Every quantity on this one was counted, so there is no range to quote. What is
+              uncertain on a glass job is how much damage is under the residue, and there is
+              none of that here.
+            </p>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : 'repeat(3, minmax(0,1fr))',
+              gap: 10,
+            }}>
+              <Tier theme={theme} label="The bid" amount={bid?.tiers?.expected} primary />
+            </div>
+          </>
+        )}
       </Card>
 
       {/* ── against replacing the glass ────────────────────────────── */}
@@ -547,7 +578,7 @@ function Shell({ theme, isMobile, children }) {
   )
 }
 
-function Tier({ theme, label, amount, primary }) {
+function Tier({ theme, label, amount, primary, zones }) {
   return (
     <div style={{
       background: primary ? theme.accentBg : theme.bg,
@@ -567,6 +598,11 @@ function Tier({ theme, label, amount, primary }) {
       }}>
         {money(amount)}
       </div>
+      {zones != null && (
+        <div style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
+          {zones} zone{zones === 1 ? '' : 's'}
+        </div>
+      )}
       {primary && (
         <div style={{ fontSize: 11, fontWeight: 700, color: theme.accent, marginTop: 2 }}>
           This is the bid
