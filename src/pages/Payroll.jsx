@@ -34,6 +34,7 @@ import { fetchIdentity, mergeIdentityOne } from '../lib/employeeIdentity'
 import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
 import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 import { employeeHours, computeEmployeePay } from '../lib/payrollEngine'
+import { loadPayrollPeriod, periodTimeOffRows } from '../lib/payrollLoader'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -405,15 +406,11 @@ export default function Payroll() {
   const scheduleFromSettings = useRef(false)
   // Recurring deductions from the employee card (employee_benefits). Gusto
   // took these every check; the run here never read them until 2026-10-12.
+  // Recurring deductions from the cards: loaded with the period (lib/payrollLoader).
   const [benefits, setBenefits] = useState([])
-  useEffect(() => {
-    if (!companyId) { setBenefits([]); return }
-    let cancelled = false
-    supabase.from('employee_benefits').select('id, employee_id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
-      .eq('company_id', companyId).eq('status', 'active')
-      .then(({ data }) => { if (!cancelled) setBenefits(data || []) })
-    return () => { cancelled = true }
-  }, [companyId])
+  // The period could not be read in full. Nothing is shown rather than a
+  // cheque computed from half the inputs.
+  const [periodLoadError, setPeriodLoadError] = useState(null)
   const [verificationReports, setVerificationReports] = useState([])
   // YTD paystubs (this calendar year) so the tax engine can correctly
   // cap Social Security wage base + trip Additional Medicare. Built once
@@ -557,17 +554,11 @@ export default function Payroll() {
     if (!companyId) return
     const { periodStart: ps, periodEnd: pe } = getCurrentPeriod()
     let cancelled = false
-    supabase
-      .from('time_off_requests')
-      .select('id, employee_id, start_date, end_date, request_type, status, reason')
-      .eq('company_id', companyId)
-      .eq('status', 'approved')
-      .lte('start_date', localDateStr(pe))
-      .gte('end_date', localDateStr(ps))
-      .then(({ data, error }) => {
-        if (error) console.warn('[Payroll] period time off:', error.message)
-        if (!cancelled) setPeriodTimeOff(data || [])
-      })
+    // The same query the period loader runs (lib/payrollLoader), re-read on
+    // its own when a request is approved.
+    periodTimeOffRows(supabase, { companyId, period: { start: ps, end: pe } })
+      .then((data) => { if (!cancelled) setPeriodTimeOff(data || []) })
+      .catch((error) => console.warn('[Payroll] period time off:', error.message))
     return () => { cancelled = true }
   }, [companyId, periodOffset, timeOffRequests, ptoVersion])
 
@@ -774,18 +765,31 @@ export default function Payroll() {
       // Parallel fetches for all data
       const periodStartStr = localDateStr(periodStart)
       const periodEndStr = localDateStr(periodEnd)
-      const legacyPeriodEndStr = localDateStr(new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() + 1))
 
-      const [entriesRes, bonusEntriesRes, bonusTimeLogRes, timeLogRes, commRes, paymentsRes, invoicesRes, jobsRes, requestsRes, adjRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
-        // Time clock entries for current period
-        supabase
-          .from('time_clock')
-          .select('*')
-          .eq('company_id', companyId)
-          .gte('clock_in', periodStart.toISOString())
-          .lte('clock_in', periodEnd.toISOString())
-          .not('clock_out', 'is', null),
+      // One loader for the engine's inputs (lib/payrollLoader): the period's
+      // punches, typed hours, setter fees, adjustments, approved time off,
+      // the cards' deductions, this year's stubs, the company's rates. All
+      // of it or none of it: a period with the hours in and the adjustments
+      // missing is a wrong cheque, not an error, so it is not shown at all.
+      let periodData
+      try {
+        periodData = await loadPayrollPeriod(supabase, { companyId, period: { start: periodStart, end: periodEnd } })
+        setPeriodLoadError(null)
+      } catch (e) {
+        console.error('[Payroll] period load:', e.message)
+        setPeriodLoadError(e.message)
+        return
+      }
+      setTimeEntries(periodData.timeEntries)
+      setTimeLogEntries(periodData.timeLogEntries)
+      setLeadCommissions(periodData.leadCommissions)
+      setAdjustments(periodData.adjustments)
+      setBenefits(periodData.benefits)
+      setPeriodTimeOff(periodData.periodTimeOff)
+      setYtdPaystubs(periodData.ytdPaystubs)
+      setSuiRateHistory(periodData.suiRateHistory)
 
+      const [bonusEntriesRes, bonusTimeLogRes, paymentsRes, invoicesRes, jobsRes, requestsRes, verRes, leadsRes, allPaymentsRes, utilityRes] = await Promise.all([
         // Time clock entries for the BONUS ledger — every closed punch that
         // is attached to a job, with NO period filter.
         //
@@ -819,24 +823,6 @@ export default function Payroll() {
           .eq('company_id', companyId)
           .not('job_id', 'is', null)
           .order('id', { ascending: true })),
-
-        // Time log entries (job-level hours) for current period
-        supabase
-          .from('time_log')
-          .select('*')
-          .eq('company_id', companyId)
-          .gte('created_at', periodStart.toISOString())
-          .lte('created_at', periodEnd.toISOString()),
-
-        // Lead commissions for current period
-        supabase
-          .from('lead_commissions')
-          // Lead joined so the per-item Mark paid list can name the deal
-          // instead of showing a bare row id.
-          .select('*, lead:leads!lead_id(id, customer_name)')
-          .eq('company_id', companyId)
-          .gte('created_at', periodStart.toISOString())
-          .lte('created_at', periodEnd.toISOString()),
 
         // Payments for current period (for invoice-based commissions)
         supabase
@@ -906,16 +892,6 @@ export default function Payroll() {
           .limit(50),
 
         // Payroll adjustments for this period (matching period OR recurring)
-        supabase
-          .from('payroll_adjustments')
-          .select('*')
-        // Adjustments saved before the period-end correction carry an end one
-        // day late — 31 Aug was written as 1 Sep. Match BOTH so correcting the
-        // date does not orphan money already entered, rather than rewriting
-        // completed payroll records to suit new code.
-          .eq('company_id', companyId)
-          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.in.(${periodEndStr},${legacyPeriodEndStr})),recurring.eq.true`),
-
         // Victor verification reports — needed to gate efficiency bonus on
         // completion + daily checks. bonusCalc reads two Sets (verifiedJobIds +
         // dailyVerifiedJobDays) built from this below.
@@ -967,7 +943,6 @@ export default function Payroll() {
           .eq('company_id', companyId),
       ])
 
-      setTimeEntries(entriesRes.data || [])
       setBonusTimeEntries(bonusEntriesRes.data || [])
       setBonusTimeLogs(bonusTimeLogRes.data || [])
       // Incomplete shifts. These never enter the pay calc, so surface them for
@@ -989,8 +964,6 @@ export default function Payroll() {
           .order('clock_in', { ascending: false })
         setOpenEntries(openData || [])
       } catch { setOpenEntries([]) }
-      setTimeLogEntries(timeLogRes.data || [])
-      setLeadCommissions(commRes.data || [])
       setPayments(paymentsRes.data || [])
       setInvoices(invoicesRes.data || [])
       setJobs(jobsRes.data || [])
@@ -999,7 +972,7 @@ export default function Payroll() {
       // Pull bonus_override rows out of the already-fetched adjustments.
       // Admin-released bonuses are stored in payroll_adjustments with
       // category='bonus_override' and metadata {job_id, employee_id}.
-      const overrides = (adjRes?.data || [])
+      const overrides = (periodData.adjustments || [])
         .filter(a => a.category === 'bonus_override' && a.metadata?.job_id && a.metadata?.employee_id)
         .map(a => ({ job_id: a.metadata.job_id, employee_id: a.metadata.employee_id, id: a.id }))
       setBonusOverrides(overrides)
@@ -1014,25 +987,7 @@ export default function Payroll() {
       // for months and the page calmly reported 0 pending requests.
       if (requestsRes.error) console.error('[Payroll] time-off request fetch failed:', requestsRes.error.message)
       setTimeOffRequests(requestsRes.data || [])
-      setAdjustments(adjRes.data || [])
       setVerificationReports(verRes.data || [])
-
-      // YTD paystubs for tax wage-base capping. Pull this year's
-      // paystubs for the company, gross + tax-line columns only.
-      const yearStart = `${new Date().getFullYear()}-01-01`
-      const { data: ytdRows } = await supabase
-        .from('paystubs')
-        .select('employee_id, gross_pay, taxable_wages, social_security_employee, medicare_employee')
-        .eq('company_id', companyId)
-        .gte('pay_date', yearStart)
-      setYtdPaystubs(ytdRows || [])
-
-      const { data: suiRows } = await supabase
-        .from('company_sui_rates')
-        .select('id, rate_pct, effective_date, source')
-        .eq('company_id', companyId)
-        .order('effective_date', { ascending: false })
-      setSuiRateHistory(suiRows || [])
     } catch (err) {
       console.error('Error:', err)
     } finally {
@@ -3704,6 +3659,11 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
   // ── Main Payroll View ────────────────────────────────────
   return (
     <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '100%', overflowX: 'hidden' }}>
+      {periodLoadError && (
+        <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.5)', backgroundColor: 'rgba(239,68,68,0.08)', color: theme.text, fontSize: '13px', lineHeight: 1.45 }}>
+          <strong>This pay period could not be loaded, so nothing below is this period's pay.</strong> One of the tables it needs did not answer; reload, and if it keeps happening send this line to support: {periodLoadError}
+        </div>
+      )}
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>

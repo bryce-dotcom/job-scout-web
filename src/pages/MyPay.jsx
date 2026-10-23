@@ -11,12 +11,13 @@ import {
   calculateInvoiceCommissions,
   PERIODS_PER_YEAR,
 } from '../lib/bonusCalc'
-import { fetchUserBonuses, bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
+import { bonusStatusLabel, bonusJobLabel, heldReasonLabel } from '../lib/bonusLedger'
 import { computeEmployeePay } from '../lib/payrollEngine'
+import { loadPayrollPeriod } from '../lib/payrollLoader'
 import { paycheckDetail } from '../lib/payHistory'
 import { payRowHeading, payRowSource } from '../lib/payRowLabel'
 import { groupHoursByDay } from '../lib/dailyHours'
-import { fetchRepCommissions, earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
+import { earnedRepInPeriod, liveInvoiceAvailable } from '../lib/repCommissions'
 import { setterCommissionSummary } from '../lib/setterCommissions'
 import { canViewHR } from '../lib/accessControl'
 import { formatLocalDate, localDateStr } from '../lib/localDate'
@@ -170,6 +171,14 @@ export default function MyPay() {
   // page never loaded, so its hours and its net could not match the cheque.
   const [timeLogEntries, setTimeLogEntries] = useState([])
   const [adjustments, setAdjustments] = useState([])
+  // The engine's view of the period, from the one loader Payroll uses
+  // (lib/payrollLoader): setter fees booked in the period, approved time off
+  // touching it, this year's wages before this check. The all-time lists the
+  // page shows (every setter fee, every request) are loaded separately.
+  const [periodLeadCommissions, setPeriodLeadCommissions] = useState([])
+  const [periodTimeOff, setPeriodTimeOff] = useState([])
+  const [engineYtd, setEngineYtd] = useState(null)
+  const [periodLoadError, setPeriodLoadError] = useState(null)
   const [utilityInvoices, setUtilityInvoices] = useState([])
   const [myPtoRequests, setMyPtoRequests] = useState([])
   // Persistent efficiency-bonus ledger (job_bonuses) — what the tech has
@@ -243,18 +252,6 @@ export default function MyPay() {
     })()
   }, [isHRAdmin, companyId])
 
-  // Read the persistent bonus ledger for this employee. Not period-scoped —
-  // shows everything owed until it's marked paid out.
-  useEffect(() => {
-    if (!companyId || !effectiveUserId) { setLedgerBonuses([]); return }
-    let cancelled = false
-    ;(async () => {
-      const rows = await fetchUserBonuses(supabase, companyId, effectiveUserId)
-      if (!cancelled) setLedgerBonuses(rows)
-    })()
-    return () => { cancelled = true }
-  }, [companyId, effectiveUserId])
-
   useEffect(() => {
     if (!companyId || !effectiveUserId) { setTaxDocs([]); return }
     let cancelled = false
@@ -267,23 +264,19 @@ export default function MyPay() {
     return () => { cancelled = true }
   }, [companyId, effectiveUserId])
 
-  // Pay history + benefits — not period-scoped, so loaded on their own (small,
-  // additive; never touches the commission/bonus math above).
+  // Pay history, the all-time setter list and the direct-deposit record —
+  // not period-scoped, so loaded on their own. The engine's inputs come from
+  // lib/payrollLoader in the period effect below.
   useEffect(() => {
-    if (!companyId || !effectiveUserId) { setPaystubs([]); setBenefits([]); return }
+    if (!companyId || !effectiveUserId) { setPaystubs([]); return }
     let cancelled = false
     ;(async () => {
-      const [ps, bf, rc, lc, co, dd] = await Promise.all([
+      const [ps, lc, dd] = await Promise.all([
         supabase.from('paystubs')
           // payroll_run_id: which cheque a commission belongs to (lib/payHistory).
           .select('id, payroll_run_id, period_start, period_end, pay_date, regular_hours, overtime_hours, pto_hours, gross_pay, net_pay, bonus_pay, commission_pay, reimbursement_pay, federal_income_tax, state_income_tax, social_security_employee, medicare_employee, additional_medicare, pre_tax_deductions, post_tax_deductions, taxable_wages')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId)
           .order('pay_date', { ascending: false }).limit(24),
-        supabase.from('employee_benefits')
-          .select('id, employee_id, benefit_type, plan_name, employee_contribution, employer_contribution, is_pre_tax, frequency, status')
-          .eq('company_id', companyId).eq('employee_id', effectiveUserId).eq('status', 'active')
-          .order('benefit_type'),
-        fetchRepCommissions(supabase, companyId, effectiveUserId),
         // Setter / lead-source commissions. My Pay read only rep_commissions,
         // so anyone paid as a setter saw $0 here no matter what Payroll owed
         // them — two commission tables, one surface reading one of them.
@@ -293,9 +286,6 @@ export default function MyPay() {
           // queued_for_payroll: the engine pays a run only what was added to it.
           .select('id, lead_id, employee_id, commission_type, amount, payment_status, queued_for_payroll, created_at, lead:leads!lead_id(id, customer_name)')
           .eq('company_id', companyId).eq('employee_id', effectiveUserId),
-        // The qualification rule lives on the company row and decides whether
-        // a booked appointment is payable yet.
-        supabase.from('companies').select('setter_qualification_rule, state, state_employer_id_state, sui_rate_pct, sui_wage_base, futa_rate_pct, pay_frequency').eq('id', companyId).maybeSingle(),
         // The latest signed direct-deposit authorization, if any — only the
         // account's last four come to the screen.
         supabase.from('signed_documents').select('values_snapshot, signed_at')
@@ -303,15 +293,8 @@ export default function MyPay() {
           .order('created_at', { ascending: false }).limit(1),
       ])
       if (!cancelled) {
-        setPaystubs(ps.data || []); setBenefits(bf.data || []); setRepCommissions(rc || [])
-        const jobIds = [...new Set((rc || []).map(r => r.job_id).filter(Boolean))]
-        if (jobIds.length) {
-          const { data: js } = await supabase.from('jobs').select('id, job_title, customer_name').in('id', jobIds)
-          if (!cancelled) setJobTitles(new Map((js || []).map(j => [j.id, j.job_title || j.customer_name || ('Job #' + j.id)])))
-        }
+        setPaystubs(ps.data || [])
         setLeadCommissions(lc?.data || [])
-        setSetterRule(co?.data?.setter_qualification_rule || 'appointment_set')
-        setTaxCompany(co?.data || null)
         const ddRow = dd?.data?.[0]
         const acct = String(ddRow?.values_snapshot?.account_number || '')
         setDdOnFile(ddRow && acct ? { mask: acct.slice(-4), type: ddRow.values_snapshot?.account_type || 'checking', signedAt: ddRow.signed_at } : false)
@@ -415,15 +398,13 @@ export default function MyPay() {
           .gte('date', periodStartStr)
           .lte('date', periodEndStr)
 
-        // Own time entries in period (for hourly pay + bonus crew share)
-        const timePromise = supabase
-          .from('time_clock')
-          .select('id, job_id, employee_id, clock_in, clock_out, total_hours')
-          .eq('company_id', companyId)
-          .eq('employee_id', effectiveUserId)
-          .gte('clock_in', periodStart.toISOString())
-          .lte('clock_in', periodEnd.toISOString())
-          .not('clock_out', 'is', null)
+        // The engine's inputs for this period, through the one loader the
+        // Payroll page uses (lib/payrollLoader): own punches, typed hours,
+        // setter fees, the rep ledger, the bonus ledger, approved time off,
+        // adjustments, the card's deductions, this year's wages, the company's
+        // rates. All of it or none of it.
+        const periodPromise = loadPayrollPeriod(supabase, { companyId, period: { start: periodStart, end: periodEnd }, employeeId: effectiveUserId })
+          .then(v => ({ ok: true, v }), e => ({ ok: false, e }))
 
         // All payments (lifetime, scoped by company) — needed to compute
         // proper paid-threshold bonus gate and lifetime-paid bucket for
@@ -472,42 +453,45 @@ export default function MyPay() {
           .order('created_at', { ascending: false })
           .limit(20)
 
-        // Job-level hours (time_log) and this period's adjustments, loaded the
-        // way Payroll loads them (same window, same legacy period-end match),
-        // so the engine sees here exactly what it sees there.
-        const timeLogPromise = supabase
-          .from('time_log')
-          .select('*')
-          .eq('company_id', companyId)
-          .eq('employee_id', effectiveUserId)
-          .gte('created_at', periodStart.toISOString())
-          .lte('created_at', periodEnd.toISOString())
-        const legacyPeriodEndStr = localDateStr(new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() + 1))
-        const adjustmentsPromise = supabase
-          .from('payroll_adjustments')
-          .select('*')
-          .eq('company_id', companyId)
-          .eq('employee_id', effectiveUserId)
-          .or(`and(pay_period_start.eq.${periodStartStr},pay_period_end.in.(${periodEndStr},${legacyPeriodEndStr})),recurring.eq.true`)
-
-        const [jr, lr, ir, pr, tr, er, ur, apr, ptr, tlr, adr] = await Promise.all([
+        const [jr, lr, ir, pr, er, ur, apr, ptr, pdr] = await Promise.all([
           jobsPromise, leadsPromise, invoicesPromise, paymentsPromise,
-          timePromise, empPromise, utilPromise,
-          allPaymentsPromise, ptoPromise, timeLogPromise, adjustmentsPromise,
+          empPromise, utilPromise,
+          allPaymentsPromise, ptoPromise, periodPromise,
         ])
         setJobs(jr.data || [])
         setLeads(lr.data || [])
         setInvoices(ir.data || [])
         setPayments(pr.data || [])
-        setTimeEntries(tr.data || [])
         setEmpRow(er?.data || null)
         setUtilityInvoices(ur?.data || [])
         setAllPayments(apr?.data || [])
         setMyPtoRequests(ptr?.data || [])
-        if (tlr?.error) console.warn('[MyPay] time_log:', tlr.error.message)
-        if (adr?.error) console.warn('[MyPay] adjustments:', adr.error.message)
-        setTimeLogEntries(tlr?.data || [])
-        setAdjustments(adr?.data || [])
+        if (!pdr.ok) {
+          // Nothing of the period rather than a figure built from part of it.
+          console.warn('[MyPay] period load:', pdr.e?.message || pdr.e)
+          setPeriodLoadError(pdr.e?.message || String(pdr.e))
+          setTimeEntries([]); setTimeLogEntries([]); setAdjustments([]); setBenefits([]); setPeriodTimeOff([]); setPeriodLeadCommissions([]); setRepCommissions([]); setLedgerBonuses([]); setEngineYtd(null)
+        } else {
+          const pd = pdr.v
+          setPeriodLoadError(null)
+          setTimeEntries(pd.timeEntries)
+          setTimeLogEntries(pd.timeLogEntries)
+          setAdjustments(pd.adjustments)
+          setBenefits(pd.benefits)
+          setPeriodTimeOff(pd.periodTimeOff)
+          setPeriodLeadCommissions(pd.leadCommissions)
+          setRepCommissions(pd.repCommissions)
+          // Newest first, as the ledger card has always listed them.
+          setLedgerBonuses([...pd.bonusRows].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || ''))))
+          setEngineYtd(pd.ytd[effectiveUserId] || null)
+          setTaxCompany(pd.company || null)
+          setSetterRule(pd.setterRule)
+          const jobIds = [...new Set((pd.repCommissions || []).map(r => r.job_id).filter(Boolean))]
+          if (jobIds.length) {
+            const { data: js } = await supabase.from('jobs').select('id, job_title, customer_name').in('id', jobIds)
+            setJobTitles(new Map((js || []).map(j => [j.id, j.job_title || j.customer_name || ('Job #' + j.id)])))
+          }
+        }
       } finally {
         setLoading(false)
       }
@@ -623,13 +607,14 @@ export default function MyPay() {
       period: { start: periodStart, end: periodEnd },
       payDate: payDateForPeriod(periodEnd, payrollConfig) || localDateStr(new Date()),
       repCommissions,
-      leadCommissionSummary: setterComm,
+      // Setter fees booked in the period, as Payroll weighs them; the tile
+      // above shows the all-time list.
+      leadCommissionSummary: setterCommissionSummary(periodLeadCommissions, effectiveUserId, setterRule),
       invoiceCommissions: commData,
       bonusRows: ledgerBonuses,
-      // The own-view fetch has no employee_id column; stamp it on before counting.
-      periodTimeOff: myPtoRequests.map(r => ({ ...r, employee_id: effectiveUserId })),
+      periodTimeOff,
       adjustments, benefits,
-      ytd: { gross: ytd.gross, ssWages: ytd.ssWages, medicareWages: ytd.ssWages },
+      ytd: engineYtd,
       taxCompany: taxCompany || {},
     })
   } catch (err) {
@@ -863,6 +848,11 @@ export default function MyPay() {
         </div>
       )}
 
+      {periodLoadError && (
+        <div style={{ ...cardStyle, border: '1px solid rgba(239,68,68,0.5)', backgroundColor: 'rgba(239,68,68,0.08)', fontSize: '13px', lineHeight: 1.45 }}>
+          <strong>This pay period could not be loaded, so the figures below are not this period's pay.</strong> Reload; if it keeps happening, send this line to the office: {periodLoadError}
+        </div>
+      )}
       {myPayNotice && (
         <div style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.45)', color: theme.text, fontSize: '14px', lineHeight: 1.45, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <AlertCircle size={18} style={{ color: '#a16207', flexShrink: 0, marginTop: 1 }} />

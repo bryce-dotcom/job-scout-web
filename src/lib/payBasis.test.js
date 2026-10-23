@@ -133,12 +133,17 @@ describe('the wiring', () => {
     expect(myPay).not.toMatch(/calcPaystubTax\(/)
     expect(myPay).not.toMatch(/greaterOfPay\(/)
     // Every input Payroll's calculateFullPay passes, My Pay passes too.
-    for (const key of ['timeEntries', 'timeLogEntries', 'payrollConfig', 'period:', 'payDate:', 'repCommissions', 'leadCommissionSummary:', 'invoiceCommissions:', 'bonusRows:', 'periodTimeOff:', 'adjustments', 'benefits', 'ytd:', 'taxCompany:']) {
+    for (const key of ['timeEntries', 'timeLogEntries', 'payrollConfig', 'period:', 'payDate:', 'repCommissions', 'leadCommissionSummary:', 'invoiceCommissions:', 'bonusRows:', 'periodTimeOff', 'adjustments', 'benefits', 'ytd:', 'taxCompany:']) {
       expect(myPay, `My Pay passes ${key} to the engine`).toMatch(new RegExp(`computeEmployeePay\\(\\{[\\s\\S]{0,1400}${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`))
     }
-    // and it loads the two inputs it used to leave out
-    expect(myPay).toMatch(/from\('time_log'\)[\s\S]{0,200}\.eq\('employee_id', effectiveUserId\)/)
-    expect(myPay).toMatch(/from\('payroll_adjustments'\)[\s\S]{0,200}\.eq\('employee_id', effectiveUserId\)/)
+    // and both pages get those inputs from the one loader (lib/payrollLoader)
+    expect(myPay).toMatch(/loadPayrollPeriod\(supabase, \{ companyId, period: \{ start: periodStart, end: periodEnd \}, employeeId: effectiveUserId \}\)/)
+    expect(payroll).toMatch(/loadPayrollPeriod\(supabase, \{ companyId, period: \{ start: periodStart, end: periodEnd \} \}\)/)
+    for (const src of [myPay, payroll]) {
+      expect(src).not.toMatch(/from\('time_log'\)\s*\.select\('\*'\)/)
+      expect(src).not.toMatch(/from\('payroll_adjustments'\)\s*\.select\('\*'\)/)
+      expect(src).not.toMatch(/from\('employee_benefits'\)\s*\.select\(/)
+    }
     // lib/setterCommissions keeps only rows carrying the viewer's id
     expect(myPay).toMatch(/from\('lead_commissions'\)[\s\S]{0,400}select\('[^']*employee_id[^']*queued_for_payroll/)
     expect(myPay).toMatch(/pay_greater_of_salary_commission/)   // and selects the column
