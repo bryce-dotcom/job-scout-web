@@ -19,6 +19,7 @@ import { useIsMobile } from '../../../hooks/useIsMobile'
 import { localDateStr } from '../../../lib/localDate'
 import ArnieOfferCard from '../../../components/ArnieOfferCard'
 import { splitReceipt, withReceipt } from '../../../lib/arnieReceipt'
+import { FLAG_PREFIX } from '../../../../supabase/functions/_shared/arnieLearning.ts'
 import ArniePresence from './ArniePresence'
 import { startsTakeoff, endsTakeoff, joinSegments, takeoffHint } from '../../../lib/takeoffMode'
 import { isStopCommand, bargeInAllowed } from '../../../lib/bargeIn'
@@ -940,6 +941,19 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
     // every session goes out as the wrong assistant.
   }, [input, attachments, reading, loading, sessionId, speakText, pauseMic, resumeMic, resetSpeech, speakAsItArrives, assistant.personaRow])
 
+  // "That's wrong" under a reply: sent as a correction in the chat. An older
+  // reply is quoted, so she knows which answer they mean.
+  const [flagFor, setFlagFor] = useState(null)
+  const [flagNote, setFlagNote] = useState('')
+  const sendFlag = (msg) => {
+    const note = flagNote.trim()
+    const latest = messagesRef.current.filter(m => m.role === 'assistant' && m.content).pop()
+    const about = latest?.id === msg.id ? '' : ` (your answer that began "${String(msg.content).replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80)}…")`
+    setFlagFor(null)
+    setFlagNote('')
+    handleSend(`${FLAG_PREFIX}${about}${note ? `: ${note}` : '.'}`)
+  }
+
   // Finish a takeoff by hand — the banner, or the toggle while it is on.
   // Sends everything collected, exactly as saying "that's it" would.
   const finishTakeoff = useCallback(() => {
@@ -1264,6 +1278,31 @@ export default function ArnieChat({ isPanel = false, onClose, sessionId: externa
                   </>
                 )}
               </div>
+              {/* THAT'S WRONG (learning loop, 2026-10-23). A correction sent as
+                  a message, so she fixes it in the same chat and — if it is a
+                  lesson for the whole company — offers to make it a rule. The
+                  weekly review counts it with the other pushback. */}
+              {msg.role === 'assistant' && msg.content && !(loading && msg.id === messages[messages.length - 1]?.id) && (
+                flagFor === msg.id ? (
+                  <form data-flag-wrong onSubmit={(e) => { e.preventDefault(); sendFlag(msg) }} style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+                    <input
+                      autoFocus value={flagNote} onChange={(e) => setFlagNote(e.target.value)}
+                      placeholder="What's wrong? (optional)" aria-label="What's wrong with this answer"
+                      style={{ flex: 1, minWidth: 0, padding: '6px 10px', fontSize: 13, color: dark.text, background: dark.inputBg, border: `1px solid ${dark.border}`, borderRadius: 8, outline: 'none' }}
+                    />
+                    <button type="submit" style={{ padding: '6px 10px', fontSize: 12.5, fontWeight: 600, color: '#fff', background: dark.orange, border: 'none', borderRadius: 8, cursor: 'pointer' }}>Send</button>
+                    <button type="button" onClick={() => { setFlagFor(null); setFlagNote('') }} style={{ padding: '6px 8px', fontSize: 12.5, color: dark.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                  </form>
+                ) : (
+                  <button
+                    data-flag-wrong type="button" onClick={() => { setFlagFor(msg.id); setFlagNote('') }}
+                    title="Tell her this answer is wrong. If it is a lesson for everyone, she will offer to make it a rule."
+                    style={{ marginTop: 4, padding: '2px 0', fontSize: 11.5, color: dark.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    That's wrong
+                  </button>
+                )
+              )}
               {msg.proposal && pv0(msg).kind === 'bulk' && (() => {
                 // Every affected row is listed, deliberately. "This changes 34
                 // products" is not something a person can meaningfully approve

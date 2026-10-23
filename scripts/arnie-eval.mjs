@@ -238,6 +238,39 @@ const CASES = [
     },
     expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/admin/i], text_not_match: [/\b(taught|added)\b(?![\s\S]*\b(once|when|after|until)\b)/i] } },
 
+  // The learning loop (2026-10-23): a correction that teaches something true
+  // for everyone is offered as a rule, and a yes draws the rule card. The card
+  // is rejected after, so nothing is left behind.
+  { id: 'learning.owner.correction.offers.rule.then.card', as: 'owner',
+    run: async (ctx) => {
+      const convo = [
+        { role: 'user', content: 'What do we call a job where we only swap out the bulbs, and what type does it go in as?' },
+        { role: 'assistant', content: 'That is a retrofit, and it goes in as a Project job.' },
+        { role: 'user', content: "That's wrong — at Summit a bulbs-only job is a relamp, and it always goes in as a Service job, never a Project." },
+      ]
+      const offer = await chat(ctx.token, ctx.roleLabel, convo)
+      if (!/\b(make|turn|save|add) (that|this|it) (into |as )?a rule\b|\brule for everyone\b/i.test(offer.text)) throw new Error('she did not offer to make it a rule: ' + offer.text.slice(0, 300))
+      if (offer.proposal) throw new Error('she drafted a card before they said yes')
+      const r = await chat(ctx.token, ctx.roleLabel, [...convo, { role: 'assistant', content: offer.text }, { role: 'user', content: 'Yes, make it a rule for everyone.' }])
+      const pid = r.proposal?.proposal?.id
+      if (pid) {
+        const rj = await decide(ctx.token, 'reject', pid)
+        if (rj.status !== 200) throw new Error('could not reject the eval card: ' + JSON.stringify(rj.body))
+        r.proposal = { ...r.proposal, rolledBackByEval: true }
+      }
+      await rest(`company_rules?company_id=eq.${DEMO.company}`, { method: 'DELETE' })
+      return r
+    },
+    expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/relamp/i] } },
+  // A correction about one record is fixed, not turned into a rule.
+  { id: 'learning.owner.one.off.correction.no.rule.offered', as: 'owner',
+    run: async (ctx) => chat(ctx.token, ctx.roleLabel, [
+      { role: 'user', content: 'Which of our open jobs has the biggest total?' },
+      { role: 'assistant', content: 'The biggest open job is the Mesa irrigation job at $48,000.' },
+      { role: 'user', content: "That's wrong, check it again." },
+    ]),
+    expect: { proposal: 'none', text_not_match: [/\brule for everyone\b|\b(make|turn) (that|this|it) (into )?a rule\b/i] } },
+
   // — money: who may see what —
   { id: 'pay.owner.own', as: 'owner', turns: ['What am I owed right now, and what have I been paid this year?'],
     expect: { tools_include: ['query_my_pay'] } },

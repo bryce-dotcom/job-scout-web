@@ -8,6 +8,7 @@ import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arn
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
+import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
@@ -99,6 +100,8 @@ function withNote(convo: any[], note: string): any[] {
   const content = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...(last.content || [])]
   return [...convo.slice(0, -1), { ...last, content: [...content, { type: 'text', text: note.trim() }] }]
 }
+/** Several notes for one request, in order, blanks dropped. */
+const notes = (...n: string[]) => n.filter(Boolean).join('\n\n')
 function cachedMessages(convo: any[]): any[] {
   const last = convo[convo.length - 1]
   if (!last) return convo
@@ -3164,6 +3167,8 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
   // twice would otherwise loop.
   const used = new Set<string>()
   let corrections = 0 // up to two a turn: a retraction can repeat the claim (Cole, 2026-10-20)
+  // They just told him he was wrong: fix it, and offer a rule if it is one.
+  const learnNote = agent === 'arnie' && isCorrection(lastUserText(messages)) ? correctionNote(cards.includes('create')) : ''
   // 5 tool rounds, or 12 once he is working on their computer: opening Gmail
   // alone is look, ctrl+l, type, enter, look — the old cap ran out mid-task.
   for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5); i++) {
@@ -3175,7 +3180,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
         system: cachedSystem(systemPrompt || '', rulesEnd.get(caller as unknown as object)),
         ...(includeTools ? { tools: cachedTools(setup.tools), ...(i === 4 && !used.has('use_my_computer') ? { tool_choice: { type: 'none' } } : {}) } : {}),
-        messages: cachedMessages(withNote(convo, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : '')),
+        messages: cachedMessages(withNote(convo, notes(learnNote, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : ''))),
       },
     )
     if (!ai.ok) {
@@ -3225,6 +3230,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
   const { companyId } = caller
   const encoder = new TextEncoder()
   const setup = agentSetup(agent, caller, cards, messages, bearer, coords)
+  // They just told him he was wrong: fix it, and offer a rule if it is one.
+  const learnNote = agent === 'arnie' && isCorrection(lastUserText(messages)) ? correctionNote(cards.includes('create')) : ''
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
@@ -3297,7 +3304,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // correction message itself is the instruction to call it.
               ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) || lastLookup(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-              messages: cachedMessages(withNote(convo, outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : '')),
+              messages: cachedMessages(withNote(convo, notes(learnNote, outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : ''))),
               stream: true,
             }),
           })
