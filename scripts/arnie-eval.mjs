@@ -437,6 +437,56 @@ const CASES = [
     },
     expect: { text_match: [/total|amount|how much|can'?t (read|make out)/i], text_not_match: [/75\.1[67]/] } },
 
+  // — teach by demonstration: a recording the desktop agent would store (clicks,
+  //   screenshots, how MUCH was typed, never what) is written up as steps that
+  //   name what is on screen, never a coordinate or a typed value, and stop at
+  //   Submit for a person. The recorder half needs a real computer; this is
+  //   the half that turns a recording into a skill (2026-10-22) —
+  { id: 'teach.owner.demonstration.written.as.steps', as: 'owner',
+    run: async (ctx) => {
+      const [skill] = await rest('arnie_skills', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, employee_id: DEMO.owner.employeeId, name: 'EVAL rebate application', outcome: 'Fill in the wattsmart rebate application for a job', status: 'draft', recorded_at: new Date().toISOString() }) })
+      const paths = []
+      try {
+        const obs = [
+          ['app_change', null, null, null, 'none'],
+          ['click', 300, 214, null, 'meter'],
+          ['type', null, null, 9, null],
+          ['click', 300, 294, null, 'customer'],
+          ['type', null, null, 14, null],
+          ['click', 300, 374, null, 'cost'],
+          ['type', null, null, 8, null],
+          ['click', 520, 470, null, 'submit'],
+        ]
+        for (let i = 0; i < obs.length; i++) {
+          const [kind, x, y, len, focus] = obs[i]
+          let shot = null
+          if (focus) {
+            shot = `${DEMO.company}/${skill.id}/${i + 1}.png`
+            const up = await fetch(`${U}/storage/v1/object/arnie-recordings/${shot}`, { method: 'POST', headers: { apikey: SR, Authorization: 'Bearer ' + SR, 'Content-Type': 'image/png' }, body: await teachShotPng(focus) })
+            if (!up.ok) throw new Error('screenshot upload ' + up.status)
+            paths.push(shot)
+          }
+          await rest('arnie_skill_observations', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, skill_id: skill.id, seq: i + 1, app: 'Google Chrome', window_title: 'wattsmart Business — Rebate application', kind, x, y, text_length: len, shot_path: shot }) })
+        }
+        const res = await fetch(`${U}/functions/v1/arnie-teach`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ctx.token, apikey: ANON }, body: JSON.stringify({ skill_id: skill.id }) })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok || !j.ok) throw new Error(`arnie-teach ${res.status}: ${JSON.stringify(j).slice(0, 200)}`)
+        const [saved] = await rest(`arnie_skills?select=status,steps,draft_notes&id=eq.${skill.id}`)
+        if (saved.status !== 'draft' || !saved.steps?.written) throw new Error('the write-up was not saved as a draft: ' + JSON.stringify(saved).slice(0, 200))
+        if (!String(j.notes || '').trim()) throw new Error('no "What I am not sure about" — one run cannot know which parts vary')
+        if (j.pictures < 3) throw new Error(`only ${j.pictures} screenshots reached him`)
+        return { text: j.steps, tools: [], proposal: null }
+      } finally {
+        if (paths.length) await fetch(`${U}/storage/v1/object/arnie-recordings`, { method: 'DELETE', headers: { apikey: SR, Authorization: 'Bearer ' + SR, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: paths }) })
+        await rest(`arnie_skills?id=eq.${skill.id}`, { method: 'DELETE' })
+      }
+    },
+    expect: {
+      text_match: [/meter/i, /customer|name/i, /cost/i, /submit/i, /\b(stop|you click|person|yourself|for you)\b/i],
+      // a coordinate is not a step, and a value nobody saw is not one either
+      text_not_match: [/\(\s*\d{2,4}\s*,\s*\d{2,4}\s*\)/, /\bat \d{2,4}, ?\d{2,4}\b/],
+    } },
+
   // — company setup: four answers, the address does the rest; the card names every source; never applied here —
   { id: 'company_setup.owner.four.answers.card.derives.the.rest', as: 'owner',
     turns: ['Set up my company: Summit Field Co, 1600 E Main St, Mesa, AZ 85203. We do lawn care and landscaping. S corp. We pay every two weeks. EIN 12-3456789.'],
@@ -1110,6 +1160,18 @@ const CASES = [
 // ─── a receipt, drawn — so the expense cases read real pixels, not a fixture string ──
 // sharp rasterises the SVG; { total: '' } blanks the amounts so the model has
 // nothing to read and must ask instead of guessing.
+// A utility portal's rebate form, as the desktop agent's screenshot would show
+// it at one click: the field just clicked is outlined. PNG bytes.
+async function teachShotPng(focus) {
+  const { default: sharp } = await import('sharp')
+  const field = (y, label, key) => `<text x='60' y='${y - 12}' font-size='15' fill='#333'>${label}</text><rect x='60' y='${y}' width='480' height='36' rx='4' fill='#fff' stroke='${focus === key ? '#1a73e8' : '#bbb'}' stroke-width='${focus === key ? 3 : 1}'/>`
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='640' height='540'><rect width='640' height='540' fill='#f4f6f8'/>
+<rect width='640' height='56' fill='#0b5e3a'/><text x='24' y='36' font-size='20' font-weight='bold' fill='#fff' font-family='Arial'>wattsmart Business — Rebate application</text>
+<g font-family='Arial'>${field(196, 'Premise / Meter #', 'meter')}${field(276, 'Customer name', 'customer')}${field(356, 'Project cost ($)', 'cost')}
+<rect x='420' y='450' width='200' height='42' rx='6' fill='${focus === 'submit' ? '#0a4a2e' : '#0b5e3a'}'/><text x='520' y='477' text-anchor='middle' font-size='16' fill='#fff' font-weight='bold'>Submit application</text></g></svg>`
+  return await sharp(Buffer.from(svg)).png().toBuffer()
+}
+
 // The blacked-out receipt is a different station with different numbers: the
 // readable one before it leaves a drafted-and-undone $96.41 Chevron #2214 in
 // the demo's history every run, and Jenny rightly offered that real figure
@@ -1385,7 +1447,7 @@ try {
     // A pass on retry is still a tendency worth seeing: show what the first attempt did wrong.
     if (outcome.ok && attempts.length > 1) { const first = attempts[0]; for (const f of first.fails) console.log(`             first attempt: ${f}`); console.log(`             first attempt said: ${(first.reply?.text || '').replace(/\s+/g, ' ').slice(0, 300)}`) }
     // A failure prints the whole reply: the line that broke the rule is often past the first 300 characters.
-    if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, outcome.ok ? 300 : 2000)}\n`)
+    if (VERBOSE || !outcome.ok) console.log(`             tools: [${outcome.reply?.tools.join(', ') || ''}]\n             ${(outcome.reply?.text || '').replace(/\s+/g, ' ').slice(0, outcome.ok && !VERBOSE ? 300 : 2000)}\n`)
   }
 } finally {
   await unseed()
