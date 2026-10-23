@@ -140,12 +140,19 @@ export function countableZones(items) {
  * reasons a row does not become billable work are completely different things
  * and a bid has to say which is which:
  *
- *   rows          every line in the register, duplicates and all
- *   marks         distinct restorable marks — the real count
- *   duplicates    the same mark photographed again
- *   to_resurface  marks the tech works
- *   to_clean      L0s that go to the cleaning crew instead
- *   excluded      marks nobody may touch, with the reasons
+ *   rows            every line in the register, duplicates and all
+ *   distinct_marks  how many real marks were logged, however often
+ *                   photographed — the number a person counts on the wall
+ *   marks           of those, the ones that will be WORKED
+ *   duplicates      the same mark photographed again
+ *   to_resurface    marks the tech works
+ *   to_clean        L0s that go to the cleaning crew instead
+ *   excluded        distinct marks nobody may touch, with the reasons
+ *
+ * distinct_marks and marks differ by the exclusions, and both are wanted:
+ * "23 marks logged, 18 of them restorable" is the sentence a bid needs.
+ * `marks` kept its original meaning rather than being redefined underneath
+ * the screens already reading it.
  *
  * Raised by the Walter session after it put the single number on screen and
  * saw how it read.
@@ -163,6 +170,7 @@ export function registerCounts(zones) {
   }
   return {
     rows: list.length,
+    distinct_marks: list.length - duplicates,
     marks: marks.length,
     duplicates,
     to_resurface: split.restoration.length,
@@ -172,10 +180,24 @@ export function registerCounts(zones) {
   }
 }
 
-/** Marks that will NOT be restored, with why — a bid has to say so out loud. */
+/**
+ * Marks that will NOT be restored, with why — a bid has to say so out loud.
+ *
+ * Distinct marks only. A duplicate is not an exclusion, and it inherits its
+ * parent's reason, so returning duplicates here printed thirteen codes under
+ * a count of five — A20, A20-b and A20-c for one excluded mark photographed
+ * three times. The Walter session hit that on screen and filtered it there;
+ * this moves the rule to the one place, before it reaches a customer.
+ *
+ * And an L0 is NOT an exclusion. "Probably residue, try cleaning first" is
+ * work somebody does, by a crew with a cloth instead of a tech with a pad —
+ * registerCounts reports it as to_clean. Listing it here told a customer we
+ * would not touch a mark we were about to wipe off, and made this disagree
+ * with the count beside it.
+ */
 export function excludedZones(items) {
   return (Array.isArray(items) ? items : []).filter(
-    (z) => z?.duplicate_of || z?.not_restorable_reason || SEVERITY_PROFILES[z?.severity]?.restorable === false,
+    (z) => !z?.duplicate_of && z?.not_restorable_reason,
   )
 }
 

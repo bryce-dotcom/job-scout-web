@@ -570,3 +570,48 @@ describe('replacement is the alternative to RESTORING glass, not to cleaning it'
     expect(r.value.below_typical_band).toBe(false)
   })
 })
+
+// Both raised by the Walter session after building the screens.
+describe('the register names what a person actually counts', () => {
+  const reg = [
+    { id: 'A01', severity: 'L1' },
+    { id: 'A02', severity: 'L2' },
+    { id: 'A03', severity: 'L0' },
+    { id: 'A20', severity: 'L2', not_restorable_reason: 'coated_surface' },
+    { id: 'A20-b', severity: 'L2', not_restorable_reason: 'coated_surface', duplicate_of: 'A20' },
+    { id: 'A20-c', severity: 'L2', not_restorable_reason: 'coated_surface', duplicate_of: 'A20' },
+    { id: 'd1', severity: 'L1', duplicate_of: 'A01' },
+  ]
+
+  it('distinct_marks is what is on the wall; marks is what gets worked', () => {
+    const c = registerCounts(reg)
+    expect(c.rows).toBe(7)
+    expect(c.distinct_marks).toBe(4)  // A01, A02, A03, A20
+    expect(c.marks).toBe(3)           // A20 cannot be touched
+    expect(c.duplicates).toBe(3)
+  })
+
+  it('every screen can stop deriving it by hand', () => {
+    const c = registerCounts(reg)
+    expect(c.distinct_marks).toBe(c.rows - c.duplicates)
+  })
+
+  it('an excluded mark photographed three times is ONE exclusion', () => {
+    // This printed A20, A20-b and A20-c under a count of five on a real
+    // screen. A duplicate is not an exclusion; it inherits a reason.
+    const ex = excludedZones(reg)
+    expect(ex.length).toBe(1)
+    expect(ex[0].id).toBe('A20')
+  })
+
+  it('the excluded list and the excluded count agree', () => {
+    const c = registerCounts(reg)
+    expect(excludedZones(reg).length).toBe(c.excluded)
+  })
+
+  it('a bid reports both numbers', () => {
+    const r = walterEstimate({ restoration: { zones: reg }, pricing: { tech_hourly_rate: 32.5, assessment_fee: 0 } })
+    expect(r.restoration.register.distinct_marks).toBe(4)
+    expect(r.restoration.excluded).toBe(1)
+  })
+})
