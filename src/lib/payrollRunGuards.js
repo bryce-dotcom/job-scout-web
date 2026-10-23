@@ -35,10 +35,12 @@ const money = (n) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency
  *   ytdGrossByEmployee       { [employeeId]: gross paid so far this year, before this run }
  *   priorStubsByEmployee     { [employeeId]: [{ regular_hours, overtime_hours }] } for the "usual hours" check
  *   suiWageBase              the state's SUI wage base (optional)
+ *   repCommissions           the rep ledger (any period), for rows staged but outside this one
  */
 export function payrollRunGuards({
   employees = [], employeePayData = {}, periodPunches = [], openPunches = [], priorRuns = [],
   periodStart, periodEnd, ytdGrossByEmployee = {}, priorStubsByEmployee = {}, suiWageBase = null,
+  repCommissions = [],
 } = {}) {
   const blocks = [], warnings = []
   const name = (id) => employees.find((e) => e.id === id)?.name || `Employee ${id}`
@@ -88,6 +90,34 @@ export function payrollRunGuards({
       if (ytd < SS_WAGE_BASE && ytd + gross > SS_WAGE_BASE) warnings.push({ key: `sscap:${e.id}`, employeeId: e.id, label: `${e.name} crosses the Social Security wage base on this check`, detail: `${money(SS_WAGE_BASE)} for the year. Social Security tax stops at the cap; the stub should show a smaller amount than usual.`, fix: 'info' })
       if (ytd < FUTA_WAGE_BASE && ytd + gross > FUTA_WAGE_BASE) warnings.push({ key: `futacap:${e.id}`, employeeId: e.id, label: `${e.name} crosses the FUTA wage base on this check`, detail: 'FUTA applies to the first $7,000 only; the employer line is smaller from here.', fix: 'info' })
       if (suiWageBase && ytd < suiWageBase && ytd + gross > suiWageBase) warnings.push({ key: `suicap:${e.id}`, employeeId: e.id, label: `${e.name} crosses the state unemployment wage base on this check`, detail: `${money(suiWageBase)} for the year.`, fix: 'info' })
+    }
+    // 7. Gross must be its parts. The engine builds it that way; if it ever
+    //    is not, the run stops here rather than on the 941.
+    const PARTS = ['hourlyPay', 'salaryPay', 'ptoPay', 'commissionPay', 'bonusOwed']
+    const parts = PARTS.reduce((s, k) => s + (Number(d[k]) || 0), 0)
+    if (gross > 0 && PARTS.some((k) => d[k] != null) && Math.abs(parts - gross) > 0.011) {
+      blocks.push({ key: `gross_parts:${e.id}`, employeeId: e.id, label: `${e.name}: gross ${money(gross)} is not the sum of its parts (${money(parts)})`, detail: 'Hours, salary, PTO, commission and bonus do not add up to the gross on this check. This is a software fault; do not run until it is explained.', fix: 'info' })
+    }
+    // 8. The rate on the card is not the rate the last cheque paid. Oct 2026:
+    //    four HHH cards sat below the rate Gusto was paying, so the first
+    //    JobScout run would have cut every one of them short.
+    if (e.is_hourly && Number(e.hourly_rate) > 0) {
+      const last = (priorStubsByEmployee[e.id] || []).filter((s) => Number(s.hourly_rate) > 0 && s.pay_date).sort((a, b) => String(b.pay_date).localeCompare(String(a.pay_date)))[0]
+      if (last && Math.abs(Number(last.hourly_rate) - Number(e.hourly_rate)) > Number(e.hourly_rate) * 0.005) {
+        warnings.push({ key: `rate:${e.id}`, employeeId: e.id, label: `${e.name}: card says ${money(e.hourly_rate)} an hour, the last cheque paid ${money(last.hourly_rate)}`, detail: `Paid ${String(last.pay_date).slice(0, 10)}. A raise is fine; a card nobody updated is not. Confirm the rate on their card before paying this.`, fix: 'employee' })
+      }
+    }
+  }
+  // 9. Staged for payroll, but earned outside this period: the run marks it
+  //    paid and pays nothing for it. Alayda, Oct 2026: a commission added to
+  //    payroll in September sat queued through two runs.
+  const paidIds = new Set(employees.map((e) => e.id))
+  for (const r of repCommissions || []) {
+    if (!r?.queued_for_payroll || r.payment_status === 'paid' || !paidIds.has(r.employee_id)) continue
+    const day = String(r.earned_at || '').slice(0, 10)
+    if (!day || !periodStart || !periodEnd) continue
+    if (day < periodStart || day > periodEnd) {
+      blocks.push({ key: `staged_outside:${r.id}`, employeeId: r.employee_id, label: `${name(r.employee_id)}: a commission of ${money(r.amount)} earned ${day} is added to this payroll but outside its period`, detail: 'This run would mark it paid without putting it on the stub. Remove it from this payroll, or run the period it belongs to.', fix: 'commission', commissionId: r.id })
     }
   }
   return { blocks, warnings }

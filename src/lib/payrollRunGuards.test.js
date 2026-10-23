@@ -51,6 +51,32 @@ describe('run guards', () => {
     expect(r.warnings.map(w => w.key)).toEqual(['unpaid:72'])
   })
 
+  it('blocks a gross that is not the sum of its parts', () => {
+    const { blocks } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: { 37: { grossPay: 2000, hourlyPay: 1800, salaryPay: 0, ptoPay: 0, commissionPay: 0, bonusOwed: 0, regularHours: 80, overtimeHours: 0, netPay: 1500 } } })
+    expect(blocks.map(b => b.key)).toEqual(['gross_parts:37'])
+    const ok = payrollRunGuards({ ...period, employees: [cameron], employeePayData: { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } } })
+    expect(ok.blocks).toEqual([])
+  })
+  it('warns when the card rate is not the rate the last cheque paid', () => {
+    const data = { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } }
+    const { warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
+      priorStubsByEmployee: { 37: [{ regular_hours: 80, hourly_rate: 30.1, pay_date: '2026-10-20' }, { regular_hours: 78, hourly_rate: 22.5, pay_date: '2026-09-20' }] } })
+    expect(warnings.map(w => w.key)).toEqual(['rate:37'])
+    expect(warnings[0].label).toMatch(/card says \$22\.50 an hour, the last cheque paid \$30\.10/)
+    const same = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data, priorStubsByEmployee: { 37: [{ regular_hours: 80, hourly_rate: 22.5, pay_date: '2026-10-20' }] } })
+    expect(same.warnings).toEqual([])
+  })
+  it('blocks a commission staged for payroll but earned outside the period', () => {
+    const data = { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } }
+    const { blocks } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
+      repCommissions: [
+        { id: 1, employee_id: 37, amount: 500, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-05-02T12:00:00Z' },
+        { id: 2, employee_id: 37, amount: 700, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-06-20T12:00:00Z' },
+        { id: 3, employee_id: 37, amount: 900, payment_status: 'paid', queued_for_payroll: false, earned_at: '2026-01-20T12:00:00Z' },
+      ] })
+    expect(blocks.map(b => b.key)).toEqual(['staged_outside:1'])
+    expect(blocks[0].label).toMatch(/\$500\.00 earned 2026-05-02/)
+  })
   it('warns when a check crosses a wage cap', () => {
     const { warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: { 37: { grossPay: 3000, regularHours: 80, overtimeHours: 0, netPay: 2400 } },
       ytdGrossByEmployee: { 37: 6000 }, suiWageBase: 50700 })

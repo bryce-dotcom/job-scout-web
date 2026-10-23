@@ -36,6 +36,7 @@ import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
 import { employeeHours, computeEmployeePay } from '../lib/payrollEngine'
 import { loadPayrollPeriod, periodTimeOffRows } from '../lib/payrollLoader'
 import { buildRunPayload } from '../lib/payrollRun'
+import { postflightReport } from '../lib/payrollPostflight'
 import PlaidLink from '../components/PlaidLink'
 import { ptoDaysInPeriod, ptoAccrualPerPeriod, ptoPayForPeriod, ptoBankAfterRun } from '../lib/ptoThisPeriod'
 import TypedHoursReview from '../components/TypedHoursReview'
@@ -522,7 +523,7 @@ export default function Payroll() {
     let cancelled = false
     Promise.all([
       supabase.from('payroll_runs').select('id, period_start, period_end, pay_date, created_at').eq('company_id', companyId),
-      supabase.from('paystubs').select('employee_id, period_start, regular_hours, overtime_hours, pay_date').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
+      supabase.from('paystubs').select('employee_id, period_start, regular_hours, overtime_hours, hourly_rate, pay_date').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
       supabase.from('paystubs').select('id, payroll_run_id, employee_id, period_start, period_end, pay_date, gross_pay, net_pay, salary_amount, commission_pay, bonus_pay').eq('company_id', companyId).order('pay_date', { ascending: false }).limit(600),
     ]).then(([r, s, full]) => {
       if (cancelled) return
@@ -1790,6 +1791,7 @@ export default function Payroll() {
       return m
     }, {}),
     suiWageBase: Number(company?.sui_wage_base) || suiWageBaseFor(company?.state_employer_id_state || company?.state, new Date().getFullYear()) || null,
+    repCommissions,
   })
   const hardBlocks = runGuards.blocks.filter(b => !(b.overridable && guardAck.duplicate))
   const canProcess = setupProblems.length === 0 && hardBlocks.length === 0 && (runGuards.warnings.length === 0 || guardAck.warnings)
@@ -2276,6 +2278,25 @@ export default function Payroll() {
         setLeadCommissions(prev => prev.map(c => (paidEmpIds.includes(c.employee_id) && c.queued_for_payroll) ? { ...c, payment_status: 'paid', queued_for_payroll: false } : c))
         setRepCommissions(prev => prev.map(r => (paidEmpIds.includes(r.employee_id) && r.queued_for_payroll) ? { ...r, payment_status: 'paid', paid_at: paidAtIso, queued_for_payroll: false } : r))
       }
+      // ── Postflight (lib/payrollPostflight): what was written, held against
+      //    what was computed and the ledgers it was looking at. Exceptions
+      //    first, in the message below and in a notice to every HR user. A
+      //    payroll is not done until this says zero.
+      const report = postflightReport({ payload, result, employees: activeEmployees, ledgerBonuses, repCommissions, leadCommissions, priorRuns })
+      const reportNote = '\n\nReconciliation: ' + (report.exceptions.length ? `${report.exceptions.length} exception(s)\n  • ${report.exceptions.join('\n  • ')}` : 'no exceptions')
+      try {
+        const hr = employees.filter(e => e.active !== false && (e.has_hr_access || e.is_admin))
+        if (hr.length) {
+          const { error } = await supabase.from('employee_notifications').insert(hr.map(e => ({
+            company_id: companyId, employee_id: e.id, type: 'crew_broadcast', route: '/payroll',
+            title: `Payroll ${payload.run.pay_date}: ${report.exceptions.length ? `${report.exceptions.length} exception(s) to clear` : 'reconciled, no exceptions'}`,
+            message: report.text,
+            dedupe_key: `payroll_report:${payrollRun.id}:${e.id}`,
+            metadata: { payroll_run_id: payrollRun.id, exceptions: report.exceptions.length, from: 'Payroll' },
+          })))
+          if (error) console.warn('[runPayroll] report notice:', error.message)
+        }
+      } catch (e) { console.warn('[runPayroll] report notice:', e?.message || e) }
 
       setShowRunPayrollModal(false)
       // Render the stubs and send them. The run is already written above;
@@ -2303,10 +2324,10 @@ export default function Payroll() {
               notMarkedPaid.map(s => '  • ' + s).join('\n') +
               '\n\nThe paystubs already include them. Use "Mark paid" on each one on this page so they are not paid twice next run.'
             : '.') +
-          (ptoNote ? '\n\n' + ptoNote : '') + (stubNote ? '\n\n' + stubNote : '') + ddNext
+          (ptoNote ? '\n\n' + ptoNote : '') + (stubNote ? '\n\n' + stubNote : '') + ddNext + reportNote
         )
       } else {
-        alert('Payroll processed successfully!')
+        alert('Payroll processed successfully!' + reportNote)
       }
     } catch (err) {
       alert('Error: ' + err.message)
