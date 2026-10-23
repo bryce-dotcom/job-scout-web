@@ -28,8 +28,12 @@ buildPayroll({ period, employees, timeEntries, timeLogs, jobs, invoices, payment
 ```
 No Supabase, no React, no dates from the wall clock. The page calls it once with loaded data and renders the result. My Pay calls the same function for one employee, so the two can never disagree again. One loader, `loadPayrollPeriod(companyId, period)`, fetches everything the engine needs and nothing else; it refuses to return partial data (today three different loaders race).
 
+**Status 2026-10-23:** engine done (`computeEmployeePay`, `employeeHours`); Payroll and My Pay both call it and match to the cent on the demo tenant (db3bbadd). The shared loader is the remaining piece.
+
 ### 3. Golden replays — the last five HHH payrolls, frozen (week 1–2)
 For each of the five (Aug 5 ×4 catch-up, Aug 20 ×2, Sep 20, Oct 5 Gusto, Oct 20): snapshot the inputs from the database into `test/fixtures/payroll/<pay_date>/` (anonymized), record the answer we KNOW is right (the cheques that were written, the Gusto journal, Alayda's corrections), and assert `buildPayroll(fixture)` reproduces it to the cent. These run on every commit. **A payroll change that moves a golden number does not ship until someone says the new number is the right one.**
+
+**Status 2026-10-23:** `scripts/capture-payroll-fixture.mjs --company 3 --run <id>` snapshots a paid run (people by id only, rows rewound to that morning) into `test/fixtures/payroll/`; `src/lib/payrollGolden.test.js` replays every fixture. Each fixture's `accepted.json` lists the differences that are understood, as exact lines with a reason; an unlisted difference fails, and so does a listed one that disappears. Captured: Sep 20 (run 13, green with 45 accepted lines: Utah's schedule correction, FUTA on an incomplete year-to-date, the bonus ledger's later re-sync, and a contractor-stub bug this found and fixed) and Oct 20 (run 41, Gusto's, informational: JobScout's clock and the hours typed into Gusto differ for five of eight people). Still to capture: Aug 5 ×4, Aug 20 ×2, Oct 5.
 
 ### 4. Run = one transaction (week 2)
 `handleRunPayroll` does eleven writes in sequence from the browser (run, stubs, PTO, bonus marks, commission marks, liabilities, typed-hours watermark, stub PDFs, email). A failure halfway leaves bonuses unmarked and gets them paid twice. Replace with one RPC, `process_payroll_run(payload)`, that writes all of it or none of it, and returns the run id. The browser renders what the RPC returns.
