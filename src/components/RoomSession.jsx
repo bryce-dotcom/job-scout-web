@@ -24,6 +24,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { roomMeta, MAIN_ROOM } from '../lib/conferenceRooms'
+import { pickCameraInBrowser } from '../lib/cameraPicker'
 import CampfireMark from './CampfireMark'
 
 const RoomSessionContext = createContext(null)
@@ -41,6 +42,8 @@ export function RoomSessionProvider({ theme, children }) {
   const [status, setStatus] = useState('idle')   // idle | joining | live | unconfigured | error
   const [counts, setCounts] = useState({})       // slug -> how many are in it
   const [occupants, setOccupants] = useState({}) // slug -> their names, for the circle
+  const [cameraId, setCameraId] = useState(null)   // the camera that actually opened
+  const [cameraErrors, setCameraErrors] = useState(null)
   const [message, setMessage] = useState(null)
   const [expanded, setExpanded] = useState(false)
 
@@ -49,6 +52,9 @@ export function RoomSessionProvider({ theme, children }) {
     [employees, user?.email],
   )
   const displayName = me?.name || user?.email || 'Someone'
+  // Per person: a tech on a phone and the same tech on a laptop have
+  // different cameras, so the remembered one is keyed to them, not shared.
+  const camKey = `campfire.camera.${me?.id || user?.email || 'anon'}`
 
   const leave = useCallback(() => {
     setSlug(null); setTicket(null); setStatus('idle'); setMessage(null); setExpanded(false)
@@ -63,8 +69,25 @@ export function RoomSessionProvider({ theme, children }) {
     if (error) { setStatus('error'); setMessage(error.message || 'Could not get in.'); return }
     if (data?.configured === false) { setStatus('unconfigured'); return }
     if (!data?.token || !data?.url) { setStatus('error'); setMessage('No ticket came back.'); return }
+
+    // Find a camera that actually starts before handing over to LiveKit.
+    //
+    // LiveKit asks Windows for its "default" camera, and on a machine with a
+    // virtual-camera app installed that default can be a device sitting in
+    // front of the hardware which times out when the app behind it is not
+    // running. One jammed virtual camera then means no video at all, while a
+    // perfectly good webcam sits next to it unasked. Trying them in order
+    // costs one getUserMedia on the way in and makes the call survive a
+    // setup we do not control.
+    let remembered = null
+    try { remembered = localStorage.getItem(camKey) } catch { /* private window */ }
+    const cam = await pickCameraInBrowser(remembered)
+    setCameraId(cam.deviceId)
+    setCameraErrors(cam.deviceId ? null : (cam.errors || []))
+    if (cam.deviceId) { try { localStorage.setItem(camKey, cam.deviceId) } catch { /* ignore */ } }
+
     setTicket(data); setStatus('live')
-  }, [displayName])
+  }, [displayName, camKey])
 
   // ONE presence channel for the whole app, owned here.
   //
@@ -124,6 +147,8 @@ export function RoomSessionProvider({ theme, children }) {
           setExpanded={setExpanded}
           onLeave={leave}
           isDeveloper={isDeveloper}
+          cameraId={cameraId}
+          cameraErrors={cameraErrors}
           blurKey={`campfire.blur.${me?.id || user?.email || "anon"}`}
         />
       )}
@@ -174,6 +199,18 @@ function deviceMessage({ failure, kind }, detail) {
   return `The ${thing} could not start (${detail.name || 'unknown'}). ${detail.count} found. You can still see and hear everyone else.`
 }
 
+// We tried every camera on the machine and none of them started. Say which,
+// and say the useful thing — not "device error".
+function triedEveryCameraMessage(errors = []) {
+  const first = errors[0]?.name
+  if (first === 'InsecureContext') return 'This page is not on a secure (https) address, so the browser will not give it a camera. Everyone can still hear you.'
+  if (first === 'NotFound' || errors.length === 0) return 'No camera on this device. Everyone can still hear you.'
+  if (errors.every(e => e.name === 'NotAllowedError')) return 'Your browser is blocking the camera. Click the padlock in the address bar, allow it, then rejoin.'
+  const n = errors.length
+  const where = n === 1 ? 'your camera' : `all ${n} cameras`
+  return `Windows would not start ${where}, so you have joined with audio only. On a laptop this is usually a camera privacy switch — an F-key with a camera on it, a shutter on the bezel, or Camera Privacy Mode in the maker's app.`
+}
+
 // Ask the browser directly, because LiveKit's "Other" tells us nothing.
 // Apps that insert themselves between the hardware and the browser. When one
 // of these is installed it usually OWNS the real camera, and when it is in a
@@ -214,7 +251,7 @@ async function probeDevice(kind) {
   }
 }
 
-function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey }) {
+function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey, cameraId, cameraErrors }) {
   const isMobile = useIsMobile()
   const [deviceIssue, setDeviceIssue] = useState(null)
   const [deviceDetail, setDeviceDetail] = useState(null)
@@ -309,7 +346,10 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             token={ticket.token}
             serverUrl={ticket.url}
             connect
-            video
+            // Audio always. Video only when a camera actually opened — joining
+            // without one is a normal call, not a failure, and a tech in a van
+            // should still hear everyone.
+            video={cameraId ? true : false}
             audio
             // Audio loses to video on a thin connection, and that is what
             // "I can't hear you very well" usually is. LiveKit captures at
@@ -334,6 +374,10 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               // 30fps costs more bandwidth and is the whole point of
               // sharing a screen somebody has to read while it moves.
               publishDefaults: { screenShareEncoding: ScreenSharePresets.h1080fps30.encoding },
+              // The camera we already proved opens, rather than whatever
+              // Windows calls "default" — which on a machine with a virtual
+              // camera installed may be a device that times out.
+              ...(cameraId ? { videoCaptureDefaults: { deviceId: cameraId } } : {}),
             }}
             onDisconnected={onLeave}
             // Without this a blocked camera is completely silent: you connect,
@@ -346,12 +390,18 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             // pushed off the bottom edge. Let the box do the arithmetic.
             style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}
           >
-            {deviceIssue && (
+            {/* Two ways video can be missing, and they need different words.
+                cameraErrors means we tried every camera on the machine before
+                connecting and none started — LiveKit never got as far as
+                failing, so without this the dock would say nothing at all. */}
+            {(cameraErrors?.length || deviceIssue) && (
               <div style={{
                 padding: '7px 10px', fontSize: 11.5, lineHeight: 1.4, flexShrink: 0,
                 background: '#fef3c7', color: '#92400e', borderBottom: '1px solid #fde68a',
               }}>
-                {deviceMessage(deviceIssue, deviceDetail)}
+                {cameraErrors?.length
+                  ? triedEveryCameraMessage(cameraErrors)
+                  : deviceMessage(deviceIssue, deviceDetail)}
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
