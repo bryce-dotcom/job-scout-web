@@ -9,6 +9,7 @@
 import { verificationRequiredFor } from './verificationPolicy.js'
 import { invoiceCustomerTotal } from './arHelpers.js'
 import { jobEarnsCommission } from './commissionEligibility.js'
+import { jobHoursFromPunches } from '../../supabase/functions/_shared/jobCostRules.ts'
 
 // Default bi-weekly anchor: a known Friday payday in 2024. Companies on
 // bi-weekly should set their own pay_anchor_date in payroll_config; this
@@ -533,23 +534,11 @@ function getSkillWeight(empId, employees, skillLevels) {
 // ({ employee_id, job_id, hours }), skipping rows that are missing data
 // (no job_id, still actively clocked in, etc.). Lunch breaks are already
 // subtracted in time_clock.total_hours at clock-out time.
+// The rule itself now lives in _shared/jobCostRules.jobHoursFromPunches, so
+// the edge functions can read the same hours off the same punches. This is the
+// name Payroll, FieldScout, the bonus calc and lib/reports know it by.
 export function timeClockToJobHours(timeClockRows = []) {
-  return (timeClockRows || []).flatMap(row => {
-    if (!row?.job_id || !row?.employee_id) return []
-    let hours = parseFloat(row.total_hours)
-    if (!(hours > 0) && row.clock_in && row.clock_out) {
-      hours = (new Date(row.clock_out) - new Date(row.clock_in)) / 36e5
-      if (row.lunch_start && row.lunch_end) {
-        hours -= (new Date(row.lunch_end) - new Date(row.lunch_start)) / 36e5
-      }
-    }
-    if (!(hours > 0)) return []
-    return [{
-      employee_id: row.employee_id,
-      job_id: row.job_id,
-      hours: Math.round(hours * 100) / 100,
-    }]
-  })
+  return jobHoursFromPunches(timeClockRows)
 }
 
 // ── Efficiency bonus for a single employee ─────────────────────────────

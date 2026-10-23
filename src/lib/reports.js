@@ -27,6 +27,7 @@ import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: p
 import { timeClockToJobHours } from './bonusCalc'
 import { costRatesByEmployee } from './laborRate.js'   // explicit extension: plain Node runners import this file
 import { costingJobId, displayCategory } from '../../supabase/functions/_shared/transferRule.ts'   // which job a bank row's money counts against, and the category a person actually set
+import { isMaterialSpend, materialCostOf, bonusCostByJob } from '../../supabase/functions/_shared/jobCostRules.ts'
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
@@ -63,25 +64,11 @@ function daysOverdue(inv, now) {
 // their tests keep reading it from here.
 export { calendarDay }
 
-/**
- * Is this tagged spend the same parts the job's lines already price?
- *
- * Only true parts categories. Consumables, tools, rental, fuel and meals are
- * extra money the job cost on top of its bill of materials, and they add.
- * HHH's job-tagged spend reads: Materials (69), Job Materials (5), Small
- * Tools & Consumables (4), Supplies (5), Equipment Rental (1), Meals (1),
- * Subscriptions (1).
- *
- * Uncategorised spend is NOT treated as parts: calling it parts could cancel
- * a real catalog cost, and the safe direction here is to add a smaller number
- * rather than erase a larger one.
- */
-export function isMaterialSpend(category) {
-  const c = String(category ?? '').trim().toLowerCase()
-  if (!c) return false
-  if (c.includes('consumable') || c.includes('tool')) return false
-  return c.includes('material') || c.includes('part')
-}
+// Which tagged spend is the same parts the job's lines already price.
+// _shared/jobCostRules is the one copy, because frankieTools has to split
+// parts the same way; re-exported so the reports and their tests keep
+// reading it from here.
+export { isMaterialSpend }
 
 function inRange(dateStr, from, to) {
   if (!dateStr) return false
@@ -386,11 +373,8 @@ export function jobCosting({
     actualHoursByJob.set(h.job_id, (actualHoursByJob.get(h.job_id) || 0) + h.hours)
   }
   // Crew efficiency bonuses owed or paid on the job are a cost of that job.
-  const bonusByJob = new Map()
-  for (const b of jobBonuses || []) {
-    if (!b?.job_id || !['accrued', 'paid'].includes(b.status)) continue
-    bonusByJob.set(b.job_id, (bonusByJob.get(b.job_id) || 0) + (Number(b.amount) || 0))
-  }
+  // _shared/jobCostRules holds the rule; frankieTools charges the same ones.
+  const bonusByJob = bonusCostByJob(jobBonuses)
   const fromD = from instanceof Date ? from : new Date(from)
   const toD = to instanceof Date ? to : new Date(to)
 
@@ -553,20 +537,14 @@ export function jobCosting({
     }
     const taggedExpense = expensesByJob.get(j.id) || 0
     // Parts: the catalog says what they should have cost, the receipts say
-    // what we actually paid. Take the LARGER, never the sum.
-    //
-    // Not simply "prefer the receipt": receipts arrive one supplier run at a
-    // time, so a job half-way through its purchasing has receipts far below
-    // its real bill of materials — job 8746 has $434 captured against $16,257
-    // of catalog parts, and believing the receipt would wipe $15,823 of real
-    // cost and invent the profit to match. Once the receipts exceed the
-    // estimate we know the estimate was low and the receipts win.
+    // what we actually paid. _shared/jobCostRules.materialCostOf is the rule —
+    // the larger of the two, never the sum — and frankieTools uses the same
+    // one, having summed them until 2026-10-22.
     const materialReceipts = materialSpendByJob.get(j.id) || 0
     const materialEstimate = materialCost
-    materialCost = Math.max(materialEstimate, materialReceipts)
-    const materialSource = materialReceipts > materialEstimate
-      ? 'actual'
-      : (materialEstimate > 0 ? 'estimate' : (materialReceipts > 0 ? 'actual' : null))
+    const parts = materialCostOf({ estimate: materialEstimate, receipts: materialReceipts })
+    materialCost = parts.cost
+    const materialSource = parts.source
     const actualLabor = actualLaborByJob.get(j.id) || 0
     const actualHours = actualHoursByJob.get(j.id) || 0
     const laborSource = actualHours > 0 ? 'actual' : (laborCost > 0 ? 'estimate' : null)

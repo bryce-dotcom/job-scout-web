@@ -14,7 +14,8 @@
 
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
-import { costingJobId } from './transferRule.ts'
+import { costingJobId, displayCategory } from './transferRule.ts'
+import { isMaterialSpend, materialCostOf, bonusCostByJob, jobHoursFromPunches } from './jobCostRules.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -832,7 +833,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
   }
   const jobIds = jobs.map((j: any) => j.id)
   const idList = (ids: number[]) => `in.(${ids.join(',')})`
-  const lines: any[] = [], pays: any[] = [], plaid: any[] = [], manual: any[] = []
+  const lines: any[] = [], pays: any[] = [], plaid: any[] = [], manual: any[] = [], punches: any[] = [], jobBonuses: any[] = []
   const seenPayment = new Set<number>()
   for (let i = 0; i < jobIds.length; i += 200) {
     const chunk = jobIds.slice(i, i + 200)
@@ -840,19 +841,21 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     // the invoice knows the job. Same rule as lib/reports.js jobCosting.
     const invs = await readAll(r, `invoices?${co}&select=id,job_id&job_id=${idList(chunk)}`)
     const invoiceJob = new Map<number, number>(invs.map((x: any) => [x.id, x.job_id]))
-    const [l, pDirect, pViaInvoice, t, m] = await Promise.all([
+    const [l, pDirect, pViaInvoice, t, m, tc, jb] = await Promise.all([
       readAll(r, `job_lines?${co}&select=job_id,item_id,quantity,labor_cost&job_id=${idList(chunk)}`),
       readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&job_id=${idList(chunk)}`),
       invs.length ? readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&invoice_id=${idList([...invoiceJob.keys()])}`) : Promise.resolve([]),
-      readAll(r, `plaid_transactions?${co}&select=job_id,amount,is_transfer&job_id=${idList(chunk)}`),
-      readAll(r, `expenses?${co}&select=job_id,amount&job_id=${idList(chunk)}`),
+      readAll(r, `plaid_transactions?${co}&select=id,job_id,amount,is_transfer,user_category,ai_category&job_id=${idList(chunk)}`),
+      readAll(r, `expenses?${co}&select=id,job_id,amount,category,plaid_transaction_id&job_id=${idList(chunk)}`),
+      readAll(r, `time_clock?${co}&select=employee_id,job_id,clock_in,clock_out,lunch_start,lunch_end,total_hours&job_id=${idList(chunk)}`),
+      readAll(r, `job_bonuses?${co}&select=job_id,amount,status&job_id=${idList(chunk)}`),
     ])
     for (const p of [...pDirect, ...pViaInvoice]) {
       if (seenPayment.has(p.id)) continue
       seenPayment.add(p.id)
       pays.push({ ...p, job_id: p.job_id || invoiceJob.get(p.invoice_id) || null })
     }
-    lines.push(...l); plaid.push(...t); manual.push(...m)
+    lines.push(...l); plaid.push(...t); manual.push(...m); punches.push(...tc); jobBonuses.push(...jb)
   }
   const [products, components] = await Promise.all([
     readAll(r, `products_services?${co}&select=id,cost,material_or_labor`, 10000),
@@ -883,23 +886,50 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     }
     return res
   }
-  const revenueBy = new Map<number, number>(), expBy = new Map<number, number>(), linesBy = new Map<number, any[]>()
+  // Tagged spend splits in two, the same way lib/reports jobCosting splits it:
+  // a receipt categorised as PARTS describes the same parts the job's lines
+  // already price, so it is compared with the catalog rather than added to it;
+  // anything else is extra money the job really cost and adds. Summing both is
+  // what this port did until 2026-10-22 — $5,999.99 of HHH parts twice over.
+  const revenueBy = new Map<number, number>(), expBy = new Map<number, number>(), partsBy = new Map<number, number>(), linesBy = new Map<number, any[]>()
   for (const p of pays) if (p.job_id) revenueBy.set(p.job_id, (revenueBy.get(p.job_id) || 0) + num(p.amount))
-  for (const t of plaid) { const v = num(t.amount); if (v <= 0 || t.is_transfer) continue; const jid = costingJobId(t) as number | null; if (jid) expBy.set(jid, (expBy.get(jid) || 0) + v) }
-  for (const e of manual) if (e.job_id) expBy.set(e.job_id, (expBy.get(e.job_id) || 0) + num(e.amount))
+  const add = (map: Map<number, number>, jid: number, v: number) => map.set(jid, (map.get(jid) || 0) + v)
+  const countedTxnIds = new Set<number>()
+  for (const t of plaid) {
+    const v = num(t.amount); if (v <= 0 || t.is_transfer) continue
+    const jid = costingJobId(t) as number | null; if (!jid) continue
+    add(isMaterialSpend(displayCategory(t)) ? partsBy : expBy, jid, v)
+    if (t.id != null) countedTxnIds.add(t.id)
+  }
+  // A receipt matched to its bank row is the SAME money as that row, so when
+  // the row already counted toward the job the receipt does not count again.
+  for (const e of manual) {
+    if (!e.job_id) continue
+    if (e.plaid_transaction_id && countedTxnIds.has(e.plaid_transaction_id)) continue
+    add(isMaterialSpend(e.category) ? partsBy : expBy, e.job_id, num(e.amount))
+  }
+  const bonusBy = bonusCostByJob(jobBonuses)
+  const hoursBy = new Map<number, number>()
+  for (const h of jobHoursFromPunches(punches)) add(hoursBy, h.job_id, h.hours)
   for (const l of lines) { const arr = linesBy.get(l.job_id) || []; arr.push(l); linesBy.set(l.job_id, arr) }
 
   const rows = jobs.map((j: any) => {
     let material = 0, labor = 0
     for (const l of linesBy.get(j.id) || []) { const q = num(l.quantity) || 1; const s = classify(l.item_id); material += s.material * q; labor += s.labor * q; labor += num(l.labor_cost) }
     const tagged = expBy.get(j.id) || 0
-    const hasCost = material > 0 || labor > 0 || tagged > 0
+    const parts = materialCostOf({ estimate: material, receipts: partsBy.get(j.id) || 0 })
+    material = parts.cost
+    const bonuses = bonusBy.get(j.id) || 0
+    const clockedHours = hoursBy.get(j.id) || 0
+    const hasCost = material > 0 || labor > 0 || tagged > 0 || bonuses > 0
     const revenue = (revenueBy.get(j.id) || 0) + num(j.prepaid_revenue)
-    const cost = material + labor + tagged
+    const cost = material + labor + tagged + bonuses
     return {
       job: j.job_id || `#${j.id}`, title: j.job_title || '', customer: custNames[j.customer_id] || null, status: j.status, team: j.assigned_team || null,
       contract: num(j.job_total), revenue: money(revenue),
-      material: hasCost ? money(material) : null, labor: hasCost ? money(labor) : null, tagged_expenses: hasCost ? money(tagged) : null,
+      material: hasCost ? money(material) : null, material_basis: parts.source,
+      labor: hasCost ? money(labor) : null, labor_basis: 'estimate', labor_hours_clocked: clockedHours || null,
+      bonuses: hasCost ? money(bonuses) : null, tagged_expenses: hasCost ? money(tagged) : null,
       total_cost: hasCost ? money(cost) : null, profit: hasCost ? money(revenue - cost) : null,
       margin_pct: hasCost && revenue > 0 ? Math.round((revenue - cost) / revenue * 1000) / 10 : null,
       completed: j.completed_at ? String(j.completed_at).slice(0, 10) : null,
@@ -918,7 +948,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
     totals: { revenue: money(rows.reduce((s, x) => s + x.revenue, 0)), cost: money(withCost.reduce((s, x) => s + (x.total_cost || 0), 0)), profit: money(withCost.reduce((s, x) => s + (x.profit || 0), 0)) },
     by_team: Object.fromEntries(Object.entries(teams).map(([k, v]) => [k, { jobs: v.jobs, revenue: money(v.revenue), cost: money(v.cost), profit: money(v.revenue - v.cost), margin_pct: v.revenue > 0 ? Math.round((v.revenue - v.cost) / v.revenue * 1000) / 10 : null }])),
     jobs: rows.slice(0, limit),
-    scope: `${rows.length} job(s), ${withCost.length} with cost captured. The same math as the Job Costing report: revenue is payments tagged to the job or to one of its invoices, cost is job lines (bundle components walked) plus expenses tagged to the job. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data.`,
+    scope: `${rows.length} job(s), ${withCost.length} with cost captured. Revenue is payments tagged to the job or to one of its invoices. Cost is job lines (bundle components walked), parts receipts compared with the catalog rather than added to it, other tagged spend, and crew bonuses owed or paid. null cost = nothing captured, not zero. Totals for profit cover only jobs with cost data. IMPORTANT: labor here is the LINE ESTIMATE — labor_basis is always 'estimate'. The Job Costing report prices clocked hours at each employee's loaded cost rate and uses that instead wherever a job has punches, so on any job with labor_hours_clocked set this total_cost is LOW and the report is the figure of record. Say so rather than quoting this as the job's cost.`,
   }
 }
 
