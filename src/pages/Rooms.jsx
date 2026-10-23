@@ -2,7 +2,7 @@
 //
 // Bryce, 2026-10-22: techs are on phones in the field, the office is on
 // laptops, and there was nowhere in JobScout to just see each other. The
-// Campfire is the main room and always exists; huddles get opened on the
+// Campfire is the main room and always exists; FireSides get opened on the
 // spot and take the next free name off the topo list, so nobody has to invent
 // one mid-conversation.
 //
@@ -11,12 +11,12 @@
 // and carry on working, and the dock follows you around the app.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Users, X, DoorOpen, Loader } from 'lucide-react'
+import { Plus, X, Loader, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/ThemeContext'
 import { toast } from '../lib/toast'
-import { MAIN_ROOM, nextRoomName, occupancyLabel } from '../lib/conferenceRooms'
+import { MAIN_ROOM, nextRoomName, occupancyLabel, fireSideName, fireSideSlug } from '../lib/conferenceRooms'
 import { useRoomSession } from '../components/RoomSession'
 import CampfireMark from '../components/CampfireMark'
 
@@ -32,6 +32,8 @@ export default function Rooms() {
 
   const [loading, setLoading] = useState(true)
   const [opening, setOpening] = useState(false)
+  const [naming, setNaming] = useState(false)
+  const [draft, setDraft] = useState("")
 
   const me = useMemo(
     () => (employees || []).find(e => e.email && user?.email && e.email.toLowerCase() === user.email.toLowerCase()) || null,
@@ -47,7 +49,7 @@ export default function Rooms() {
     ;(async () => {
       const { data } = await supabase
         .from('conference_rooms')
-        .select('id, slug, name, blurb, opened_by_name, created_at')
+        .select('id, slug, name, blurb, opened_by_name, member_ids, created_at')
         .eq('company_id', companyId)
         .is('closed_at', null)
         .order('created_at')
@@ -61,10 +63,30 @@ export default function Rooms() {
   // same key, which is how a card could read "Empty" and "You're in here" at
   // once, about the same person.
   const headcount = session?.counts || {}
+  const occupants = session?.occupants || {}
+  const seatedAtFire = occupants[MAIN_ROOM.slug] || []
 
-  const openRoom = async () => {
-    const taken = [...rooms.map(r => r.slug)]
-    const pick = nextRoomName(taken)
+  // The creator names it, in the ring, with no modal. A room called The Ridge
+  // is charming and useless for a standing meeting — the sales team wants to
+  // see the word Sales. The topo list stays as the fallback for anyone who
+  // cannot think of one.
+  //
+  // Deliberately NOT prompt(): a native dialog is ugly in an installed PWA,
+  // unusable on a phone, and blocks the whole page while it is up.
+  const openRoom = async (typed) => {
+    const named = fireSideName(typed)
+    const taken = rooms.map(r => r.slug)
+    const pick = named
+      ? { slug: fireSideSlug(typed), name: named, blurb: '' }
+      : nextRoomName(taken)
+
+    if (taken.includes(pick.slug)) {
+      const existing = rooms.find(r => r.slug === pick.slug)
+      toast.error(`${existing?.name || pick.name} already exists — joining it instead.`)
+      session?.join(pick.slug)
+      return
+    }
+
     setOpening(true)
     try {
       const { data, error } = await supabase
@@ -73,9 +95,9 @@ export default function Rooms() {
           company_id: companyId, slug: pick.slug, name: pick.name, blurb: pick.blurb,
           opened_by: me?.id || null, opened_by_name: myName,
         })
-        .select('id, slug, name, blurb, opened_by_name, created_at')
+        .select('id, slug, name, blurb, opened_by_name, member_ids, created_at')
         .single()
-      if (error) { toast.error('Could not open a room: ' + error.message); return }
+      if (error) { toast.error('Could not start it: ' + error.message); return }
       setRooms(prev => [...prev, data])
       session?.join(data.slug)
     } finally {
@@ -90,7 +112,10 @@ export default function Rooms() {
     setRooms(prev => prev.filter(r => r.id !== room.id))
   }
 
-  const all = [{ ...MAIN_ROOM, isMain: true }, ...rooms]
+  // The outer ring: every FireSide, then the way to start one. Creating gets
+  // a slot in the same circle as joining, because a feature nobody can find
+  // the entrance to may as well not exist.
+  const outerRing = [...rooms, { isCreate: true }]
 
   return (
     <div style={{ padding: '20px', maxWidth: 1000, margin: '0 auto' }}>
@@ -100,12 +125,14 @@ export default function Rooms() {
             <CampfireMark size={24} id="cf-lobby" /> CampFire
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 14, color: theme.textSecondary, maxWidth: 560, lineHeight: 1.5 }}>
-            Everyone gathers at The Campfire. Start a huddle when a few of you need to go deep on
+            Everyone gathers at The Campfire. Start a FireSide when a few of you need to go deep on
             something without holding up the rest.
           </p>
         </div>
+        {/* Same door as the + in the ring — it opens the name box there,
+            rather than being a second way to make a room that skips naming. */}
         <button
-          onClick={openRoom}
+          onClick={() => setNaming(true)}
           disabled={opening}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
@@ -113,79 +140,197 @@ export default function Rooms() {
             fontSize: 14, fontWeight: 700, cursor: opening ? 'wait' : 'pointer', whiteSpace: 'nowrap',
           }}
         >
-          <Plus size={16} /> {opening ? 'Starting…' : 'Start a huddle'}
+          <Plus size={16} /> {opening ? 'Starting…' : 'Start a FireSide'}
         </button>
       </div>
 
       {loading ? (
         <Centered theme={theme}><Loader size={18} /> Looking around…</Centered>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))', gap: 14 }}>
-          {all.map(room => {
-            const here = headcount[room.slug] || 0
-            const live = here > 0
-            const youAreHere = joined === room.slug
-            return (
-              <div
-                key={room.slug}
-                style={{
-                  position: 'relative', background: theme.bgCard, borderRadius: 14,
-                  border: `1px solid ${live ? theme.accent : theme.border}`,
-                  padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
-                  boxShadow: live ? `0 0 0 3px ${theme.accent}22` : 'none',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, fontSize: 16, fontWeight: 700, color: theme.text }}>
-                    {room.isMain && <CampfireMark size={18} live={live} id="cf-card" />}
-                    {room.name}
-                  </span>
-                  {room.isMain && (
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: theme.accent, background: `${theme.accent}1f`, padding: '3px 7px', borderRadius: 999 }}>Main</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 12.5, color: theme.textMuted, lineHeight: 1.45, minHeight: 34 }}>{room.blurb}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: live ? theme.accent : theme.textMuted, fontWeight: live ? 700 : 500 }}>
-                  <Users size={13} /> {occupancyLabel(here)}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                  <button
-                    onClick={() => { if (!youAreHere) session?.join(room.slug) }}
-                    disabled={youAreHere}
+        <>
+          {/* The fire, drawn as a fire.
+              Bryce, 2026-10-22: "put the little fire in the middle of the page
+              and name the participants around the fire, then the FireSides
+              surrounding the main fire."
+              A grid of cards made you read labels to work out where people
+              were. A circle shows it: you see who is at the fire before you
+              have read a word, and the FireSides orbit it because that is
+              what they are — smaller fires away from the main one. */}
+          <div style={{
+            position: 'relative', width: '100%', maxWidth: 560, aspectRatio: '1 / 1',
+            margin: '8px auto 0',
+          }}>
+            {/* THE CAMPFIRE — the centre of everything */}
+            <button
+              onClick={() => { if (joined !== MAIN_ROOM.slug) session?.join(MAIN_ROOM.slug) }}
+              title={joined === MAIN_ROOM.slug ? 'You are at The Campfire' : 'Join The Campfire'}
+              style={{
+                position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer', padding: 8, zIndex: 2,
+              }}
+            >
+              <CampfireMark size={72} live={(headcount[MAIN_ROOM.slug] || 0) > 0} id="cf-centre" />
+              <span style={{ fontSize: 15, fontWeight: 800, color: theme.text, whiteSpace: 'nowrap' }}>
+                The Campfire
+              </span>
+              <span style={{ fontSize: 11, color: theme.textMuted }}>
+                {occupancyLabel(headcount[MAIN_ROOM.slug] || 0)}
+              </span>
+            </button>
+
+            {/* The people sitting round it */}
+            {seatedAtFire.map((person, i) => {
+              const pos = onCircle(i, seatedAtFire.length, 27)
+              return (
+                <span
+                  key={person + i}
+                  title={person}
+                  style={{
+                    position: 'absolute', left: pos.left, top: pos.top,
+                    transform: 'translate(-50%, -50%)',
+                    padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap',
+                    background: theme.bgCard, border: '1px solid ' + theme.accent,
+                    color: theme.text, fontSize: 11.5, fontWeight: 600,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  }}
+                >
+                  {person.split(/\s+/)[0]}
+                </span>
+              )
+            })}
+
+            {/* The FireSides, orbiting — and the way to start one, given a
+                slot in the same ring so creating is as obvious as joining. */}
+            {outerRing.map((node, i) => {
+              const pos = onCircle(i, outerRing.length, 44)
+              if (node.isCreate) {
+                return (
+                  <div
+                    key="create"
                     style={{
-                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      padding: '9px 12px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-                      cursor: youAreHere ? 'default' : 'pointer',
-                      background: youAreHere ? 'transparent' : (live ? theme.accent : theme.accentBg),
-                      color: youAreHere ? theme.textMuted : (live ? '#fff' : theme.accent),
-                      border: `1px solid ${youAreHere ? theme.border : theme.accent}`,
+                      position: 'absolute', left: pos.left, top: pos.top,
+                      transform: 'translate(-50%, -50%)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                     }}
                   >
-                    {/* The fire drops you straight in, so by the time this
-                        page is on screen you are usually already in the main
-                        room. Asking you to "Open it up" again would be the
-                        page arguing with the dock. */}
-                    {youAreHere
-                      ? <>You&rsquo;re in here</>
-                      : <><DoorOpen size={14} /> {live ? 'Join them' : 'Open it up'}</>}
+                    {naming ? (
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); const v = draft; setNaming(false); setDraft(''); openRoom(v) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <input
+                          autoFocus
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onBlur={() => { if (!draft.trim()) setNaming(false) }}
+                          onKeyDown={(e) => { if (e.key === 'Escape') { setNaming(false); setDraft('') } }}
+                          placeholder="Sales"
+                          maxLength={32}
+                          style={{
+                            width: 96, padding: '5px 8px', borderRadius: 8, fontSize: 12,
+                            border: '1px solid ' + theme.accent, background: theme.bgCard, color: theme.text,
+                          }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={opening}
+                          title="Start it"
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 26, height: 26, borderRadius: 999, flexShrink: 0,
+                            border: 'none', background: theme.accent, color: '#fff',
+                            cursor: opening ? 'wait' : 'pointer',
+                          }}
+                        >
+                          <Check size={14} />
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        onClick={() => setNaming(true)}
+                        title="Start a FireSide"
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                          background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+                        }}
+                      >
+                        <span style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: 38, height: 38, borderRadius: 999,
+                          border: '1px dashed ' + theme.border, color: theme.textMuted,
+                          background: theme.bgCard,
+                        }}>
+                          <Plus size={17} />
+                        </span>
+                      </button>
+                    )}
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                      {opening ? 'Starting…' : naming ? 'Name it' : 'New FireSide'}
+                    </span>
+                  </div>
+                )
+              }
+              const here = headcount[node.slug] || 0
+              const youAreHere = joined === node.slug
+              const sitting = (occupants[node.slug] || []).map(n => n.split(/\s+/)[0])
+              return (
+                <div
+                  key={node.slug}
+                  style={{
+                    position: 'absolute', left: pos.left, top: pos.top,
+                    transform: 'translate(-50%, -50%)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                  }}
+                >
+                  <button
+                    onClick={() => { if (!youAreHere) session?.join(node.slug) }}
+                    title={sitting.length ? node.name + ' — ' + sitting.join(', ') : node.name + ' — empty'}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                      background: 'none', border: 'none', padding: 2,
+                      cursor: youAreHere ? 'default' : 'pointer',
+                    }}
+                  >
+                    <CampfireMark size={34} live={here > 0} id={'cf-' + node.slug} />
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                      color: youAreHere ? theme.accent : theme.text,
+                    }}>
+                      {node.name}
+                    </span>
+                    <span style={{ fontSize: 10, color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                      {youAreHere ? 'you are here' : (sitting.length ? sitting.join(', ') : 'empty')}
+                    </span>
                   </button>
-                  {!room.isMain && (
-                    <button
-                      onClick={() => closeRoom(room)}
-                      title="Close this room"
-                      style={{ padding: '9px 10px', borderRadius: 9, border: `1px solid ${theme.border}`, background: 'transparent', color: theme.textMuted, cursor: 'pointer' }}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => closeRoom(node)}
+                    title={'Close ' + node.name}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: theme.textMuted, opacity: 0.5, padding: 0, lineHeight: 1,
+                    }}
+                  >
+                    <X size={11} />
+                  </button>
                 </div>
-                {room.opened_by_name && (
-                  <div style={{ fontSize: 11, color: theme.textMuted }}>Opened by {room.opened_by_name}</div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+
+          {/* Who a FireSide is for, listed under the circle — there is no room
+              for it on a 34px fire, and it is the thing Cole's sales team need
+              to recognise as theirs. */}
+          {rooms.some(r => r.member_ids?.length > 0) && (
+            <div style={{ maxWidth: 560, margin: '4px auto 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {rooms.filter(r => r.member_ids?.length > 0).map(r => (
+                <div key={r.id} style={{ fontSize: 11.5, color: theme.textMuted, textAlign: 'center' }}>
+                  <strong style={{ color: theme.text }}>{r.name}</strong> — {namesFor(r.member_ids, employees)}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -197,4 +342,26 @@ function Centered({ theme, children }) {
       {children}
     </div>
   )
+}
+
+// "Cole, Doug, Damien and 2 more" — first names only, because a card has one
+// line for this and a FireSide of eight people would otherwise wrap into a
+// paragraph nobody reads.
+function namesFor(ids, employees) {
+  const byId = new Map((employees || []).map(e => [e.id, e]))
+  const names = (ids || []).map(id => byId.get(id)?.name).filter(Boolean).map(n => n.split(/\s+/)[0])
+  if (names.length === 0) return `${(ids || []).length} people`
+  if (names.length <= 3) return names.join(', ')
+  return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`
+}
+
+// A spot on a circle, starting at the top and going round clockwise.
+// Percentages rather than pixels so the ring scales with its container and
+// works at 375px without measuring anything.
+function onCircle(i, total, radiusPct) {
+  const angle = (-90 + (360 / Math.max(total, 1)) * i) * (Math.PI / 180)
+  return {
+    left: `${50 + radiusPct * Math.cos(angle)}%`,
+    top: `${50 + radiusPct * Math.sin(angle)}%`,
+  }
 }

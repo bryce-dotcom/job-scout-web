@@ -14,7 +14,35 @@
 // the wrong place. The Campfire is where everyone gathers anyway.
 export const MAIN_ROOM = { slug: 'the-campfire', name: 'The Campfire', blurb: 'Everyone gathers here' }
 
-/** Huddles, in the order their names get handed out. */
+/**
+ * A FireSide's name is the creator's, not ours.
+ *
+ * Bryce, 2026-10-22: "the creator can choose the name, like FireSide-Sales".
+ * A room called The Ridge is charming and useless for a standing meeting —
+ * the sales team wants to see the word Sales. So the typed word becomes the
+ * name and the FireSide- prefix is applied for them, which keeps every room
+ * in the list reading as one family without anybody having to type it.
+ */
+export const FIRESIDE_PREFIX = 'FireSide'
+
+/** 'sales' -> 'FireSide-Sales'. Already-prefixed input is not doubled. */
+export function fireSideName(input: any): string {
+  const raw = String(input || '').trim().replace(/^fireside[-\s]*/i, '')
+  if (!raw) return ''
+  const cleaned = raw.replace(/[^A-Za-z0-9 &'-]/g, '').trim().slice(0, 32)
+  if (!cleaned) return ''
+  const titled = cleaned.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  return `${FIRESIDE_PREFIX}-${titled}`
+}
+
+/** 'FireSide-Sales' -> 'fireside-sales'. Stable, so the room id is stable. */
+export function fireSideSlug(input: any): string {
+  const name = fireSideName(input)
+  if (!name) return ''
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+/** Fallback names, for when somebody cannot think of one. */
 export const ROOM_NAMES = [
   { slug: 'the-ridge', name: 'The Ridge', blurb: 'Up where you can see the whole job' },
   { slug: 'switchback', name: 'Switchback', blurb: 'For the problem you have to come at twice' },
@@ -57,7 +85,16 @@ export function nextRoomName(takenSlugs: any[] = []) {
 /** A room's display details, whether it is the main room or a side room. */
 export function roomMeta(slug: string) {
   if (slug === MAIN_ROOM.slug) return MAIN_ROOM
-  return ROOM_NAMES.find(r => r.slug === slug) || { slug, name: titleize(slug), blurb: '' }
+  const known = ROOM_NAMES.find(r => r.slug === slug)
+  if (known) return known
+  // A named FireSide, rebuilt from its slug. Without this the generic
+  // titleize turns 'fireside-sales' into "Fireside Sales", so the sidebar
+  // and the lobby disagreed about the name of the same room — and the one
+  // the creator actually typed was the one that got lost.
+  if (/^fireside-/i.test(slug)) {
+    return { slug, name: fireSideName(slug.replace(/^fireside-/i, '').replace(/-/g, ' ')), blurb: '' }
+  }
+  return { slug, name: titleize(slug), blurb: '' }
 }
 
 function titleize(slug: string) {

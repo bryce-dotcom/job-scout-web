@@ -39,6 +39,7 @@ export function RoomSessionProvider({ theme, children }) {
   const [ticket, setTicket] = useState(null)
   const [status, setStatus] = useState('idle')   // idle | joining | live | unconfigured | error
   const [counts, setCounts] = useState({})       // slug -> how many are in it
+  const [occupants, setOccupants] = useState({}) // slug -> their names, for the circle
   const [message, setMessage] = useState(null)
   const [expanded, setExpanded] = useState(false)
 
@@ -81,13 +82,19 @@ export function RoomSessionProvider({ theme, children }) {
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState()
         const next = {}
+        const who = {}
         for (const entries of Object.values(state)) {
           for (const entry of entries) {
             if (!entry?.room) continue
             next[entry.room] = (next[entry.room] || 0) + 1
+            // Names, not just a tally: the lobby draws people sitting round
+            // the fire, and "3 people" cannot be sat anywhere.
+            if (!who[entry.room]) who[entry.room] = []
+            who[entry.room].push(entry.name || 'Someone')
           }
         }
         setCounts(next)
+        setOccupants(who)
       })
       // An open tab is not a person: room is null until you are actually in
       // one, and the count above skips anyone whose room is null.
@@ -98,8 +105,8 @@ export function RoomSessionProvider({ theme, children }) {
   }, [companyId, slug, displayName, me?.id, user?.email])
 
   const value = useMemo(
-    () => ({ slug, status, join, leave, expanded, setExpanded, counts }),
-    [slug, status, join, leave, expanded, counts],
+    () => ({ slug, status, join, leave, expanded, setExpanded, counts, occupants }),
+    [slug, status, join, leave, expanded, counts, occupants],
   )
 
   return (
@@ -153,8 +160,12 @@ function deviceMessage({ failure, kind }, detail) {
   // the site again does nothing. Bryce lost an afternoon to this one, being
   // told to click the padlock on a permission that was already granted.
   if (detail.name === 'AbortError' || detail.name === 'TimeoutError') {
-    const hog = (detail.labels || []).find(l => VIRTUAL_DEVICE.test(l))
-    if (hog) return `Windows will not release the ${thing}. ${hog.replace(/\s*\([^)]*\)\s*$/, '')} takes it over — quit it from the system tray, not just its window, then restart your browser.`
+    // Name the APP, not the device. "Camera (NVIDIA Broadcast)" stripped of
+    // its parenthetical reads "Camera takes it over", which is nonsense —
+    // the whole point is inside the brackets. The regex match IS the app
+    // name, in the label's own casing.
+    const hog = (detail.labels || []).map(l => VIRTUAL_DEVICE.exec(l)).find(Boolean)
+    if (hog) return `Windows will not release the ${thing}. ${hog[0]} takes it over — quit it from the system tray, not just its window, then restart your browser.`
     return `Windows never handed over the ${thing}. That is below the browser, so allowing it again will not help: close anything else that uses a ${thing}, restart your browser, and reboot if it keeps happening.`
   }
   if (detail.name === 'NotAllowedError') return `Your browser is blocking the ${thing}. Click the padlock in the address bar, allow it, then rejoin.`

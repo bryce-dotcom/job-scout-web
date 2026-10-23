@@ -15,6 +15,9 @@
 export {
   MAIN_ROOM,
   ROOM_NAMES,
+  FIRESIDE_PREFIX,
+  fireSideName,
+  fireSideSlug,
   nextRoomName,
   roomMeta,
   roomId,
