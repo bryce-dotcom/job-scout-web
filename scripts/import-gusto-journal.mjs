@@ -139,6 +139,10 @@ for (const p of toImport) {
     if (fit < 0) { problems.push(`${p.key} ${r.name}: employee taxes below FICA+state by ${(-fit).toFixed(2)} — state reduced to fit`); sit = r2(Math.max(0, r.ee - ss - med)); fit = 0 }
     const net = r2(r.net)
     const deductions = r2(r.gross - r.ee - net)   // anything Gusto took that is not tax
+    // Below zero means Gusto ADDED something that is not pay: a reimbursement
+    // (Alayda, 20 Oct 2026: $55 on top of her net). Carry it as one, so the
+    // stub still adds up and the W-2 wage stays the gross.
+    const reimbursement = r2(Math.max(0, -deductions))
     y.gross += r.gross
     stubs.push({
       company_id: COMPANY_ID, employee_id: e.id,
@@ -148,14 +152,14 @@ for (const p of toImport) {
       hourly_rate: Number(e.hourly_rate) || 0,
       salary_amount: e.is_salary ? r.gross : 0,
       gross_pay: r.gross, taxable_wages: r.gross,
-      bonus_pay: 0, commission_pay: 0, reimbursement_pay: 0,
+      bonus_pay: 0, commission_pay: 0, reimbursement_pay: reimbursement,
       federal_income_tax: fit, state_income_tax: sit,
       social_security_employee: ss, medicare_employee: med, additional_medicare: 0,
       social_security_employer: ss, medicare_employer: med, futa, sui,
       famli_employee: 0, famli_employer: 0,
       pre_tax_deductions: 0, post_tax_deductions: Math.max(0, deductions),
       net_pay: net,
-      amendment_reason: 'Imported from Gusto payroll journal 2026-10-09',
+      amendment_reason: `Imported from Gusto payroll journal ${new Date().toISOString().slice(0, 10)}`,
     })
   }
   const tot = (k) => r2(stubs.reduce((s, x) => s + x[k], 0))
