@@ -13,6 +13,7 @@ import { localDateStr } from '../lib/localDate'
 import { toast } from '../lib/toast'
 import { captureReceipt, loadExpenseCategories, fillBlanks, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
+import { receiptsWaitingForAmount } from '../lib/receiptsWaiting'
 
 const defaultTheme = {
   bg: '#f7f5ef',
@@ -139,7 +140,14 @@ export default function Expenses() {
     fetchExpenses()
   }, [companyId, navigate, fetchExpenses])
 
+  // Receipts still at $0 after Dougie and the server's re-read have had their
+  // turn: a photo on file and no amount, so the job's cost is short.
+  const waiting = receiptsWaitingForAmount(expenses)
+  const waitingIds = new Set(waiting.map(e => e.id))
+  const [onlyWaiting, setOnlyWaiting] = useState(false)
+
   const filteredExpenses = expenses.filter(expense => {
+    if (onlyWaiting && !waitingIds.has(expense.id)) return false
     const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter
     if (!matchesCategory) return false
     if (!searchTerm) return true
@@ -419,6 +427,26 @@ export default function Expenses() {
           </button>
         </div>
       </div>
+
+      {waiting.length > 0 && (
+        <div data-receipts-waiting style={{
+          display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+          padding: '12px 16px', marginBottom: '16px', borderRadius: '10px',
+          backgroundColor: 'rgba(194,120,3,0.08)', border: '1px solid rgba(194,120,3,0.35)',
+        }}>
+          <Receipt size={18} style={{ color: '#a86400', flexShrink: 0 }} />
+          <p style={{ flex: '1 1 240px', minWidth: 0, fontSize: '14px', color: theme.text, margin: 0 }}>
+            <strong>{waiting.length} receipt{waiting.length === 1 ? '' : 's'} still at $0.</strong>{' '}
+            Dougie couldn't read {waiting.length === 1 ? 'it' : 'them'}, so the job cost is short. Open each one and type the total from the photo.
+          </p>
+          <button
+            onClick={() => setOnlyWaiting(v => !v)}
+            style={{ padding: '8px 14px', backgroundColor: onlyWaiting ? theme.accent : 'transparent', color: onlyWaiting ? '#ffffff' : theme.accent, border: `1px solid ${theme.accent}`, borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {onlyWaiting ? 'Show all expenses' : `Show ${waiting.length === 1 ? 'it' : 'them'}`}
+          </button>
+        </div>
+      )}
 
       {/* Summary Card */}
       <div style={{

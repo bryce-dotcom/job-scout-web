@@ -16,8 +16,6 @@
 import { supabase } from './supabase'
 import { readAttachment } from './chatAttachments'
 
-const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
-
 /**
  * The company's expense categories — the shared catalogue (no company_id)
  * plus its own — as [{ name, type, default_tax_category }]. Same query Books
@@ -38,32 +36,9 @@ export async function loadExpenseCategories(companyId) {
   return rows
 }
 
-/** Pure: what Dougie read → the fields an expenses row takes. */
-export function expenseFieldsFromReceipt(extracted, categories = []) {
-  if (!extracted) return {}
-  const cat = extracted.category
-    ? (categories.find(c => c.name === extracted.category) || categories.find(c => c.name.toLowerCase() === String(extracted.category).toLowerCase()))
-    : null
-  const amount = num(extracted.amount)
-  const out = {}
-  if (extracted.business_name) out.merchant = String(extracted.business_name).trim()
-  if (amount != null && amount > 0) out.amount = Math.round(amount * 100) / 100
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(extracted.date || ''))) out.date = extracted.date
-  if (extracted.description) out.description = String(extracted.description).trim()
-  if (extracted.receipt_number) out.receipt = String(extracted.receipt_number).trim()
-  if (cat) {
-    out.category = cat.name
-    if (cat.default_tax_category) out.tax_category = cat.default_tax_category
-  }
-  if (Array.isArray(extracted.line_items) && extracted.line_items.length) {
-    out.line_items = extracted.line_items
-      .filter(li => li && (li.description || li.amount != null))
-      .slice(0, 25)
-      .map(li => ({ description: String(li.description || '').trim(), quantity: num(li.quantity), amount: num(li.amount) }))
-  }
-  if (extracted.job_hint) out.job_hint = String(extracted.job_hint).trim()
-  return out
-}
+// The mapping is shared with the server's re-read of lost receipts (receipt-reread).
+export { expenseFieldsFromReceipt } from '../../supabase/functions/_shared/receiptFields.ts'
+import { expenseFieldsFromReceipt } from '../../supabase/functions/_shared/receiptFields.ts'
 
 /** Pure: "Lowes · $389.42 · 2026-09-12 · Job Materials", for a toast. */
 export function receiptSummary(fields) {
@@ -129,7 +104,13 @@ export async function captureReceipt(file, { companyId, pathPrefix, categories }
   let fields = {}
   let read = false
   try {
-    const extracted = await readReceipt(file, { companyId, categories: cats })
+    let extracted = await readReceipt(file, { companyId, categories: cats })
+    // Once more. A tech snaps the receipt and pockets the phone; the read
+    // finishes on the server but the answer is lost while the app sleeps, and
+    // the row went in as "could not read" when it woke (2026-10-08, -19). The
+    // second ask, made awake, comes back. What still fails, receipt-reread
+    // reads from the stored photo later.
+    if (!extracted) extracted = await readReceipt(file, { companyId, categories: cats })
     if (extracted) { fields = expenseFieldsFromReceipt(extracted, cats); read = true }
   } catch (e) {
     console.warn('[Dougie] receipt read failed:', e?.message)
