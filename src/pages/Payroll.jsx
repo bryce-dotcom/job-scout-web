@@ -3501,6 +3501,17 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
           isMobile={isMobile}
           fmt={fmt}
         />
+        {/* The trail button is on the punches above, in THIS view; the modal
+            used to be rendered only by the main view below it, so the click
+            set state that nothing drew. Bryce, 23 Oct: "it wont open". */}
+        {locationTrailEntry && (
+          <LocationTrailModal
+            entry={locationTrailEntry}
+            employeeName={selectedEmployee?.name || employees?.find(e => e.id === locationTrailEntry.employee_id)?.name || 'Employee'}
+            onClose={() => setLocationTrailEntry(null)}
+            theme={theme}
+          />
+        )}
       </div>
     )
   }
