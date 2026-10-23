@@ -25,6 +25,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 // SSN, address and EIN come from employee_identity, never employees.
 import { withIdentity } from "../_shared/employeeIdentity.ts";
+// The SUI wage base and the rate in force are lib/suiRate's rules, not this
+// file's. It carried its own Utah-only copy of both until 2026-10-23, beside a
+// comment saying so; they agreed, which is exactly how long that lasts.
+import { suiWageBaseFor, suiRateInForce } from "../_shared/suiRate.ts";
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -756,21 +760,21 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
   const periodEnd = periodEndDate.toISOString().slice(0, 10);
   const yearStart = `${year}-01-01`;
 
-  // The rate IN FORCE for this quarter — from the rate history first (so a
-  // Q4 rendered in February still uses Q4's rate after next year's notice
-  // was entered), the companies row as the fallback. Same rule as
-  // lib/suiRate.suiRateInForce on the app side.
+  // The rate IN FORCE for this quarter — the rate history first (so a Q4
+  // rendered in February still uses Q4's rate after next year's notice was
+  // entered), the companies row as the fallback. suiRateInForce IS that rule;
+  // this file used to restate it. The query stays narrowed and bounded; what
+  // moved out of here is the PRECEDENCE between the history and the company row.
   const { data: rateRows } = await supabase
     .from('company_sui_rates')
     .select('id, rate_pct, effective_date, source')
     .eq('company_id', company_id)
     .lte('effective_date', periodStart)
     .order('effective_date', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(1);
-  const rateRow = rateRows?.[0] || null;
-  const suiRatePct = rateRow ? Number(rateRow.rate_pct) : (company.sui_rate_pct == null ? null : Number(company.sui_rate_pct));
-  const suiRateSource = rateRow ? rateRow.source : (company.sui_rate_source || null);
+    .limit(200);
+  const inForce = suiRateInForce(rateRows || [], company, periodStart);
+  const suiRatePct = inForce.ratePct;
+  const suiRateSource = inForce.source;
   if (suiRatePct == null) {
     return { ok: false, error: 'Set your assigned Utah SUI rate in Settings → Payroll Tax / Compliance before generating Form 33H.' };
   }
@@ -806,11 +810,12 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
     .gte('pay_date', yearStart)
     .lte('pay_date', periodEnd);
 
-  // Utah DWS taxable wage base by year (jobs.utah.gov). The 33H is a
-  // quarterly form, so a Q4 render filed in January still needs last year's
-  // base; a company's own sui_wage_base setting wins when it is set.
-  const UTAH_SUI_WAGE_BASE: Record<number, number> = { 2025: 48900, 2026: 50700 };
-  const SUI_BASE = Number(company.sui_wage_base) || UTAH_SUI_WAGE_BASE[Number(year)] || 50700;
+  // The taxable wage base by state and year — _shared/suiRate is the one
+  // table (it carries every state's, and falls back to the latest year it
+  // knows, which is what a Q4 render filed in January needs). A company's own
+  // sui_wage_base setting still wins when it is set.
+  const suiState = String(company.state_employer_id_state || company.state || 'UT').toUpperCase();
+  const SUI_BASE = Number(company.sui_wage_base) || suiWageBaseFor(suiState, Number(year)) || 0;
   const SUI_RATE = suiRatePct || 0;
 
   // Per-employee: total wages this quarter + ytd-through-quarter (for cap)
@@ -850,7 +855,7 @@ async function generateForm33H({ supabase, company_id, company, year, quarter }:
 
   const taxDue = round2(totalTaxable * SUI_RATE / 100);
 
-  const pdfBytes = await render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, suiBase: SUI_BASE, taxDue, detail, rateEffective: rateRow?.effective_date || company.sui_rate_effective_date || null, rateSource: suiRateSource });
+  const pdfBytes = await render33HPdf({ company, year, quarter, totalGross, totalTaxable, totalExcess, suiRate: SUI_RATE, suiBase: SUI_BASE, taxDue, detail, rateEffective: inForce.effectiveDate, rateSource: suiRateSource });
   const path = `tax-filings/${company_id}/${year}/Form33H-Q${quarter}-${year}-${Date.now()}.pdf`;
   await supabase.storage.from('project-documents').upload(path, pdfBytes, { contentType: 'application/pdf', upsert: true });
 
