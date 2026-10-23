@@ -229,6 +229,22 @@ export function techDays(minutes, { productive_minutes_per_day = 390 } = {}) {
   return { exact: round3(exact), billable: Math.max(exact > 0 ? 1 : 0, Math.ceil(exact - 0.001)) }
 }
 
+/**
+ * What a tech day costs, from whichever figure the company actually has.
+ *
+ * An explicit day rate wins, because that is what a sub quotes. Otherwise it
+ * comes from an hourly rate, and the hours you PAY for are not the hours of
+ * glass work you get: you buy an 8-hour day and about 6.5 hours of it reaches
+ * the glass, the rest being setup, moves, breaks and the weather.
+ * productive_minutes_per_day governs how much work fits in a day;
+ * paid_hours_per_day governs what the day costs. Conflating them is how a bid
+ * ends up 20% light.
+ */
+export function techDayCost({ tech_day_rate, tech_hourly_rate, paid_hours_per_day = 8 }) {
+  if (num(tech_day_rate) > 0) return round2(num(tech_day_rate))
+  return round2(num(tech_hourly_rate) * Math.max(0, num(paid_hours_per_day, 8)))
+}
+
 export function crewHours(minutes) {
   return round2(num(minutes) / 60)
 }
@@ -245,6 +261,45 @@ export function crewHours(minutes) {
 // it: the middle tier is the bid, and the quote amount is set from it.
 
 export const DEFAULT_TIER_SPREAD = { favourable: 0.78, expected: 1.00, difficult: 1.37 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// What the work is worth, as against what it costs
+// ─────────────────────────────────────────────────────────────────────────
+// Restoration is not a cost-plus trade and a cost-plus engine will quietly
+// give the job away. The customer's alternative is REPLACING the glass, and
+// AGR sold the UGR Eden job on exactly that: $19,400 against $45,000–$110,000
+// of replacement, which they put at "17–43% of replacement cost".
+//
+// The arithmetic that makes the point: at $30–35/hr a tech, four days of
+// resurfacing costs about $1,000. Cost plus 35% prices that work at about
+// $1,400. AGR charged $8,250 for it. The labour is the floor, not the price.
+//
+// So this does not set a price — a person does — it just refuses to let the
+// comparison stay invisible. Give it a replacement range and every bid can
+// show where it sits against the alternative, and against its own cost.
+
+export const TYPICAL_SHARE_OF_REPLACEMENT = { low: 0.17, high: 0.43 }
+
+export function valueCheck({ bid, replacement_low, replacement_high, direct_cost }) {
+  const b = num(bid)
+  const lo = num(replacement_low)
+  const hi = num(replacement_high)
+  const out = {
+    bid: round2(b),
+    direct_cost: round2(num(direct_cost)),
+    gross_margin: round2(b - num(direct_cost)),
+    gross_margin_pct: b > 0 ? round3((b - num(direct_cost)) / b) : null,
+    replacement_low: round2(lo),
+    replacement_high: round2(hi),
+    share_of_replacement_low: hi > 0 ? round3(b / hi) : null,
+    share_of_replacement_high: lo > 0 ? round3(b / lo) : null,
+  }
+  // Only a flag, never an adjustment. A bid under the band the trade normally
+  // sells at is worth a second look before it goes out.
+  out.below_typical_band =
+    lo > 0 && b > 0 ? b / lo < TYPICAL_SHARE_OF_REPLACEMENT.low : null
+  return out
+}
 
 export function threeTiers(expected, spread = DEFAULT_TIER_SPREAD) {
   const s = { ...DEFAULT_TIER_SPREAD, ...(spread || {}) }
@@ -304,10 +359,18 @@ export function walterEstimate({
   pricing = {},
   effort_factor = 1,
   tier_spread,
+  replacement_low = 0,
+  replacement_high = 0,
 }) {
   const p = {
     crew_rate_per_hour: 55,
-    tech_day_rate: 1200,
+    // A glass restoration tech, as a wage. Bryce priced the trade at $30–35
+    // an hour on 2026-10-22; the earlier $1,200/day seed was a guess and it
+    // was four times too high. A SUB quotes days instead — set tech_day_rate
+    // and it wins over this.
+    tech_hourly_rate: 32.5,
+    paid_hours_per_day: 8,
+    tech_day_rate: 0,
     sub_markup: 0.35,
     assessment_fee: 450,
     mobilization: 0,
@@ -349,7 +412,8 @@ export function walterEstimate({
     const finishMinutes = round2(resurfaceMinutes * num(p.optical_finish_share))
     const minutes = round2(resurfaceMinutes + finishMinutes)
     const days = techDays(minutes, { productive_minutes_per_day: p.productive_minutes_per_day })
-    const subCost = round2(days.billable * num(p.tech_day_rate))
+    const dayCost = techDayCost(p)
+    const subCost = round2(days.billable * dayCost)
     const amount = round2(subCost * (1 + num(p.sub_markup)))
     // Proportional, with finishing taking the remainder so the two lines add
     // back to the total exactly rather than drifting by a rounded cent.
@@ -363,6 +427,7 @@ export function walterEstimate({
       zones_counted: split.restoration.length,
       zones_to_clean: split.cleaning.length,
       excluded: excludedZones(restoration.zones).length,
+      day_cost: dayCost,
       sub_cost: subCost,
       amount,
     }
@@ -437,6 +502,21 @@ export function walterEstimate({
 
   out.expected = quoteTotalFromLines(out.lines)
   out.tiers = threeTiers(out.expected, tier_spread)
+
+  // What it costs us, so the margin is never a mystery: the sub at his rate,
+  // and our own crew at what they actually cost rather than what they bill.
+  const crewCost = out.cleaning
+    ? round2(out.cleaning.hours * num(p.crew_cost_per_hour, p.crew_rate_per_hour))
+    : 0
+  out.direct_cost = round2(crewCost + (out.restoration?.sub_cost || 0))
+  if (num(replacement_low) > 0 || num(replacement_high) > 0) {
+    out.value = valueCheck({
+      bid: out.expected,
+      replacement_low,
+      replacement_high,
+      direct_cost: out.direct_cost,
+    })
+  }
   return out
 }
 

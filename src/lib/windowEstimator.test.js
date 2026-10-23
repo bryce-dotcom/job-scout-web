@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ACCESS_PROFILES, CONDITION_PROFILES, SEVERITY_PROFILES, EDGE_FACTOR,
   countableZones, excludedZones, splitBySeverity,
-  cleaningMinutes, restorationMinutes, techDays,
+  cleaningMinutes, restorationMinutes, techDays, techDayCost, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT,
   threeTiers, computeCalibrationFactor, walterEstimate, quoteTotalFromLines,
 } from './windowEstimator'
 
@@ -176,6 +176,29 @@ describe('days, because you buy a tech by the day', () => {
   })
 })
 
+describe('what a tech day costs', () => {
+  it('an explicit day rate wins, because that is what a sub quotes', () => {
+    expect(techDayCost({ tech_day_rate: 900, tech_hourly_rate: 32.5 })).toBe(900)
+  })
+
+  it('falls back to the hourly rate times the hours you PAY for', () => {
+    expect(techDayCost({ tech_hourly_rate: 32.5, paid_hours_per_day: 8 })).toBe(260)
+    expect(techDayCost({ tech_hourly_rate: 30, paid_hours_per_day: 8 })).toBe(240)
+    expect(techDayCost({ tech_hourly_rate: 35, paid_hours_per_day: 8 })).toBe(280)
+  })
+
+  it('pays for the whole day even though only part of it reaches the glass', () => {
+    // 390 productive minutes is 6.5 hours of glass work inside an 8-hour day.
+    // Costing the day at 6.5 hours would under-price every bid by ~19%.
+    expect(techDayCost({ tech_hourly_rate: 32.5 })).toBe(260)
+    expect(techDayCost({ tech_hourly_rate: 32.5 })).toBeGreaterThan(32.5 * 6.5)
+  })
+
+  it('no rate at all is zero, not NaN', () => {
+    expect(techDayCost({})).toBe(0)
+  })
+})
+
 describe('three tiers', () => {
   it('the middle tier IS the bid, not a markup on it', () => {
     const t = threeTiers(19400)
@@ -196,6 +219,36 @@ describe('three tiers', () => {
     const t = threeTiers(1000, { favourable: 0.9, expected: 1, difficult: 1.1 })
     expect(t.favourable).toBe(900)
     expect(t.difficult).toBe(1100)
+  })
+})
+
+describe('the work is worth more than it costs, and the bid must be able to say so', () => {
+  it('reports the bid as a share of replacement, both ends', () => {
+    const v = valueCheck({ bid: 19400, replacement_low: 45000, replacement_high: 110000, direct_cost: 3771 })
+    // AGR put this at 17-43% of replacement. The arithmetic agrees.
+    expect(v.share_of_replacement_low).toBeCloseTo(0.176, 2)
+    expect(v.share_of_replacement_high).toBeCloseTo(0.431, 2)
+    expect(v.below_typical_band).toBe(false)
+  })
+
+  it('flags a cost-plus bid that has fallen under what the trade sells at', () => {
+    // Four tech days at 30-35/hr costs about a thousand dollars. Cost plus
+    // 35% prices the same work AGR charged 8,250 for at about 1,400.
+    const v = valueCheck({ bid: 6807, replacement_low: 45000, replacement_high: 110000, direct_cost: 3771 })
+    expect(v.below_typical_band).toBe(true)
+    expect(v.gross_margin).toBe(3036)
+  })
+
+  it('says nothing when nobody supplied a replacement figure', () => {
+    const v = valueCheck({ bid: 1000, direct_cost: 500 })
+    expect(v.below_typical_band).toBe(null)
+    expect(v.share_of_replacement_low).toBe(null)
+    expect(v.gross_margin).toBe(500)
+  })
+
+  it('the band is the one the trade actually quotes', () => {
+    expect(TYPICAL_SHARE_OF_REPLACEMENT.low).toBe(0.17)
+    expect(TYPICAL_SHARE_OF_REPLACEMENT.high).toBe(0.43)
   })
 })
 
