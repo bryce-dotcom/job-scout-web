@@ -519,6 +519,14 @@ verify_jwt = false
 [functions.marketing-campaign]
 verify_jwt = false
 
+# The website snippet and its beacon come from a stranger's browser; the
+# nightly Google snapshot comes from pg_cron with the Vault key.
+[functions.marketing-hit]
+verify_jwt = false
+
+[functions.marketing-google]
+verify_jwt = false
+
 # The SMS terms page (/sms-terms/:slug) is opened by a carrier reviewing an A2P
 # 10DLC campaign, who is not logged in and cannot send a Supabase JWT. Without
 # this pin a routine redeploy flips verify_jwt back to true, the page can no

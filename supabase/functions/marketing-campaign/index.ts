@@ -28,6 +28,7 @@ import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
 import { brandKey, brandsFrom, managerIds } from '../_shared/marketing.ts'
 import { campaignReplyAddress } from '../_shared/replyToken.ts'
+import { tagLinks, campaignTags } from '../_shared/utm.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -220,7 +221,7 @@ async function sendText(env: { url: string; key: string }, companyId: number, to
 async function sendOne(env: { url: string; key: string; resend: string; replySecret: string; inboundDomain: string }, facts: Awaited<ReturnType<typeof companyFacts>>, member: any, touch: Touch, campaignId: number) {
   const vars = { name: member.name || '', company: (member as any).company || '', our_company: facts.name }
   const subject = mergeText(touch.subject, vars).slice(0, 200)
-  const body = mergeText(touch.body, vars)
+  const body = tagLinks(mergeText(touch.body, vars), campaignTags(campaignId, Number(member.touch_index) || 0, 'email'))
   const unsubscribeUrl = `${env.url}/functions/v1/marketing-campaign?u=${encodeURIComponent(member.token)}`
   const signature = facts.kit.signature || `${facts.name}${facts.co?.phone ? '\n' + facts.co.phone : ''}${facts.co?.website ? '\n' + facts.co.website : ''}`
   const payload: Record<string, unknown> = {
@@ -317,7 +318,7 @@ async function runTick(sb: any, env: { url: string; key: string; resend: string;
         if (await advanceMember(sb, m, touches, now, touch)) out.done += 1
         out.skipped += 1; continue
       }
-      let message = mergeText(touch.body, vars).slice(0, TEXT_MAX)
+      let message = tagLinks(mergeText(touch.body, vars), campaignTags(camp.id, m.touch_index, 'text')).slice(0, TEXT_MAX + 120)
       if (!/\bSTOP\b/i.test(message)) message = `${message}\n${STOP_LINE}`
       const t = await sendText(env, m.company_id, '+' + to, message, m.customer_id)
       if (!t.ok) {

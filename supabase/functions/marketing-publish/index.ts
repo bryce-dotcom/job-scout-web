@@ -37,6 +37,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { isServiceRole } from '../_shared/arnieSend.ts'
 import { brandKey, brandProfileUsername, loadBrands, captureFileAllowed } from '../_shared/marketing.ts'
+import { tagLinks, postTags } from '../_shared/utm.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -376,7 +377,8 @@ serve(async (req) => {
         await unlock({}); return json({ ok: false, error: `LinkedIn: this login reaches ${pages.linkedin.length} company pages. Pick which one under Channels (or "personal profile") first.` }, 400)
       }
 
-      const text = composeCaption(post.caption, post.hashtags)
+      // One caption goes to every network, so the tag names the post, not the network.
+      const text = tagLinks(composeCaption(post.caption, post.hashtags), postTags(postId))
       // Captures: the post's media, and whether it is a video.
       const { data: caps } = post.capture_ids?.length
         ? await sb.from('marketing_captures').select('id, bucket, path, url, media_type, poster_url').eq('company_id', companyId).in('id', post.capture_ids)

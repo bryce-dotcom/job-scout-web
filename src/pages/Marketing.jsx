@@ -16,6 +16,7 @@ import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/market
 import ScoutLoader from '../components/ScoutLoader'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
 import CampaignsTab, { CampaignPerformance, SuppressionsCard } from './marketing/CampaignsTab'
+import { WebsiteCard, GoogleListingCard, NumbersBlocks } from './marketing/NumbersCards'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
@@ -374,7 +375,7 @@ export default function Marketing() {
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: captures.length },
     { id: 'library', label: 'Library', icon: FolderOpen },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-    { id: 'performance', label: 'Performance', icon: BarChart3 },
+    { id: 'performance', label: 'Numbers', icon: BarChart3 },
     { id: 'campaigns', label: 'Campaigns', icon: Send },
     { id: 'setup', label: 'Setup', icon: Palette },
   ]
@@ -498,6 +499,13 @@ export default function Marketing() {
             <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, marginBottom: 8 }}>Where posts go</div>
             <ChannelsTab theme={theme} isMobile={isMobile} publisher={publisher} brand={brandId} brandName={currentBrand?.name} isManager={isManager} invoke={invoke} onChanged={load} kit={brandKit} onSaveKit={saveBrandKit}
               companyLinks={companyLinks} onPushToCompany={pushLinksToCompany} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: theme.text, marginBottom: 8 }}>Your website &amp; Google listing</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <WebsiteCard theme={theme} companyId={companyId} isManager={isManager} website={brandKit?.links?.website || companyLinks.website || company?.website || ''} />
+              <GoogleListingCard theme={theme} companyId={companyId} isManager={isManager} invoke={invoke} />
+            </div>
           </div>
           <SuppressionsCard theme={theme} companyId={companyId} isManager={isManager} />
           <div style={{ fontSize: 13, color: theme.textMuted }}>
@@ -1892,8 +1900,12 @@ function PerformanceTab({ theme, isMobile, posts, captureMap, brand, invoke, pub
       <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>{value.toLocaleString()}</div>
     </div>
   )
+  const postsById = useMemo(() => Object.fromEntries((posts || []).map((p) => [p.id, p])), [posts])
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* The website and the Google listing: counted by us, not by Google */}
+      <NumbersBlocks theme={theme} isMobile={isMobile} companyId={companyId} invoke={invoke} postsById={postsById} />
+
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 10 }}>
         <Stat label="Posts" value={posted.length + handTotal} />
         <Stat label="Followers" value={sum('followers')} />
