@@ -19,6 +19,7 @@
 import { createClient } from '@supabase/supabase-js'
 import 'dotenv/config'
 import { DEMO_ASSESSMENT, DEMO_REGISTER, expandRegister } from '../src/lib/walterDemoRegister.js'
+import { localDateStr } from '../src/lib/localDate.js'
 
 const COMPANY_ID = 25
 const AGENT_SLUG = 'walter-windows'
@@ -113,7 +114,7 @@ async function main() {
     .insert({
       ...DEMO_ASSESSMENT,
       company_id: COMPANY_ID,
-      assessment_date: new Date().toISOString().slice(0, 10),
+      assessment_date: localDateStr(new Date()),
     })
     .select('id')
     .single()

@@ -9,17 +9,15 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Grid3X3, ChevronRight, MapPin, Layers, AlertTriangle } from 'lucide-react'
+import { Grid3X3, ChevronRight, MapPin, Layers, AlertTriangle, Plus } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/ThemeContext'
 import { useIsMobile } from '../../../hooks/useIsMobile'
 import { supabase } from '../../../lib/supabase'
 import { priceAssessment } from '../../../lib/walterRows'
-
-const money = (n) =>
-  n == null || Number.isNaN(Number(n))
-    ? '—'
-    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(n))
+import { Btn } from './WalterUI'
+import { money } from '../../../lib/walterFormat'
+import { localDateStr } from '../../../lib/localDate'
 
 const STATUS_TONE = {
   draft: 'muted',
@@ -36,6 +34,35 @@ export default function WalterAssessments() {
   const isMobile = useIsMobile()
   const [raw, setRaw] = useState([])
   const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+
+  // A new assessment is a nearly empty row: the engine's documented seeds
+  // cover everything that is not filled in, so it prices from the moment it
+  // exists and the details sheet refines it. Nothing is invented here that a
+  // person has not said.
+  const startNew = async () => {
+    if (!companyId || creating) return
+    setCreating(true)
+    const { data, error } = await supabase
+      .from('glass_assessments')
+      .insert({
+        company_id: companyId,
+        site_name: 'New assessment',
+        // The local calendar day, not the UTC one: after 6 PM in Denver
+        // toISOString() is already tomorrow, and this dates a site visit.
+        assessment_date: localDateStr(new Date()),
+        vertical: 'both',
+        status: 'draft',
+        access: 'ground',
+        condition: 'maintenance',
+        faces: 2,
+      })
+      .select('id')
+      .single()
+    setCreating(false)
+    if (error) { alert('Could not start an assessment: ' + error.message); return }
+    navigate(`/agents/walter/assessment/${data.id}`)
+  }
 
   useEffect(() => {
     if (!companyId) return
@@ -82,19 +109,30 @@ export default function WalterAssessments() {
             <div style={{ fontSize: 17, fontWeight: 700, color: theme.text, marginBottom: 6 }}>
               No assessments yet
             </div>
-            <p style={{ fontSize: 14, color: theme.textMuted, margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 14, color: theme.textMuted, margin: '0 0 16px', lineHeight: 1.5 }}>
               An assessment is one visit to a building's glass — panes counted on the cleaning
               side, damage zones logged on the restoration side, and a bid in three tiers out
               the other end.
             </p>
+            <Btn onClick={startNew} disabled={creating}>
+              <Plus size={15} /> {creating ? 'Starting…' : 'New assessment'}
+            </Btn>
           </div>
         ) : (
           <>
             <div style={{
-              fontSize: 11, fontWeight: 700, color: theme.textMuted,
-              textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 10, marginBottom: 10,
             }}>
-              {rows.length} assessment{rows.length === 1 ? '' : 's'}
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: theme.textMuted,
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+              }}>
+                {rows.length} assessment{rows.length === 1 ? '' : 's'}
+              </div>
+              <Btn onClick={startNew} disabled={creating}>
+                <Plus size={15} /> {creating ? 'Starting…' : 'New assessment'}
+              </Btn>
             </div>
 
             <div style={{

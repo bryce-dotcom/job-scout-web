@@ -865,11 +865,11 @@ export const FEATURE_CATALOG = [
       {
         name: 'Walter The Window Wizard',
         icon: 'Grid3X3',
-        summary: 'Counts panes for a cleaning quote and logs glass scratch damage zone by zone, then prices both over one set of arithmetic and bids in three tiers.',
-        replaces: ['WinCleaner pricing', 'manual pane counts'],
-        highlights: ['Pane counter', 'Damage register', 'Three-tier bid'],
-        route: '/base-camp',
-        status: 'coming_soon',
+        summary: 'Glass specialist — window cleaning by the pane and scratch restoration by the damage zone, over one set of arithmetic. Logs a damage register, never counts the same scratch twice, and bids in three tiers against what replacing the glass would cost.',
+        replaces: ['WinCleaner pricing', 'per-scratch guesswork'],
+        highlights: ['Damage register', 'Three-tier bid', 'Priced against replacement'],
+        route: '/agents/walter',
+        status: 'shipped',
       },
       {
         name: 'Paula The Paint Pro',
