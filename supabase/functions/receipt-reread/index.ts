@@ -102,7 +102,10 @@ async function fileFor(url: string, key: string, path: string): Promise<Record<s
   }
   // Supabase resizes on the way out — the same 1568px the phone sends.
   const r = await fetch(`${url}/storage/v1/render/image/authenticated/project-documents/${enc}?width=1568&height=1568&resize=contain&quality=85`, { headers: A })
-  if (r.ok && /^image\//.test(r.headers.get('content-type') || '')) return { image: { base64: b64(await r.arrayBuffer()), mediaType: 'image/jpeg' } }
+  // The resizer keeps the format: a PNG screenshot comes back a PNG, and
+  // calling it a JPEG fails the read (#75, 2026-10-22).
+  const rType = (r.headers.get('content-type') || '').split(';')[0].trim()
+  if (r.ok && /^image\/(jpeg|png|gif|webp)$/.test(rType)) return { image: { base64: b64(await r.arrayBuffer()), mediaType: rType } }
   const o = await fetch(`${url}/storage/v1/object/project-documents/${enc}`, { headers: A })
   if (!o.ok) return null
   const type = o.headers.get('content-type') || ''

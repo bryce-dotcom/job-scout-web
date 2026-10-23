@@ -69,6 +69,8 @@ describe('the wiring', () => {
     expect(fn).toMatch(/amount=eq\.0&receipt_storage_path=not\.is\.null&receipt_read_attempts=lt\.\$\{MAX_TRIES\}/)
     expect(fn).toMatch(/expenses\?id=eq\.\$\{row\.id\}&amount=eq\.0/)
     expect(fn).toMatch(/functions\/v1\/scan-receipt/)
+    // the resizer keeps a PNG a PNG — the type sent is the type that came back
+    expect(fn).toMatch(/mediaType: rType/)
   })
   it('it runs every ten minutes', () => {
     expect(read('supabase/migrations/20261022200000_receipt_reread.sql')).toMatch(/'receipt-reread',\s*'\*\/10 \* \* \* \*'/)
