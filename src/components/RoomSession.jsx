@@ -15,11 +15,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   FocusLayout, FocusLayoutContainer, CarouselLayout,
-  useTracks, useSpeakingParticipants, ControlBar,
+  useTracks, useSpeakingParticipants, useLocalParticipant, ControlBar,
 } from '@livekit/components-react'
 import { Track } from 'livekit-client'
 import '@livekit/components-styles'
-import { Minus, Maximize2, PhoneOff, VideoOff } from 'lucide-react'
+import { Minus, Maximize2, PhoneOff, VideoOff, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { roomMeta, MAIN_ROOM } from '../lib/conferenceRooms'
@@ -116,6 +116,7 @@ export function RoomSessionProvider({ theme, children }) {
           setExpanded={setExpanded}
           onLeave={leave}
           isDeveloper={isDeveloper}
+          blurKey={`campfire.blur.${me?.id || user?.email || "anon"}`}
         />
       )}
     </RoomSessionContext.Provider>
@@ -201,7 +202,7 @@ async function probeDevice(kind) {
   }
 }
 
-function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper }) {
+function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey }) {
   const [deviceIssue, setDeviceIssue] = useState(null)
   const [deviceDetail, setDeviceDetail] = useState(null)
 
@@ -322,8 +323,11 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               <Stage expanded={expanded} />
             </div>
             <RoomAudioRenderer />
-            <div style={{ borderTop: `1px solid ${theme.border}`, flexShrink: 0 }}>
-              <ControlBar variation="minimal" controls={{ camera: true, microphone: true, screenShare: true, chat: false, leave: false }} />
+            <div style={{ borderTop: `1px solid ${theme.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6 }}>
+              <BlurToggle theme={theme} storageKey={blurKey} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <ControlBar variation="minimal" controls={{ camera: true, microphone: true, screenShare: true, chat: false, leave: false }} />
+              </div>
             </div>
           </LiveKitRoom>
         )}
@@ -339,6 +343,78 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
 // actually wants from a small window is to see WHO IS TALKING. So the dock
 // is a speaker view and the expanded panel is a grid, and a screen share
 // beats both because that is the thing everybody turned to look at.
+// Background blur — the one thing people actually install NVIDIA Broadcast
+// for, and the thing that broke Bryce's camera by sitting on it. Doing it
+// here means nobody needs a virtual-camera app in front of the webcam.
+//
+// The processor and its segmentation model are several megabytes, so the
+// module is imported only when somebody is actually in a call, never in the
+// entry bundle. Off by default: segmentation runs on every frame, and an old
+// laptop in a truck should not pay for a feature it was not asked about.
+function BlurToggle({ theme, storageKey }) {
+  const { cameraTrack } = useLocalParticipant()
+  const [lib, setLib] = useState(null)
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(storageKey) === '1' } catch { return false }
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    import('@livekit/track-processors')
+      .then(m => { if (!cancelled && m.supportsBackgroundProcessors?.()) setLib(m) })
+      .catch(() => { /* unsupported browser, or the model could not be fetched */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const track = cameraTrack?.track || null
+
+  // Re-applied whenever the preference OR the track changes: turning the
+  // camera off and on again produces a NEW track with no processor on it,
+  // and without this the blur would silently fall off mid-call.
+  useEffect(() => {
+    if (!lib || !track) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const current = track.getProcessor?.()
+        if (on && !current) {
+          await track.setProcessor(lib.BackgroundProcessor({ mode: 'background-blur', blurRadius: 12 }))
+        } else if (!on && current) {
+          await track.stopProcessor()
+        }
+      } catch (err) {
+        if (!cancelled) console.warn('[campfire] blur:', err?.message)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [lib, track, on])
+
+  if (!lib) return null
+
+  const toggle = () => {
+    const next = !on
+    setOn(next)
+    try { localStorage.setItem(storageKey, next ? '1' : '0') } catch { /* private window */ }
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      title={on ? 'Background blur is on' : 'Blur my background'}
+      aria-pressed={on}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 30, height: 30, marginRight: 6, borderRadius: 8, flexShrink: 0,
+        cursor: 'pointer', border: `1px solid ${on ? theme.accent : theme.border}`,
+        background: on ? theme.accentBg : 'transparent',
+        color: on ? theme.accent : theme.textMuted,
+      }}
+    >
+      <Sparkles size={15} />
+    </button>
+  )
+}
+
 function Stage({ expanded }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],

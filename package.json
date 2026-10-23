@@ -39,6 +39,7 @@
   "dependencies": {
     "@livekit/components-react": "^2.9.9",
     "@livekit/components-styles": "^1.2.0",
+    "@livekit/track-processors": "^0.8.2",
     "@sentry/react": "^10.36.0",
     "@stripe/react-stripe-js": "^5.6.1",
     "@stripe/stripe-js": "^8.9.0",
