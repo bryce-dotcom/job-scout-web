@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '../lib/supabase'
+import { isOnCrew } from '../lib/crewRoster'
 import { fieldJobHeading } from '../lib/jobHeading'
 import { checkCanClockIn } from '../lib/timeClock'
 import { writeInvoiceLines } from '../lib/invoiceLines'
@@ -356,13 +357,11 @@ export default function FieldScout() {
     if (!currentEmployee?.id) return false
     if (j.job_lead_id === currentEmployee.id) return true
     if (j.salesperson_id === currentEmployee.id || j.pm_id === currentEmployee.id) return true
-    if (j.assigned_team && employeeName) {
-      if (Array.isArray(j.assigned_team)) {
-        if (j.assigned_team.some(name => name.toLowerCase().includes(employeeName.toLowerCase()))) return true
-      } else if (typeof j.assigned_team === 'string') {
-        if (j.assigned_team.toLowerCase().includes(employeeName.toLowerCase())) return true
-      }
-    }
+    // Whole-name match, never a substring: this decides which jobs a field
+    // employee is shown, and "Cole Westcott" is contained in "Nycole
+    // Westcott". lib/crewRoster also handles the array and JSON-array shapes
+    // this used to branch on by hand.
+    if (isOnCrew(j.assigned_team, employeeName)) return true
     return false
   }
   const todaysJobs = jobs.filter(j => {

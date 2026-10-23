@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isOnCrew } from '../lib/crewRoster'
 import { useStore } from '../lib/store'
 // The same builder the Company Calendar uses. Time off is one definition of
 // "who is away on this day" — deriving it a second time here is how the two
@@ -355,7 +356,7 @@ export default function Appointments() {
       }
       if (evt.source === 'job') {
         return evt.meta?.salesperson_id === empId ||
-          (empName && evt.meta?.assigned_team?.toLowerCase().includes(empName))
+          isOnCrew(evt.meta?.assigned_team, empName)
       }
       if (evt.source === 'google') {
         const connectedIds = connectedEmployees.map(e => e.id)

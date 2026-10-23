@@ -21,6 +21,7 @@ import JobsMap from '../components/JobsMap'
 import { companyNotify } from '../lib/companyNotify'
 import { matchAllTokens, buildBlob } from '../lib/searchUtils'
 import { resolveJobStatuses, normalizeStatuses, statusCategory, statusesToSave } from '../lib/jobStatusVocabulary'
+import { isOnCrew, formatCrew } from '../lib/crewRoster'
 import { fetchUtilityInvoicedJobIds, isUtilityInvoiced } from '../lib/utilityInvoiced'
 import UtilityInvoicedBadge from '../components/UtilityInvoicedBadge'
 import { toast } from '../lib/toast'
@@ -807,7 +808,7 @@ export default function PMJobSetter() {
         if (j.job_lead_id === pmId) return true
         if (!j.pm_id) return true
         if (sectionJobIds.has(j.id)) return true
-        if (userName && j.assigned_team && j.assigned_team.toLowerCase().includes(userName)) return true
+        if (isOnCrew(j.assigned_team, userName)) return true
         return false
       })
     }
@@ -1888,11 +1889,7 @@ export default function PMJobSetter() {
     if (scheduleForm.notes) updateData.notes = scheduleForm.notes
     // Build assigned_team from selected employees
     if (scheduleForm.assigned_employee_ids.length > 0) {
-      const teamNames = scheduleForm.assigned_employee_ids.map(id => {
-        const emp = employees.find(e => String(e.id) === String(id))
-        return emp?.name || ''
-      }).filter(Boolean).join(', ')
-      updateData.assigned_team = teamNames
+      updateData.assigned_team = formatCrew(scheduleForm.assigned_employee_ids, employees)
       // Set job_lead_id to first assigned employee for clock-in matching
       if (!updateData.job_lead_id) {
         updateData.job_lead_id = parseInt(scheduleForm.assigned_employee_ids[0])

@@ -8,6 +8,7 @@ import { writeInvoiceLines } from '../lib/invoiceLines'
 import { useStore } from '../lib/store'
 import { nextInvoiceNumber } from '../lib/invoiceNumber'
 import { leadStatusForJob } from '../lib/leadDeliveryStatus'
+import { resolveCrewIds, formatCrew } from '../lib/crewRoster'
 import { jobEstimateDrift } from '../lib/jobEstimateDrift'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { RecordHistoryButton } from '../components/RecordHistory'
@@ -499,14 +500,10 @@ function JobDetailInner() {
       setLocalDownPayment(jobData.down_payment_amount || '')
       setLocalDiscount(jobData.discount || '')
 
-      // Parse assigned_team (comma-separated names) back to employee IDs for multi-select
-      const teamNames = (jobData.assigned_team || '').split(',').map(s => s.trim()).filter(Boolean)
+      // Parse assigned_team (comma-separated names) back to employee IDs for
+      // multi-select. lib/crewRoster owns the rule — see there for why.
       const empList = useStore.getState().employees || []
-      const teamIds = teamNames
-        .map(n => empList.find(e => e.name === n)?.id)
-        .filter(Boolean)
-        .map(String)
-      setEditAssignedIds(teamIds)
+      setEditAssignedIds(resolveCrewIds(jobData.assigned_team, empList))
 
       // Fetch lead's meter_number and ein if linked
       if (jobData.lead_id) {
@@ -1527,10 +1524,7 @@ function JobDetailInner() {
     setSaving(true)
     // Build assigned_team string from multi-select crew IDs (falls back to free-text if none selected)
     const teamStr = editAssignedIds.length > 0
-      ? editAssignedIds
-          .map(id => employees.find(e => String(e.id) === String(id))?.name)
-          .filter(Boolean)
-          .join(', ')
+      ? formatCrew(editAssignedIds, employees)
       : (formData.assigned_team || null)
     const updates = {
       job_title: formData.job_title,

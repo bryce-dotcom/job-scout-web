@@ -104,7 +104,7 @@ describe('prepare — the day in the company zone, the crew by name, the clash s
 describe('apply and rollback are the page\'s write and its undo', () => {
   it('writes what PMJobSetter writes: start/end, Scheduled, assigned_team names, job_lead_id = first person, one appointment per person with job_id and type Job', () => {
     expect(src).toMatch(/patch\.assigned_team = c\.crew\.map\(\(x: any\) => x\.name\)\.join\(', '\); patch\.job_lead_id = c\.crew\[0\]\.id/)
-    expect(page).toMatch(/updateData\.assigned_team = teamNames/)
+    expect(page).toMatch(/updateData\.assigned_team = formatCrew\(scheduleForm\.assigned_employee_ids, employees\)/)
     expect(page).toMatch(/updateData\.job_lead_id = parseInt\(scheduleForm\.assigned_employee_ids\[0\]\)/)
     expect(src).toMatch(/employee_id: e\.id, customer_id: c\.customer_id \|\| null, job_id: c\.job_id, appointment_type: 'Job'/)
     expect(page).toMatch(/job_id: scheduleJob\.id,\n\s+appointment_type: \(scheduleForm\.recurrence && scheduleForm\.recurrence !== 'None'\) \? 'Recurring Job' : 'Job'/)

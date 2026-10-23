@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { leadStatusForJob } from '../lib/leadDeliveryStatus'
+import { resolveCrewIds, formatCrew } from '../lib/crewRoster'
 import { toZonedInput, fromZonedInput, resolveTimezone, DEFAULT_TZ } from '../lib/dateTz'
 import { useTheme } from '../components/Layout'
 import { toast } from '../lib/toast'
@@ -738,15 +739,10 @@ export default function Jobs() {
       quote_id: job.quote_id || '',
       status: job.status || 'Scheduled',
       assigned_team: job.assigned_team || '',
-      assigned_employee_ids: (() => {
-        // Parse existing assigned_team names back to employee IDs
-        if (!job.assigned_team) return []
-        const names = job.assigned_team.split(',').map(n => n.trim()).filter(Boolean)
-        return names.map(name => {
-          const emp = employees.find(e => e.name === name)
-          return emp ? String(emp.id) : null
-        }).filter(Boolean)
-      })(),
+      // Parse existing assigned_team names back to employee IDs.
+      // lib/crewRoster owns the rule — matching by hand here is what let a
+      // trailing space on an employee name drop that person from the crew.
+      assigned_employee_ids: resolveCrewIds(job.assigned_team, employees),
       business_unit: job.business_unit || '',
       // Convert stored UTC timestamps back to a LOCAL datetime-local string
       // so the input shows the wall-clock time the user originally picked.
@@ -850,10 +846,7 @@ export default function Jobs() {
       quote_id: formData.quote_id || null,
       status: formData.status,
       assigned_team: formData.assigned_employee_ids.length > 0
-        ? formData.assigned_employee_ids.map(id => {
-            const emp = employees.find(e => String(e.id) === String(id))
-            return emp?.name || ''
-          }).filter(Boolean).join(', ')
+        ? formatCrew(formData.assigned_employee_ids, employees)
         : (formData.assigned_team || null),
       job_lead_id: formData.job_lead_id || (formData.assigned_employee_ids.length > 0 ? parseInt(formData.assigned_employee_ids[0]) : null),
       business_unit: formData.business_unit || null,
