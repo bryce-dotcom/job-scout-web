@@ -17,11 +17,12 @@ import {
   FocusLayout, FocusLayoutContainer, CarouselLayout,
   useTracks, useSpeakingParticipants, useLocalParticipant, ControlBar,
 } from '@livekit/components-react'
-import { Track } from 'livekit-client'
+import { Track, ScreenSharePresets } from 'livekit-client'
 import '@livekit/components-styles'
 import { Minus, Maximize2, PhoneOff, VideoOff, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { roomMeta, MAIN_ROOM } from '../lib/conferenceRooms'
 import CampfireMark from './CampfireMark'
 
@@ -214,6 +215,7 @@ async function probeDevice(kind) {
 }
 
 function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey }) {
+  const isMobile = useIsMobile()
   const [deviceIssue, setDeviceIssue] = useState(null)
   const [deviceDetail, setDeviceDetail] = useState(null)
 
@@ -234,18 +236,32 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
 
   // Floating, bottom-right on a desktop and across the bottom on a phone,
   // and always ABOVE the bottom tab bar so it never covers navigation.
+  // A phone is not a small desktop.
+  //
+  // Bryce, 2026-10-23: "it's gotta be different for the phone and the
+  // desktop — look at how Meet or Messenger does it." They all do the same
+  // two things, and we were doing neither: minimised is a bar across the
+  // FULL width at the bottom, not a floating card wedged into a corner with
+  // a 16px margin; and expanded is the whole screen, not a panel inset
+  // inside a page you cannot read anyway.
+  //
+  // On a desktop the floating card is right, because the whole point there
+  // is that the call sits beside the work.
+  const place = isMobile
+    ? (expanded
+        ? { left: 0, right: 0, top: 0, bottom: 0, width: 'auto', height: 'auto', borderRadius: 0 }
+        : { left: 0, right: 0, bottom: 'var(--jobscout-tabbar-space, 0px)', width: 'auto', height: 'auto', borderRadius: '14px 14px 0 0' })
+    : (expanded
+        ? { left: 16, right: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'auto', height: 'min(72vh, 620px)', borderRadius: 14 }
+        : { left: 'auto', right: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'min(340px, calc(100vw - 32px))', height: 'auto', borderRadius: 14 })
+
   const shell = {
     position: 'fixed',
-    right: expanded ? 16 : 16,
-    bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`,
-    left: expanded ? 16 : 'auto',
-    width: expanded ? 'auto' : 'min(340px, calc(100vw - 32px))',
-    height: expanded ? 'min(72vh, 620px)' : 'auto',
+    ...place,
     background: theme.bgCard,
     border: `1px solid ${theme.accent}`,
-    borderRadius: 14,
-    boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
-    zIndex: 1200,
+    boxShadow: isMobile && expanded ? 'none' : '0 12px 40px rgba(0,0,0,0.25)',
+    zIndex: isMobile && expanded ? 1400 : 1200,
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -310,7 +326,15 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             // cancellation, noise suppression, auto gain and voice isolation
             // are all already on by default, and "fixing" them would be
             // theatre.
-            options={{ adaptiveStream: true, dynacast: true }}
+            options={{
+              adaptiveStream: true,
+              dynacast: true,
+              // Screen share ships at 1080p FIFTEEN frames a second by
+              // default, which is why a scrolling spreadsheet judders.
+              // 30fps costs more bandwidth and is the whole point of
+              // sharing a screen somebody has to read while it moves.
+              publishDefaults: { screenShareEncoding: ScreenSharePresets.h1080fps30.encoding },
+            }}
             onDisconnected={onLeave}
             // Without this a blocked camera is completely silent: you connect,
             // you see a grey avatar of yourself, and nothing anywhere says the
@@ -331,7 +355,7 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-              <Stage expanded={expanded} />
+              <Stage expanded={expanded} setExpanded={setExpanded} />
             </div>
             <RoomAudioRenderer />
             <div style={{ borderTop: `1px solid ${theme.border}`, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 6 }}>
@@ -426,7 +450,7 @@ function BlurToggle({ theme, storageKey }) {
   )
 }
 
-function Stage({ expanded }) {
+function Stage({ expanded, setExpanded }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
@@ -435,6 +459,19 @@ function Stage({ expanded }) {
 
   const share = tracks.find(t => t.source === Track.Source.ScreenShare)
   const cams = tracks.filter(t => t.source === Track.Source.Camera)
+
+  // Open the dock the moment somebody shares.
+  //
+  // Not a flourish — it is the difference between a readable screen and a
+  // blurred one. adaptiveStream asks for the resolution the ELEMENT needs,
+  // so a 1080p share rendered in a 340px dock is fetched at postcard size
+  // and stays there. Expanding is what tells the server to send the real
+  // thing. Only on the way IN, so collapsing it again is still your call.
+  const sharing = !!share
+  useEffect(() => {
+    if (sharing && !expanded) setExpanded?.(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharing])
 
   // Somebody sharing their screen is the reason everyone is looking: it takes
   // the room, and the faces go into a strip beside it.
@@ -465,6 +502,7 @@ function Stage({ expanded }) {
   const hero = cams.find(t => talking.has(t.participant?.identity))
     || cams.find(t => !t.participant?.isLocal)
     || cams[0]
+  const me = cams.find(t => t.participant?.isLocal)
   const others = Math.max(0, cams.length - 1)
 
   return (
@@ -473,6 +511,24 @@ function Stage({ expanded }) {
           auto-height flex chain, and the tile silently computed to 0px: the
           dock went black while the participant was still in it. */}
       {hero && <ParticipantTile trackRef={hero} style={{ flex: 1, minWidth: 0 }} />}
+      {/* You, small, in the corner.
+          Bryce, 2026-10-23: "you can't see yourself." True, and it was my
+          doing: the small view shows whoever is TALKING and deliberately
+          prefers anybody but you, so the one face never on screen was your
+          own. Every other call app puts you in a corner for the same reason
+          — you cannot tell you are badly lit, off-centre or frozen unless
+          you can see it. Hidden when you are the hero, so you never appear
+          twice. */}
+      {me && hero !== me && (
+        <span style={{
+          position: 'absolute', left: 8, bottom: 8, zIndex: 2,
+          width: 72, height: 54, borderRadius: 7, overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.5)', background: '#000',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.4)', display: 'flex',
+        }}>
+          <ParticipantTile trackRef={me} style={{ flex: 1, minWidth: 0 }} />
+        </span>
+      )}
       {others > 0 && (
         <span
           title={`${others} other${others === 1 ? '' : 's'} in the room — expand to see everyone`}
