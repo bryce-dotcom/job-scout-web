@@ -14,6 +14,7 @@
 
 import type { Rest } from './arnieConfig.ts'
 import type { Caller } from './auth.ts'
+import { costingJobId } from './transferRule.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -371,9 +372,9 @@ async function bankTransactions(r: Rest, co: string, input: any) {
     by_merchant: Object.fromEntries(top(byMerchant)),
     rows: [...rows].sort((a: any, b: any) => Math.abs(num(b.amount)) - Math.abs(num(a.amount))).slice(0, limit).map((x: any) => ({
       date: x.date, amount: num(x.amount), description: x.merchant_name || x.name, account: names[x.connected_account_id] || null,
-      tax_line: taxLineOf(x), reviewed: !!x.user_tax_category, job_id: x.job_id || x.ai_job_id || null,
+      tax_line: taxLineOf(x), reviewed: !!x.user_tax_category, job_id: costingJobId(x), ai_job_guess: x.ai_job_id || null,
     })),
-    scope: `${rows.length} bank rows matched${dir === 'out' ? ' (money out)' : dir === 'in' ? ' (money in)' : ''}; the list is the ${Math.min(limit, rows.length)} largest. Positive = paid out, negative = received. "reviewed" false means the tax line is the categoriser's guess.`,
+    scope: `${rows.length} bank rows matched${dir === 'out' ? ' (money out)' : dir === 'in' ? ' (money in)' : ''}; the list is the ${Math.min(limit, rows.length)} largest. Positive = paid out, negative = received. "reviewed" false means the tax line is the categoriser's guess. job_id is the job a person chose; ai_job_guess is the matcher's unconfirmed guess, which no cost report counts.`,
     ...(rows.length >= READ_CAP ? { WARNING: `Read the first ${READ_CAP} rows only — totals are a floor.` } : {}),
   }
 }
@@ -843,7 +844,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
       readAll(r, `job_lines?${co}&select=job_id,item_id,quantity,labor_cost&job_id=${idList(chunk)}`),
       readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&job_id=${idList(chunk)}`),
       invs.length ? readAll(r, `payments?${co}&select=id,job_id,invoice_id,amount&invoice_id=${idList([...invoiceJob.keys()])}`) : Promise.resolve([]),
-      readAll(r, `plaid_transactions?${co}&select=job_id,ai_job_id,amount,is_transfer&or=(job_id.${idList(chunk)},ai_job_id.${idList(chunk)})`),
+      readAll(r, `plaid_transactions?${co}&select=job_id,amount,is_transfer&job_id=${idList(chunk)}`),
       readAll(r, `expenses?${co}&select=job_id,amount&job_id=${idList(chunk)}`),
     ])
     for (const p of [...pDirect, ...pViaInvoice]) {
@@ -884,7 +885,7 @@ async function jobProfitability(r: Rest, co: string, input: any) {
   }
   const revenueBy = new Map<number, number>(), expBy = new Map<number, number>(), linesBy = new Map<number, any[]>()
   for (const p of pays) if (p.job_id) revenueBy.set(p.job_id, (revenueBy.get(p.job_id) || 0) + num(p.amount))
-  for (const t of plaid) { const v = num(t.amount); if (v <= 0 || t.is_transfer) continue; const jid = t.job_id || t.ai_job_id; if (jid) expBy.set(jid, (expBy.get(jid) || 0) + v) }
+  for (const t of plaid) { const v = num(t.amount); if (v <= 0 || t.is_transfer) continue; const jid = costingJobId(t) as number | null; if (jid) expBy.set(jid, (expBy.get(jid) || 0) + v) }
   for (const e of manual) if (e.job_id) expBy.set(e.job_id, (expBy.get(e.job_id) || 0) + num(e.amount))
   for (const l of lines) { const arr = linesBy.get(l.job_id) || []; arr.push(l); linesBy.set(l.job_id, arr) }
 

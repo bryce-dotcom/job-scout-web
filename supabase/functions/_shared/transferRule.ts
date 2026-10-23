@@ -133,6 +133,53 @@ export function isAiJobGuess(
 }
 
 /**
+ * Which job a bank row's money COUNTS AGAINST in a report — job costing, the
+ * overhead pool, Frankie's per-job rollups. Only what a person chose; never
+ * the matcher's guess, at any confidence.
+ *
+ * Deliberately stricter than displayJobId, and the difference is the point.
+ * On screen the guess earns its place precisely because it is LABELLED one:
+ * isAiJobGuess styles it, the confidence sits beside it, and the person
+ * reading the row is the one who will decide. None of that survives into a
+ * total. Inside "The Breakfast Club — total cost $X" there is no styling and
+ * no confidence; the number is read as fact, and it drives margin, profit and
+ * the EOS overhead rate. A report cannot show its work, so it must not make a
+ * claim nobody has checked.
+ *
+ * Leaving a guess out costs nothing. An expense no person has tagged is not
+ * dropped — it stays in the overhead pool and is spread over the hours
+ * worked, exactly how every other untagged expense is treated. So excluding a
+ * guess that was RIGHT is gentle: the money is still counted, just not
+ * attributed yet. Including one that was WRONG is silent and doubled — the
+ * job is charged for something it never bought AND the overhead pool shrinks
+ * by the same amount, so two reports move in opposite directions off one
+ * unreviewed guess.
+ *
+ * Nor is anything held back for long: confirming a row promotes ai_job_id
+ * into job_id (Books.jsx, both Accept and Confirm All), so guess-only is a
+ * waiting room, not a destination. The moment someone reviews the row, its
+ * money lands on the job.
+ *
+ * HHH, 2026-10-22: exactly one row platform-wide reached these reports on a
+ * guess — a $26.39 "Subscriptions" charge matched to The Breakfast Club at
+ * 0.50 confidence. A subscription IS overhead (/subscription/ is in the
+ * overhead allow-list), so a coin flip was charging a job for it and taking
+ * it out of the pool at the same time, with nobody having agreed to either.
+ *
+ * Written down once because this lived inline as `job_id || ai_job_id` in the
+ * four places that have to agree: lib/reports jobCosting, lib/overhead, and
+ * two rollups in frankieTools. Four copies of one money rule is the shape
+ * every circular regression in this app has had.
+ */
+export function costingJobId(
+  txn: { job_id?: unknown } | null | undefined,
+): unknown {
+  const chosen = txn?.job_id
+  if (chosen === null || chosen === undefined || chosen === '') return null
+  return chosen
+}
+
+/**
  * A transfer needs no category and no tax category — there is no true answer to
  * either. Everything else needs both, or the books have a hole in them.
  */

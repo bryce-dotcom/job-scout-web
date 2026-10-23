@@ -239,3 +239,45 @@ describe('overhead never stands in for a cost nobody recorded', () => {
     expect(r.total_cost).toBe(1450)
   })
 })
+
+// ── A guess is not a cost ─────────────────────────────────────────────────
+// HHH, 2026-10-22: exactly one bank row platform-wide reached job costing on
+// the matcher's guess alone — $26.39 of "Subscriptions" on The Breakfast Club
+// at 0.50 confidence. jobCosting read `job_id || ai_job_id`, so the job paid
+// for it, and lib/overhead read the same expression, so the pool lost it at
+// the same time: one unreviewed guess, two reports moving opposite ways.
+describe('an AI job guess does not charge the job', () => {
+  const guessJobs = [{ id: 30, job_id: 'J-30', status: 'Completed' }]
+  const run = (plaidTransactions) => jobCosting({
+    jobs: guessJobs, jobLines: [], products: [], productComponents: [],
+    payments: [], invoices: [], plaidTransactions,
+  }).rows.find(r => r.job === 'J-30')
+
+  it('charges a bank row a person tagged to the job', () => {
+    const r = run([{ id: 60, amount: 26.39, date: '2026-08-01', job_id: 30, ai_category: 'Subscriptions' }])
+    expect(r.tagged_expense).toBe(26.39)
+    expect(r.total_cost).toBe(26.39)
+  })
+
+  it('leaves the job alone when only the matcher named it', () => {
+    const r = run([{ id: 61, amount: 26.39, date: '2026-08-01', job_id: null, ai_job_id: 30, ai_job_confidence: 0.5, ai_category: 'Subscriptions' }])
+    expect(r ?? null).toBeNull()
+  })
+
+  it('ignores a near-certain guess too — confidence is not consent', () => {
+    const r = run([{ id: 62, amount: 4000, date: '2026-08-01', job_id: null, ai_job_id: 30, ai_job_confidence: 0.99 }])
+    expect(r ?? null).toBeNull()
+  })
+
+  it('counts it the moment someone confirms the row onto the job', () => {
+    // Confirming promotes ai_job_id into job_id (Books.jsx), which is why
+    // holding the guess back costs nothing: review the row and it lands.
+    const r = run([{ id: 63, amount: 26.39, date: '2026-08-01', job_id: 30, ai_job_id: 30, confirmed: true }])
+    expect(r.tagged_expense).toBe(26.39)
+  })
+
+  it('stays off the job when a person cleared it on a confirmed row', () => {
+    const r = run([{ id: 64, amount: 26.39, date: '2026-08-01', job_id: null, ai_job_id: 30, confirmed: true }])
+    expect(r ?? null).toBeNull()
+  })
+})

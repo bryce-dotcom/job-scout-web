@@ -1,5 +1,6 @@
 import { hourlyCostRate, isSalaried, annualWageOf, effectiveBurdenPct } from './laborRate.js'
 import { deliveredJobsInRange } from './jobMetrics.js'
+import { costingJobId } from '../../supabase/functions/_shared/transferRule.ts'   // one rule for which job a bank row's money counts against
 
 // Overhead, spread over the hours people actually worked.
 //
@@ -170,7 +171,7 @@ export function overheadRatePerHour({
   for (const t of plaidTransactions || []) {
     const amt = Number(t?.amount) || 0
     if (amt <= 0 || t.is_transfer) continue
-    if (t.job_id || t.ai_job_id) continue           // the job pays for it
+    if (costingJobId(t)) continue                   // the job pays for it
     // The category a PERSON set beats the AI's guess — lib/reports and
     // journalExport read them in that order and so must this.
     const cat = t.user_category || t.ai_category || t.category

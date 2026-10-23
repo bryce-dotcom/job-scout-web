@@ -26,6 +26,7 @@ import { invoiceCustomerTotal } from './arHelpers.js'   // explicit extension: p
 
 import { timeClockToJobHours } from './bonusCalc'
 import { costRatesByEmployee } from './laborRate.js'   // explicit extension: plain Node runners import this file
+import { costingJobId } from '../../supabase/functions/_shared/transferRule.ts'   // one rule for which job a bank row's money counts against
 
 function paymentsByInvoiceIndex(payments) {
   const map = new Map()
@@ -497,7 +498,7 @@ export function jobCosting({
     const amt = Number(t.amount) || 0
     if (amt <= 0) continue
     if (t.is_transfer) continue
-    const jid = t.job_id || t.ai_job_id
+    const jid = costingJobId(t)
     if (!jid) continue
     if (from && !inRange(t.date, fromD, toD)) continue
     add(isMaterialSpend(t.category || t.ai_category) ? materialSpendByJob : expensesByJob, jid, amt)

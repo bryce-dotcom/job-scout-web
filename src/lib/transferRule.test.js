@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   TRANSFER_CATEGORY, isTransferCategory, resolveIsTransfer, transferFields, needsCategories, displayCategory, isAiCategoryGuess,
-  displayJobId, isAiJobGuess, processorPayoutNote,
+  displayJobId, isAiJobGuess, costingJobId, processorPayoutNote,
 } from '../../supabase/functions/_shared/transferRule.ts'
 
 // Tracy's ticket, as tests. She picked "Transfer (between accounts)" from the
@@ -182,5 +182,37 @@ describe('isAiJobGuess: style the guess as a guess', () => {
   it('a confirmed row with no job shows nothing to style', () => {
     expect(isAiJobGuess({ job_id: null, ai_job_id: 21043, confirmed: true })).toBe(false)
     expect(isAiJobGuess(null)).toBe(false)
+  })
+})
+
+// Tracy's ticket one layer down. a8cff7af stopped the guess coming back on
+// SCREEN, but four money paths still read `job_id || ai_job_id`, so a job
+// went on being charged for a guess nobody had confirmed — and the overhead
+// pool went on losing the same dollars to it.
+describe("costingJobId: only a person's answer moves money", () => {
+  it('counts the job a person chose', () => {
+    expect(costingJobId({ job_id: 21043, ai_job_id: 999 })).toBe(21043)
+  })
+
+  it("never counts the matcher's guess, reviewed or not", () => {
+    expect(costingJobId({ job_id: null, ai_job_id: 21043, confirmed: false })).toBe(null)
+    expect(costingJobId({ job_id: null, ai_job_id: 21043, confirmed: true })).toBe(null)
+  })
+
+  it('ignores confidence — being sure is not the same as being asked', () => {
+    expect(costingJobId({ job_id: null, ai_job_id: 21043, ai_job_confidence: 0.99 })).toBe(null)
+  })
+
+  it('is stricter than the display rule, on purpose', () => {
+    const guess = { job_id: null, ai_job_id: 21043, confirmed: false }
+    expect(displayJobId(guess)).toBe(21043)   // on screen, where isAiJobGuess labels it
+    expect(costingJobId(guess)).toBe(null)    // in a total, which cannot label anything
+  })
+
+  it('has nothing to count when there is nothing', () => {
+    expect(costingJobId({})).toBe(null)
+    expect(costingJobId(null)).toBe(null)
+    expect(costingJobId(undefined)).toBe(null)
+    expect(costingJobId({ job_id: '' })).toBe(null)
   })
 })

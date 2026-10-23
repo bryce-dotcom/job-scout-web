@@ -220,3 +220,26 @@ describe('the revenue basis', () => {
     expect(overheadRatePerHour({ ...common, jobs: old, jobStatuses }).revenue).toBe(0)
   })
 })
+
+// ── The other half of that same HHH row ───────────────────────────────────
+// lib/overhead dropped it from the pool "because the job pays for it", on a
+// 0.50-confidence guess. Nothing is lost by keeping an unreviewed row here:
+// an untagged expense belongs in the pool and gets spread over the hours,
+// which is how every other untagged expense is already treated.
+describe('an AI job guess does not leave the overhead pool', () => {
+  const now = new Date('2026-10-12T12:00:00Z')
+  const timeClock = [{ job_id: 1, clock_in: '2026-10-01T13:00:00Z', total_hours: 100 }]
+  const pool = (txn) => overheadRatePerHour({ plaidTransactions: [txn], timeClock, now }).pool
+
+  it('excludes a row a person tagged to a job', () => {
+    expect(pool({ id: 1, amount: 26.39, category: 'Subscriptions', date: '2026-10-01', job_id: 7 })).toBe(0)
+  })
+
+  it('keeps a row the matcher only guessed at', () => {
+    expect(pool({ id: 2, amount: 26.39, category: 'Subscriptions', date: '2026-10-01', ai_job_id: 7, ai_job_confidence: 0.5 })).toBe(26.39)
+  })
+
+  it('keeps it on a confirmed row whose job a person cleared', () => {
+    expect(pool({ id: 3, amount: 26.39, category: 'Subscriptions', date: '2026-10-01', job_id: null, ai_job_id: 7, confirmed: true })).toBe(26.39)
+  })
+})
