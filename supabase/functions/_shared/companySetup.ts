@@ -210,7 +210,7 @@ export const MODULE_TEMPLATES: Record<string, any> = {
   'victor-verify':    { module_name: 'victor-verify',  display_name: 'Victor - Verification AI',     icon: 'ShieldCheck', default_menu_section: 'OPERATIONS', route_path: '/agents/victor',         sort_order: 35, description: 'AI quality verification for completed work' },
   'arnie-og':         { module_name: 'arnie',          display_name: 'OG Arnie',                     icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/arnie',          sort_order: 40, description: 'Answers from live data; drafts changes you approve; morning brief' },
   'frankie-finance':  { module_name: 'frankie-finance',display_name: 'Frankie - Finance AI',         icon: 'DollarSign',  default_menu_section: 'OPERATIONS', route_path: '/agents/frankie',        sort_order: 45, description: 'AI bookkeeper + finance assistant' },
-  'walter-windows':   { module_name: 'walter-windows', display_name: 'Walter - Windows AI',          icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/walter',         sort_order: 50, description: 'AI window-cleaning specialist' },
+  'walter-windows':   { module_name: 'walter-windows', display_name: 'Walter - Windows AI',          icon: 'Bot',         default_menu_section: 'OPERATIONS', route_path: '/agents/walter',         sort_order: 50, description: 'AI glass specialist — window cleaning and scratch restoration' },
         
 }
 

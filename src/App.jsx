@@ -100,6 +100,9 @@ import DonTakeoffDetail from './pages/agents/don/DonTakeoffDetail'
 import DonGroundTruth from './pages/agents/don/DonGroundTruth'
 import DonPriceBook from './pages/agents/don/DonPriceBook'
 import DonSettings from './pages/agents/don/DonSettings'
+import WalterWorkspace from './pages/agents/walter/WalterWorkspace'
+import WalterAssessments from './pages/agents/walter/WalterAssessments'
+import WalterAssessmentDetail from './pages/agents/walter/WalterAssessmentDetail'
 import BennyWorkspace from './pages/agents/benny/BennyWorkspace'
 import BennyBids from './pages/agents/benny/BennyBids'
 import SalWorkspace from './pages/agents/sal/SalWorkspace'
@@ -555,6 +558,12 @@ function App() {
             <Route path="ground-truth" element={<DonGroundTruth />} />
             <Route path="price-book" element={<DonPriceBook />} />
             <Route path="settings" element={<DonSettings />} />
+          </Route>
+
+          {/* Walter Workspace (Glass — cleaning by the pane, restoration by the zone) */}
+          <Route path="/agents/walter" element={<WalterWorkspace />}>
+            <Route index element={<WalterAssessments />} />
+            <Route path="assessment/:id" element={<WalterAssessmentDetail />} />
           </Route>
 
           {/* Conrad Workspace (Email Marketing) */}

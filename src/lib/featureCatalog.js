@@ -865,9 +865,9 @@ export const FEATURE_CATALOG = [
       {
         name: 'Walter The Window Wizard',
         icon: 'Grid3X3',
-        summary: 'Analyzes building photos to count panes, identify window types, and generate accurate window-cleaning quotes.',
+        summary: 'Counts panes for a cleaning quote and logs glass scratch damage zone by zone, then prices both over one set of arithmetic and bids in three tiers.',
         replaces: ['WinCleaner pricing', 'manual pane counts'],
-        highlights: ['Pane counter', 'Auto-quote'],
+        highlights: ['Pane counter', 'Damage register', 'Three-tier bid'],
         route: '/base-camp',
         status: 'coming_soon',
       },
