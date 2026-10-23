@@ -149,6 +149,7 @@ export function RoomSessionProvider({ theme, children }) {
           isDeveloper={isDeveloper}
           cameraId={cameraId}
           cameraErrors={cameraErrors}
+          onRetry={() => join(slug)}
           blurKey={`campfire.blur.${me?.id || user?.email || "anon"}`}
         />
       )}
@@ -207,7 +208,9 @@ function triedEveryCameraMessage(errors = []) {
   if (first === 'NotFound' || errors.length === 0) return 'No camera on this device. Everyone can still hear you.'
   if (errors.every(e => e.name === 'NotAllowedError')) return 'Your browser is blocking the camera. Click the padlock in the address bar, allow it, then rejoin.'
   const n = errors.length
-  const where = n === 1 ? 'your camera' : `all ${n} cameras`
+  // "all 2 cameras" is the sort of phrasing that makes software feel
+  // machine-written. Two is "either".
+  const where = n === 1 ? 'your camera' : n === 2 ? 'either of your cameras' : `any of your ${n} cameras`
   return `Windows would not start ${where}, so you have joined with audio only. On a laptop this is usually a camera privacy switch — an F-key with a camera on it, a shutter on the bezel, or Camera Privacy Mode in the maker's app.`
 }
 
@@ -251,7 +254,7 @@ async function probeDevice(kind) {
   }
 }
 
-function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey, cameraId, cameraErrors }) {
+function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey, cameraId, cameraErrors, onRetry }) {
   const isMobile = useIsMobile()
   const [deviceIssue, setDeviceIssue] = useState(null)
   const [deviceDetail, setDeviceDetail] = useState(null)
@@ -402,6 +405,22 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
                 {cameraErrors?.length
                   ? triedEveryCameraMessage(cameraErrors)
                   : deviceMessage(deviceIssue, deviceDetail)}
+                {/* Flipping a privacy switch does not reach a call that has
+                    already started, and leaving and rejoining to find out is
+                    a lot to ask of someone mid-conversation. This re-runs the
+                    camera hunt and reconnects with whatever it finds. */}
+                {cameraErrors?.length > 0 && onRetry && (
+                  <button
+                    onClick={onRetry}
+                    style={{
+                      marginLeft: 6, padding: '1px 8px', borderRadius: 999,
+                      border: '1px solid #92400e', background: 'transparent',
+                      color: '#92400e', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >
+                    Try again
+                  </button>
+                )}
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
