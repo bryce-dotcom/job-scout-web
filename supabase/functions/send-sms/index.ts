@@ -86,6 +86,18 @@ serve(async (req) => {
         To: cleanTo,
         From: config.from_number,
         Body: body,
+        // Ask Twilio to tell us what the CARRIER did with it.
+        //
+        // Without this the story ends at "Twilio accepted it", which is what
+        // the log has always recorded and what Tracy correctly refused to
+        // trust: a message can be accepted here and refused by the carrier a
+        // second later (error 30034, an unregistered 10DLC number, did
+        // exactly that on 2026-10-16 and the row still says 'sent').
+        //
+        // company_id rides on the URL because the signature on the callback
+        // is made with THAT company's auth token, and sms-status has to know
+        // whose token to check it against before it trusts anything.
+        StatusCallback: `${Deno.env.get('SUPABASE_URL')}/functions/v1/sms-status?c=${encodeURIComponent(String(company_id))}`,
       }),
     });
 

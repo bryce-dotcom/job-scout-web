@@ -547,3 +547,13 @@ verify_jwt = false
 # a claim route out here would accept a forged one.
 [functions.arnie-pair]
 verify_jwt = false
+
+# Twilio delivery receipts. Twilio cannot send a Supabase JWT, so this must
+# stay open — and it is the third function in this file to need the note, for
+# the same reason the other two do: a bare `supabase functions deploy` resets
+# verify_jwt to true, the endpoint 401s, and the provider quietly stops
+# telling us anything. That is how Resend delivery tracking died for two
+# months. Safe to expose: every delivery is signed with the company's own
+# Twilio auth token and the signature is verified before anything is written.
+[functions.sms-status]
+verify_jwt = false
