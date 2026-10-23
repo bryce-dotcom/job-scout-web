@@ -128,12 +128,24 @@ describe('the demo register, priced', () => {
     expect(bid.tiers.expected).toBe(bid.expected)
   })
 
-  it('lands all three tiers within a percent of what the job really sold for', () => {
+  it('lands the bid on what the job really sold for', () => {
+    // Only the EXPECTED case is comparable to AGR's middle number now. Tiers
+    // vary the takeoff rather than the price (Bryce, 2026-10-23), so the other
+    // two make a different claim: not "we might charge less", but "there might
+    // be fewer zones under the residue than anybody could see".
     const { bid } = priceAssessment(demo())
-    const sold = { favourable: 15150, expected: 19400, difficult: 26500 }
-    for (const k of Object.keys(sold)) {
-      expect(Math.abs(bid.tiers[k] - sold[k]) / sold[k]).toBeLessThan(0.01)
-    }
+    expect(Math.abs(bid.tiers.expected - 19400) / 19400).toBeLessThan(0.01)
+    expect(bid.tiers.favourable).toBeLessThan(bid.tiers.expected)
+    expect(bid.tiers.difficult).toBeGreaterThan(bid.tiers.expected)
+    expect(bid.tiers.varies).toBe(true)
+  })
+
+  it('says how many zones each tier assumes, which IS the range', () => {
+    const { bid } = priceAssessment(demo())
+    const q = bid.tiers.quantities
+    expect(q.expected).toBe(14)          // the restorable zones in the register
+    expect(q.favourable).toBeLessThan(q.expected)
+    expect(q.difficult).toBeGreaterThan(q.expected)
   })
 })
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ACCESS_PROFILES, CONDITION_PROFILES, SEVERITY_PROFILES, EDGE_FACTOR,
   countableZones, excludedZones, splitBySeverity, registerCounts, validateRegister, nextZoneCode, newZone,
-  cleaningMinutes, restorationMinutes, techDays, techDayCost, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT, valuePrice,
+  cleaningMinutes, restorationMinutes, techDays, techDayCost, tierQuantity, valueCheck, TYPICAL_SHARE_OF_REPLACEMENT, valuePrice,
   threeTiers, computeCalibrationFactor, walterEstimate, quoteTotalFromLines,
 } from './windowEstimator'
 
@@ -199,26 +199,67 @@ describe('what a tech day costs', () => {
   })
 })
 
-describe('three tiers', () => {
-  it('the middle tier IS the bid, not a markup on it', () => {
-    const t = threeTiers(19400)
-    expect(t.expected).toBe(19400)
-    expect(t.favourable).toBeLessThan(t.expected)
-    expect(t.difficult).toBeGreaterThan(t.expected)
+describe('three tiers vary the takeoff, not the price', () => {
+  // Bryce, 2026-10-23: quantity, not price. The range exists because nobody
+  // knows what is under the residue, not because the price is negotiable.
+  const line = (work_type, quantity, price) => ({ work_type, quantity, price })
+
+  it('scales the uncertain work and leaves counted work alone', () => {
+    const t = threeTiers([
+      line('residue', 220, 6),      // 220 panes somebody counted
+      line('resurface', 23, 400),   // 23 zones nobody can be sure of
+    ])
+    expect(t.quantities.expected).toBe(23)
+    expect(t.quantities.favourable).toBe(17)   // floor(23 * 0.78)
+    expect(t.quantities.difficult).toBe(32)    // ceil(23 * 1.37)
+    // The pane money is identical in all three; only the zones move.
+    expect(t.expected - t.favourable).toBe((23 - 17) * 400)
+    expect(t.difficult - t.expected).toBe((32 - 23) * 400)
   })
 
-  it('reproduces the AGR spread closely enough to recognise', () => {
-    const t = threeTiers(19400)
-    expect(t.favourable).toBeGreaterThan(14000)
-    expect(t.favourable).toBeLessThan(16500)
-    expect(t.difficult).toBeGreaterThan(25000)
-    expect(t.difficult).toBeLessThan(28000)
+  it('two passes over the same zones are not 2x the zones', () => {
+    // Resurfacing and finishing both run over the SAME 14 zones. Summing them
+    // reports 28 on a register of 14, which a customer can count and query.
+    const t = threeTiers([line('resurface', 14, 800), line('optical_finish', 14, 180)])
+    expect(t.quantities.expected).toBe(14)
+    expect(t.quantities.favourable).toBe(10)
+    expect(t.quantities.difficult).toBe(20)
+    // The money still counts both lines.
+    expect(t.expected).toBe(14 * 800 + 14 * 180)
+  })
+
+  it('a counted pane count has NO range', () => {
+    const t = threeTiers([line('residue', 220, 6)])
+    expect(t.varies).toBe(false)
+    expect(t.favourable).toBe(t.expected)
+    expect(t.difficult).toBe(t.expected)
+  })
+
+  it('says so when something IS uncertain', () => {
+    expect(threeTiers([line('resurface', 10, 400)]).varies).toBe(true)
+  })
+
+  it('rounds away from the middle, so the range never narrows itself', () => {
+    expect(tierQuantity(23, 0.78)).toBe(17)   // not 18
+    expect(tierQuantity(23, 1.37)).toBe(32)   // not 31
+    expect(tierQuantity(23, 1)).toBe(23)
+  })
+
+  it('never goes below zero zones', () => {
+    expect(tierQuantity(1, 0.1)).toBe(0)
+    expect(tierQuantity(0, 0.78)).toBe(0)
   })
 
   it("takes a company's own spread", () => {
-    const t = threeTiers(1000, { favourable: 0.9, expected: 1, difficult: 1.1 })
-    expect(t.favourable).toBe(900)
-    expect(t.difficult).toBe(1100)
+    const t = threeTiers([line('resurface', 100, 10)], { spread: { favourable: 0.9, expected: 1, difficult: 1.1 } })
+    expect(t.quantities.favourable).toBe(90)
+    expect(t.quantities.difficult).toBe(110)
+  })
+
+  it('an empty bid is three zeros, not a crash', () => {
+    const t = threeTiers([])
+    expect(t.expected).toBe(0)
+    expect(t.varies).toBe(false)
   })
 })
 
@@ -331,8 +372,13 @@ describe('a whole Walter bid', () => {
     const finish = r.lines.find((l) => l.work_type === 'optical_finish')
     expect(finish).toBeTruthy()
     expect(finish.line_total).toBeGreaterThan(0)
-    // The two lines add back to the restoration total exactly.
-    expect(round(resurface.line_total + finish.line_total)).toBe(round(r.restoration.amount))
+    // The two lines add back to the restoration total within the rounding a
+    // per-ZONE price costs. digEstimator makes the same trade and says why:
+    // quantity times unit price equals the line total on every line, and that
+    // is never fudged, so exact reconciliation to an internal figure is not
+    // always reachable. The BID total is still the sum of its lines exactly.
+    expect(Math.abs(resurface.line_total + finish.line_total - r.restoration.amount)).toBeLessThan(0.05)
+    expect(r.expected).toBe(quoteTotalFromLines(r.lines))
     // And finishing is the smaller pass, the way the trade prices it.
     expect(finish.line_total).toBeLessThan(resurface.line_total)
   })
@@ -696,5 +742,19 @@ describe('a register somebody typed', () => {
     expect(z.edge).toBe(false)
     expect(z.duplicate_of).toBe(null)
     expect(validateRegister([{ code: 'A01', severity: 'L1' }, z]).ok).toBe(true)
+  })
+})
+
+describe('tier quantities and floating point', () => {
+  it('a round number does not gain a unit to float noise', () => {
+    // 100 * 1.1 is 110.00000000000001, and Math.ceil of that is 111.
+    expect(tierQuantity(100, 1.1)).toBe(110)
+    expect(tierQuantity(10, 1.1)).toBe(11)
+    expect(tierQuantity(50, 0.9)).toBe(45)
+  })
+
+  it('still rounds a genuine fraction away from the middle', () => {
+    expect(tierQuantity(23, 1.37)).toBe(32)   // 31.51 up
+    expect(tierQuantity(23, 0.78)).toBe(17)   // 17.94 down
   })
 })

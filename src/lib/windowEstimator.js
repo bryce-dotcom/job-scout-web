@@ -429,6 +429,36 @@ export function crewHours(minutes) {
 
 export const DEFAULT_TIER_SPREAD = { favourable: 0.78, expected: 1.00, difficult: 1.37 }
 
+/**
+ * Work whose QUANTITY is genuinely unknown until somebody is on site.
+ *
+ * This is the whole of the tier range. A pane count is not uncertain — a
+ * person counted the panes, and bidding 78% to 137% of a number you counted
+ * is not a range, it is a shrug. What nobody knows is how much damage is
+ * under the construction residue, which is exactly what AGR said: "not known
+ * until someone stands there with a test patch."
+ */
+export const UNCERTAIN_WORK = new Set(['resurface', 'optical_finish', 'restoration'])
+
+/**
+ * A quantity at a tier. Whole units, because a damage zone is a damage zone.
+ *
+ * Rounded AWAY from the expected case at each end — down for favourable, up
+ * for difficult — so the range never quietly narrows itself. A tier that
+ * rounds toward the middle is a tier pretending to be more certain than it is.
+ */
+export function tierQuantity(qty, factor) {
+  const q = num(qty)
+  const f = num(factor, 1)
+  if (f === 1) return q
+  // Settle the float before rounding. 100 * 1.1 is 110.00000000000001 in
+  // JavaScript, and Math.ceil of that is 111 — a tier one unit too high on
+  // every round number, which is the kind of wrongness nobody queries because
+  // it is only ever off by one.
+  const n = Math.round(q * f * 1e6) / 1e6
+  return f < 1 ? Math.max(0, Math.floor(n)) : Math.ceil(n)
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // What the work is worth, as against what it costs
 // ─────────────────────────────────────────────────────────────────────────
@@ -566,12 +596,42 @@ export function valueCheck({ bid, replacement_low, replacement_high, direct_cost
   return out
 }
 
-export function threeTiers(expected, spread = DEFAULT_TIER_SPREAD) {
+export function threeTiers(lines, { spread, uncertain = UNCERTAIN_WORK } = {}) {
   const s = { ...DEFAULT_TIER_SPREAD, ...(spread || {}) }
+  const rows = Array.isArray(lines) ? lines : []
+  const varies = rows.some((l) => uncertain.has(l?.work_type) && num(l?.quantity) > 0)
+
+  const at = (factor) => {
+    let total = 0
+    let units = 0
+    for (const l of rows) {
+      const scaled = uncertain.has(l?.work_type)
+      const q = scaled ? tierQuantity(l?.quantity, factor) : num(l?.quantity)
+      // The LARGEST uncertain quantity, not their sum. Resurfacing and
+      // finishing are two passes over the SAME zones, so adding them reports
+      // 28 zones on a register of 14 — a number the customer can count and
+      // find wrong. Lines sharing a unit are not additive.
+      if (scaled) units = Math.max(units, q)
+      total = round2(total + round2(q * num(l?.price)))
+    }
+    return { total, units }
+  }
+
+  const fav = at(num(s.favourable, 1))
+  const exp = at(1)
+  const dif = at(num(s.difficult, 1))
+
   return {
-    favourable: round2(num(expected) * num(s.favourable, 1)),
-    expected: round2(num(expected)),
-    difficult: round2(num(expected) * num(s.difficult, 1)),
+    favourable: fav.total,
+    expected: exp.total,
+    difficult: dif.total,
+    // What actually differs between the three, so a bid can say "23 zones,
+    // 18 if it goes well, 32 if it does not" instead of three bare numbers
+    // the customer has to take on faith.
+    quantities: { favourable: fav.units, expected: exp.units, difficult: dif.units },
+    // False when nothing in the bid is uncertain — a counted pane count has no
+    // range, and three identical numbers would be a worse lie than one.
+    varies,
   }
 }
 
@@ -705,26 +765,37 @@ export function walterEstimate({
       sub_cost: subCost,
       amount,
     }
-    if (days.billable > 0) {
+    // Priced PER ZONE, not as a lump.
+    //
+    // A lump-sum line has no quantity to vary, and the tiers vary quantity —
+    // so a one-unit line scaled 0.78 and 1.37 collapses to zero zones and
+    // doubles to two, which is not a range, it is an accident. The zone count
+    // is the unit a person can check and the unit the tier moves. It is also
+    // the shape a price-book product wants: quantity stays the zone count and
+    // the price becomes the product's per-zone rate.
+    const zones = split.restoration.length
+    if (days.billable > 0 && zones > 0) {
+      const perZone = round2(resurfaceAmount / zones)
       out.lines.push({
         work_type: 'resurface',
         item_name: WORK_TYPES.resurface.label,
-        description: `${split.restoration.length} marked zone(s)`,
-        quantity: 1,
-        price: resurfaceAmount,
-        line_total: resurfaceAmount,
-        unit_of_measure: 'EA',
+        description: `${zones} marked zone(s)`,
+        quantity: zones,
+        price: perZone,
+        line_total: round2(perZone * zones),
+        unit_of_measure: 'ZONE',
         kind: 'labor',
       })
       if (finishAmount > 0) {
+        const finishPerZone = round2(finishAmount / zones)
         out.lines.push({
           work_type: 'optical_finish',
           item_name: WORK_TYPES.optical_finish.label,
           description: 'Final polish and quality check, then walkthrough',
-          quantity: 1,
-          price: finishAmount,
-          line_total: finishAmount,
-          unit_of_measure: 'EA',
+          quantity: zones,
+          price: finishPerZone,
+          line_total: round2(finishPerZone * zones),
+          unit_of_measure: 'ZONE',
           kind: 'labor',
         })
       }
@@ -812,10 +883,18 @@ export function walterEstimate({
   // to meet it (that would mean billing a fee at less than the fee), so the
   // lines win, and the basis says so rather than claiming a price the bid
   // does not have.
-  if (target != null && out.expected > round2(target) + 0.01) {
+  // A DOLLAR of tolerance, not a cent. Pricing a line per zone rather than as
+  // a lump means round2 on the unit price, and the line total then lands a
+  // couple of cents off the target — which is the documented cost of letting a
+  // customer check quantity times price with a calculator. The case this guard
+  // is actually for, fixed lines already exceeding the value target, misses by
+  // hundreds. A cent of tolerance mistook the former for the latter and
+  // reported a value-priced bid as cost-plus.
+  if (target != null && out.expected > round2(target) + 1) {
     out.pricing_basis = 'cost_plus'
   }
-  out.tiers = threeTiers(out.expected, tier_spread)
+  // Tiers vary the TAKEOFF, not the price. Bryce, 2026-10-23.
+  out.tiers = threeTiers(out.lines, { spread: tier_spread })
   // Only where there is restoration to compare. Replacing the glass is the
   // alternative to RESTORING it; it was never the alternative to cleaning it,
   // so on a cleaning-only visit the comparison is meaningless and the
