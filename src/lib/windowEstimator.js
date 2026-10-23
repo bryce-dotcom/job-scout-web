@@ -689,7 +689,17 @@ export function walterEstimate({
     out.pricing_basis = 'cost_plus'
   }
   out.tiers = threeTiers(out.expected, tier_spread)
-  if (num(replacement_low) > 0 || num(replacement_high) > 0) {
+  // Only where there is restoration to compare. Replacing the glass is the
+  // alternative to RESTORING it; it was never the alternative to cleaning it,
+  // so on a cleaning-only visit the comparison is meaningless and the
+  // under-the-band flag is noise. A cleaning-only demo record reported "4.9%
+  // of replacement" and raised the flag, which is a bid being told off for not
+  // being expensive enough to replace a window.
+  //
+  // Same gate the pricing already uses, for the same reason. Not computed at
+  // all rather than computed and ignored: a figure that exists gets rendered
+  // eventually.
+  if (out.restoration && (num(replacement_low) > 0 || num(replacement_high) > 0)) {
     out.value = valueCheck({
       bid: out.expected,
       replacement_low,

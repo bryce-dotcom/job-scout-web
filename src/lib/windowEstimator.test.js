@@ -538,3 +538,35 @@ describe('the register tells its three kinds apart', () => {
     expect(registerCounts(null).marks).toBe(0)
   })
 })
+
+// Found in a browser by the Walter session: a cleaning-only visit reported
+// "4.9% of replacement" and raised the under-the-band flag — a bid told off
+// for not being expensive enough to replace a window.
+describe('replacement is the alternative to RESTORING glass, not to cleaning it', () => {
+  const pricing = { crew_rate_per_hour: 55, crew_cost_per_hour: 38, tech_hourly_rate: 32.5, assessment_fee: 0 }
+
+  it('a cleaning-only bid gets no value comparison at all', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(r.value).toBeUndefined()
+    expect(r.pricing_basis).toBe('cost_plus')
+  })
+
+  it('and still costs what it costs', () => {
+    const r = walterEstimate({ cleaning: { panes: 220, faces: 2 }, pricing, replacement_low: 45000, replacement_high: 110000 })
+    expect(r.expected).toBe(r.cost_plus_total)
+    expect(r.expected).toBeGreaterThan(0)
+  })
+
+  it('the same visit WITH restoration does get the comparison', () => {
+    const r = walterEstimate({
+      cleaning: { panes: 220, faces: 2, condition: 'post_construction' },
+      restoration: { zones: [{ id: 'A01', severity: 'L2', lite_id: 'L1', face: 'out' }] },
+      pricing, replacement_low: 45000, replacement_high: 110000,
+    })
+    expect(r.value).toBeTruthy()
+    expect(r.value.below_typical_band).toBe(false)
+  })
+})
