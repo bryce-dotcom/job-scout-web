@@ -28,6 +28,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 export function buildRunPayload({
   companyId, periodStart, periodEnd, payDate, createdBy = null, paidBy = null, totalGross = 0,
   employees = [], payrollConfig = {}, stubs = [], ptoDaysFor = () => 0, settle = [], liabilities = [],
+  paidCommissionRows = { rep: [], lead: [] },
 }) {
   const ps = localDateStr(periodStart), pe = localDateStr(periodEnd), pd = localDateStr(payDate)
   const strip = (row) => { const { company_id, payroll_run_id, ...rest } = row || {}; return rest }
@@ -46,6 +47,10 @@ export function buildRunPayload({
     stubs: stubs.map(s => ({ ...strip(s), period_start: ps, period_end: pe, pay_date: pd })),
     pto_moves,
     paid_employee_ids: employees.map(e => e.id),
+    // The commission rows the engine paid (earned in the period, not held),
+    // so the function marks exactly those and nothing by a staging flag.
+    paid_rep_ids: [...new Set(paidCommissionRows?.rep || [])],
+    paid_lead_ids: [...new Set(paidCommissionRows?.lead || [])],
     settle: (settle || []).filter(g => (g.rep?.length || 0) + (g.lead?.length || 0) > 0).map(g => ({ covered: !!g.covered, rep: g.rep || [], lead: g.lead || [] })),
     liabilities: (liabilities || []).map(strip),
   }

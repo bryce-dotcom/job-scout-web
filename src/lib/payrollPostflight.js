@@ -52,13 +52,21 @@ export function postflightReport({ payload, result, employees = [], ledgerBonuse
   const bonusOnStubs = sum(stubs, 'bonus_pay')
   if (counts.bonuses !== bonusExpected.length) exceptions.push(`${bonusExpected.length} bonus rows were payable, ${counts.bonuses} marked paid`)
   if (Math.abs(sum(bonusExpected, 'amount') - bonusOnStubs) > 0.011) exceptions.push(`payable bonuses ${money(sum(bonusExpected, 'amount'))}, on stubs ${money(bonusOnStubs)}`)
-  const repQueued = (repCommissions || []).filter(r => paid.has(r.employee_id) && r.queued_for_payroll && r.payment_status !== 'paid')
-  const repOutside = repQueued.filter(r => !inPeriod(r.earned_at))
+  // Commissions: the engine named the rows it paid (earned in the period,
+  // not held); the function must have marked exactly those.
+  const repIds = payload?.paid_rep_ids || [], leadIds = payload?.paid_lead_ids || []
+  const repById = new Map((repCommissions || []).map(r => [r.id, r]))
+  const repOutside = repIds.map(id => repById.get(id)).filter(r => r && !inPeriod(r.earned_at))
   if (repOutside.length) exceptions.push(`${repOutside.length} rep commission row(s) marked paid were earned outside the period and are on no stub (${money(sum(repOutside, 'amount'))})`)
-  if (counts.rep !== repQueued.length) exceptions.push(`${repQueued.length} rep commission rows were staged, ${counts.rep} marked paid`)
-  const leadQueued = (leadCommissions || []).filter(c => paid.has(c.employee_id) && c.queued_for_payroll && c.payment_status !== 'paid')
-  if (counts.setter > leadQueued.length) exceptions.push(`${leadQueued.length} setter fees were staged in this period, ${counts.setter} marked paid: ${counts.setter - leadQueued.length} from outside it, on no stub`)
-  else if (counts.setter < leadQueued.length) exceptions.push(`${leadQueued.length} setter fees were staged, ${counts.setter} marked paid`)
+  const repPaidAmt = sum(repIds.map(id => repById.get(id)).filter(Boolean), 'amount')
+  const commOnStubs = sum(stubs, 'commission_pay')
+  if (counts.rep !== repIds.length) exceptions.push(`${repIds.length} rep commission rows were paid by the engine, ${counts.rep} marked paid`)
+  if (counts.setter !== leadIds.length) exceptions.push(`${leadIds.length} setter fees were paid by the engine, ${counts.setter} marked paid`)
+  const leadById = new Map((leadCommissions || []).map(c => [c.id, c]))
+  const leadPaidAmt = sum(leadIds.map(id => leadById.get(id)).filter(Boolean), 'amount')
+  // Greater-of settles are on stubs too but are not in these lists, so the
+  // stub total may exceed the lists; it must never fall short of them.
+  if (commOnStubs + 0.011 < repPaidAmt + leadPaidAmt) exceptions.push(`commission rows paid total ${money(repPaidAmt + leadPaidAmt)}, on stubs only ${money(commOnStubs)}`)
   lines.push(`closed: ${counts.bonuses || 0} bonuses, ${counts.rep || 0} rep commissions, ${counts.setter || 0} setter fees, ${counts.settled || 0} settled by salary-or-commission`)
 
   // PTO.

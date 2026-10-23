@@ -1,6 +1,6 @@
 {
  "meta": {
-  "captured_at": "2026-10-23T22:32:28.212Z",
+  "captured_at": "2026-10-23T23:10:41.007Z",
   "company_id": 3,
   "payroll_run_id": 6,
   "source": "catch_up",
@@ -3249,7 +3249,8 @@
    "covered_by_salary": null,
    "queued_for_payroll": false,
    "override_for_employee_id": null,
-   "created_at": "2026-08-05T19:54:39.047829+00:00"
+   "created_at": "2026-08-05T19:54:39.047829+00:00",
+   "held_from_payroll": true
   }
  ],
  "leadCommissions": [
@@ -3268,7 +3269,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 160,
@@ -3285,7 +3287,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 161,
@@ -3302,7 +3305,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 162,
@@ -3319,7 +3323,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 163,
@@ -3336,7 +3341,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 164,
@@ -3353,7 +3359,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 165,
@@ -3370,7 +3377,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   }
  ],
  "bonusRows": [

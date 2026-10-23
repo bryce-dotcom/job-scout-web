@@ -102,10 +102,13 @@ const timeLogEntries = await all(`time_log?select=*&company_id=eq.${COMPANY_ID}&
 // have paid it). Older rows of rep_commissions carry no run id, only the
 // day they were paid, so payday itself counts as "this run".
 const paidByThisRun = (r) => r.paid_payroll_run_id === RUN_ID || (r.paid_payroll_run_id == null && String(r.paid_at || '').slice(0, 10) === payDate)
+// Since 20261023230000 the engine pays every row earned in the period unless
+// it is held, so a row this run did NOT pay reads as held in the fixture:
+// that is what "not staged" meant on the day.
 const rewindRep = (r) => {
-  if (paidByThisRun(r)) return { ...r, payment_status: 'earned', queued_for_payroll: true, paid_at: null, paid_payroll_run_id: null, covered_by_salary: null }
-  if (r.payment_status === 'paid' && ((r.paid_payroll_run_id && r.paid_payroll_run_id > RUN_ID) || String(r.paid_at || '').slice(0, 10) > payDate)) return { ...r, payment_status: 'earned', queued_for_payroll: false, paid_at: null, paid_payroll_run_id: null, covered_by_salary: null }
-  return { ...r, queued_for_payroll: false }
+  if (paidByThisRun(r)) return { ...r, payment_status: 'earned', queued_for_payroll: true, held_from_payroll: false, paid_at: null, paid_payroll_run_id: null, covered_by_salary: null }
+  if (r.payment_status === 'paid' && ((r.paid_payroll_run_id && r.paid_payroll_run_id > RUN_ID) || String(r.paid_at || '').slice(0, 10) > payDate)) return { ...r, payment_status: 'earned', queued_for_payroll: false, held_from_payroll: true, paid_at: null, paid_payroll_run_id: null, covered_by_salary: null }
+  return { ...r, queued_for_payroll: false, held_from_payroll: true }
 }
 const repCommissions = (await all(`rep_commissions?select=id,employee_id,invoice_id,job_id,payment_id,kind,amount,rate,basis_amount,earned_at,payment_status,paid_at,paid_payroll_run_id,covered_by_salary,queued_for_payroll,override_for_employee_id,created_at&company_id=eq.${COMPANY_ID}&order=id`)).filter(existedThen).map(rewindRep)
 // lead_commissions has no paid_at and older rows no run id: a fee created in

@@ -131,24 +131,30 @@ export function computeEmployeePay({
     salaryPay = annualSalary / periodsPerYear
   }
 
-  // Commissions. A run pays only what was ADDED to this payroll (queued).
+  // Commissions. Earned in the period is paid in the period (Bryce, 23 Oct
+  // 2026, on Doug's My Pay: "the ones that show he earned this pay period
+  // have not been paid… my pay should show that those will be paid this pay
+  // period"). Until then a run paid only what somebody had pressed Add to
+  // payroll on, so an earned commission waited on the office and My Pay
+  // could not promise it. The only thing that keeps an earned row off the
+  // cheque now is a hold: "Remove from payroll" sets held_from_payroll.
   const invoiceComm = invoiceCommissions
   const leadComm = leadCommissionSummary || { details: [] }
   const cfpStart = period.start, cfpEnd = period.end
   const cfpS = localDateStr(cfpStart), cfpE = localDateStr(cfpEnd)
-  const queuedSetter = (leadComm.details || []).filter(c => c.queued_for_payroll).reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
-  const queuedRep = (repCommissions || [])
-    .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
-    .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-  // Salary or commission, whichever is more (lib/payBasis): the comparison
-  // weighs the period's WHOLE commission, staged or not.
+  const sumAmt = (rows) => rows.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0)
   const greaterOf = paysGreaterOf(employee)
   const earnedSetterRows = (leadComm.details || []).filter(c => c.id)
   const earnedRepRows = (repCommissions || [])
     .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
-  const earnedSetter = earnedSetterRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
-  const earnedRep = earnedRepRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-  const commissionEarnedThisPeriod = greaterOf ? earnedSetter + earnedRep : queuedSetter + queuedRep
+  const payableSetterRows = earnedSetterRows.filter(c => !c.held_from_payroll)
+  const payableRepRows = earnedRepRows.filter(r => !r.held_from_payroll)
+  const earnedSetter = sumAmt(earnedSetterRows)
+  const earnedRep = sumAmt(earnedRepRows)
+  // Salary or commission, whichever is more (lib/payBasis): the comparison
+  // weighs the period's WHOLE commission, held or not.
+  const commissionEarnedThisPeriod = greaterOf ? earnedSetter + earnedRep : sumAmt(payableSetterRows) + sumAmt(payableRepRows)
+  const commissionHeld = greaterOf ? 0 : r2(earnedSetter + earnedRep - commissionEarnedThisPeriod)
 
   const payBasis = greaterOfPay({ salaryPay, commissionPay: commissionEarnedThisPeriod, enabled: greaterOf })
   salaryPay = payBasis.salaryPaid
@@ -207,7 +213,11 @@ export function computeEmployeePay({
     salaryPay,
     payBasis,
     commissionEarnedThisPeriod,
+    commissionHeld,
     weighedCommissionRows: greaterOf ? { rep: earnedRepRows.map(r => r.id).filter(Boolean), lead: earnedSetterRows.map(c => c.id).filter(Boolean) } : null,
+    // The rows this check pays, for the run to mark by id. Greater-of rows
+    // are settled through weighedCommissionRows instead.
+    paidCommissionRows: greaterOf ? null : { rep: payableRepRows.map(r => r.id).filter(Boolean), lead: payableSetterRows.map(c => c.id).filter(Boolean) },
     regularHours,
     overtimeHours,
     hourlyRate,

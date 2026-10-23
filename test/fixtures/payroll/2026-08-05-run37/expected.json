@@ -1,6 +1,6 @@
 {
  "meta": {
-  "captured_at": "2026-10-23T22:30:47.337Z",
+  "captured_at": "2026-10-23T23:10:28.166Z",
   "company_id": 3,
   "payroll_run_id": 37,
   "source": "gusto",
@@ -11,7 +11,8 @@
   "pay_date": "2026-08-05",
   "note": "Stubs were produced by Gusto (hours typed by the office) and imported; the replay compares JobScout's own inputs with what Gusto paid.",
   "rate_overrides": [
-   "emp_15: annual 50000 now, 54255.36 on the stub"
+   "emp_15: annual 50000 now, 54255.36 on the stub",
+   "emp_36: inactive now, paid then — active in the fixture"
   ],
   "counts": {
    "employees": 23,

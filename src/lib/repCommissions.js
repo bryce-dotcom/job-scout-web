@@ -322,7 +322,7 @@ export async function fetchRepCommissions(supabase, companyId, employeeId = null
   // which jobs a cheque paid for and at what rate, and whether a salary
   // covered it instead (lib/payHistory). basis_amount and
   // override_for_employee_id: an override line names the rep and the sale.
-  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, rate, basis_amount, earned_at, payment_status, paid_at, paid_payroll_run_id, covered_by_salary, queued_for_payroll, override_for_employee_id').eq('company_id', companyId)
+  let q = supabase.from('rep_commissions').select('id, employee_id, invoice_id, job_id, payment_id, kind, amount, rate, basis_amount, earned_at, payment_status, paid_at, paid_payroll_run_id, covered_by_salary, queued_for_payroll, held_from_payroll, override_for_employee_id').eq('company_id', companyId)
   if (employeeId != null) q = q.eq('employee_id', employeeId)
   const { data, error } = await q
   if (error) { console.warn('[fetchRepCommissions] failed:', error.message); return [] }

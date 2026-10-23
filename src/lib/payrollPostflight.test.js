@@ -6,9 +6,10 @@ import { postflightReport } from './payrollPostflight'
 const payload = {
   run: { period_start: '2026-10-16', period_end: '2026-10-31', pay_date: '2026-11-05' },
   paid_employee_ids: [1, 2],
+  paid_rep_ids: [9], paid_lead_ids: [],
   stubs: [
     { employee_id: 1, gross_pay: 2000, net_pay: 1600, bonus_pay: 300, federal_income_tax: 200, state_income_tax: 80, social_security_employee: 124, medicare_employee: 29, social_security_employer: 124, medicare_employer: 29, futa: 12, sui: 4 },
-    { employee_id: 2, gross_pay: 1000, net_pay: 850, bonus_pay: 0, federal_income_tax: 50, state_income_tax: 30, social_security_employee: 62, medicare_employee: 14.5, social_security_employer: 62, medicare_employer: 14.5, futa: 6, sui: 2 },
+    { employee_id: 2, gross_pay: 1000, net_pay: 850, bonus_pay: 0, commission_pay: 400, federal_income_tax: 50, state_income_tax: 30, social_security_employee: 62, medicare_employee: 14.5, social_security_employer: 62, medicare_employer: 14.5, futa: 6, sui: 2 },
   ],
   liabilities: [
     { kind: 'federal_income_tax', amount_employee: 250, amount_employer: 0 },
@@ -43,8 +44,9 @@ describe('postflightReport', () => {
 
   it('catches a ledger row closed that was on no stub', () => {
     const outside = [...repCommissions, { id: 10, employee_id: 2, amount: 150, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-09-02T12:00:00Z' }]
-    const r = postflightReport({ payload, result: { ...result, counts: { ...result.counts, rep: 2 } }, ledgerBonuses, repCommissions: outside })
+    const r = postflightReport({ payload: { ...payload, paid_rep_ids: [9, 10] }, result: { ...result, counts: { ...result.counts, rep: 2 } }, ledgerBonuses, repCommissions: outside })
     expect(r.exceptions).toContain('1 rep commission row(s) marked paid were earned outside the period and are on no stub ($150.00)')
+    expect(r.exceptions).toContain('commission rows paid total $550.00, on stubs only $400.00')
   })
 
   it('catches marks that do not match what was payable', () => {

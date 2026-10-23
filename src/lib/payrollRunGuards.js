@@ -108,16 +108,16 @@ export function payrollRunGuards({
       }
     }
   }
-  // 9. Staged for payroll, but earned outside this period: the run marks it
-  //    paid and pays nothing for it. Alayda, Oct 2026: a commission added to
-  //    payroll in September sat queued through two runs.
+  // 9. Earned before this period and still unpaid: this run pays its own
+  //    period, so the row stays owed until somebody deals with it. Alayda,
+  //    Oct 2026: a September commission sat through two runs.
   const paidIds = new Set(employees.map((e) => e.id))
   for (const r of repCommissions || []) {
-    if (!r?.queued_for_payroll || r.payment_status === 'paid' || !paidIds.has(r.employee_id)) continue
+    if (!r || r.payment_status !== 'earned' || r.held_from_payroll || !paidIds.has(r.employee_id)) continue
     const day = String(r.earned_at || '').slice(0, 10)
-    if (!day || !periodStart || !periodEnd) continue
-    if (day < periodStart || day > periodEnd) {
-      blocks.push({ key: `staged_outside:${r.id}`, employeeId: r.employee_id, label: `${name(r.employee_id)}: a commission of ${money(r.amount)} earned ${day} is added to this payroll but outside its period`, detail: 'This run would mark it paid without putting it on the stub. Remove it from this payroll, or run the period it belongs to.', fix: 'commission', commissionId: r.id })
+    if (!day || !periodStart) continue
+    if (day < periodStart) {
+      warnings.push({ key: `unpaid_before:${r.id}`, employeeId: r.employee_id, label: `${name(r.employee_id)}: a commission of ${money(r.amount)} earned ${day}, before this period, is still unpaid`, detail: 'This run pays its own period and will not pick it up. Mark it Paid outside payroll if a cheque went out, or run the period it belongs to.', fix: 'commission', commissionId: r.id })
     }
   }
   return { blocks, warnings }

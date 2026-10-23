@@ -679,12 +679,10 @@ export default function MyPay() {
   // that does NOT add up. The engine decides it; this page only says so.
   const myPayBasis = pay?.payBasis || { enabled: false, basis: 'both', salaryPaid: 0, commissionPaid: 0, salaryConsidered: 0 }
   const grossPay = pay?.grossPay || 0
-  // Commission earned this period that no admin has added to the run yet.
-  // Same rule as the bonus line: gross is what this cheque pays, and the rest
-  // has not gone anywhere. (On the greater-of arrangement the whole period is
-  // weighed, staged or not, so there is no remainder to report.)
-  const commissionNotOnRun = myPayBasis.enabled ? 0
-    : Math.max(0, Math.round((commAvailable + setterComm.total - (pay?.commissionPay || 0)) * 100) / 100)
+  // Commission earned this period is paid this period (20261023230000); the
+  // only part not on this cheque is what the office held back, and that is
+  // said under the gross so the number is never a surprise.
+  const commissionNotOnRun = pay?.commissionHeld || 0
 
   // ── Take-home, year to date, PTO bank ───────────────────────────────
   // Bryce, 2026-10-09: "do all 5" — the page headlined gross, and gross is
@@ -709,7 +707,8 @@ export default function MyPay() {
   // enough — a bonus staged while clear and re-flagged by a later ledger sync
   // showed here and then paid nothing.
   const queuedBonusTotal = payableBonus
-  const queuedRepTotal = repCommissions.filter(r => r.payment_status === 'earned' && r.queued_for_payroll && (r.earned_at || '').slice(0, 10) >= periodStartStr && (r.earned_at || '').slice(0, 10) <= periodEndStr).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+  // Earned in the period and not held: what the engine pays (20261023230000).
+  const queuedRepTotal = pay?.commissionPay || 0
   const inNextPaycheck = queuedBonusTotal + queuedRepTotal
 
   // Split commissions into buckets the UI renders separately so it's
@@ -914,7 +913,14 @@ export default function MyPay() {
           <div>
             <div style={{ fontSize: '11px', fontWeight: '600', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross this period</div>
             <div style={{ fontSize: '22px', fontWeight: '700', color: theme.text, marginTop: '2px' }}>{fmt(grossPay)}</div>
-            <div style={{ fontSize: '11px', color: theme.textMuted }}>before taxes</div>
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>{is1099 ? 'paid in full, no tax withheld' : 'before taxes'}</div>
+            {/* Salary and commission add up: Bryce, 23 Oct, on Doug's page:
+                "it should show his salary and the commissions and the total." */}
+            {salaryPay > 0 && (pay?.commissionPay || 0) > 0 && (
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', lineHeight: 1.35 }}>
+                salary {fmt(salaryPay)} + commission {fmt(pay.commissionPay)}{payableBonus > 0 ? ` + bonus ${fmt(payableBonus)}` : ''} = {fmt(grossPay)}
+              </div>
+            )}
             {owedNotOnThisRun > 0.005 && (
               <div style={{ fontSize: '11px', color: '#8b5cf6', marginTop: '2px', lineHeight: 1.35 }}>
                 {fmt(owedNotOnThisRun)} in bonuses owed, not on this run
@@ -922,7 +928,7 @@ export default function MyPay() {
             )}
             {commissionNotOnRun > 0.005 && (
               <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '2px', lineHeight: 1.35 }}>
-                {fmt(commissionNotOnRun)} in commission earned, not yet added to this run
+                {fmt(commissionNotOnRun)} in commission held back from this run by the office
               </div>
             )}
             {(pay?.totalAdditions || 0) > 0.005 && (

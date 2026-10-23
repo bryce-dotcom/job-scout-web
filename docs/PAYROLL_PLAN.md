@@ -54,6 +54,9 @@ A copy of HHH's data in a staging tenant runs the period one day before HHH does
 **Status 2026-10-23:** enforced in `scripts/ship.mjs`. A ship whose commits touch the engine, the loader, the run, the guards, the postflight, the pay pages, the shared tax maths or the fixtures runs every payroll test, the golden replays included, on the tree it is about to push, and refuses if one is red. A golden number that moved ships only after someone writes it into that fixture's `accepted.json` with the reason. Override exists (`JS_PAYROLL_OK=1`) and is logged in the ship output. Owner: Bryce decides accepted differences; the work happens on one branch (`work/payroll-engine`) and lands only through `npm run ship`.
 Payroll code lands from one branch, after the goldens, after staging. Other sessions do not touch `Payroll.jsx`, `MyPay.jsx`, `payrollEngine.js`, `payrollTax.js`, `bonusCalc.js`, `bonusLedger.js`, `repCommissions.js` without the replay suite green. `npm run guard` enforces: a change to those files fails CI if a golden fixture's output changed and the fixture's expected file did not.
 
+## Rules decided along the way
+- **2026-10-23, Bryce:** a commission earned in the pay period is paid in that period. "Add to payroll" is no longer a gate; the only thing that keeps an earned row off the cheque is a hold ("Hold back from payroll", `held_from_payroll`). A commission earned before the period and still unpaid is a warning on the next run, not a block, and belongs to the period it was earned in.
+
 ## Acceptance
 - Golden replays for all five payrolls pass, every commit.
 - Oct 20 (Oct 1–15) and the next two payrolls run with a zero-exception postflight report and no correction by Alayda afterwards.

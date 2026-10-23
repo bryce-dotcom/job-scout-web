@@ -56,6 +56,13 @@ describe('buildRunPayload', () => {
     expect(p.paid_employee_ids).toEqual([1, 2])
     expect(p.settle).toEqual([{ covered: true, rep: [10, 11], lead: [] }])
   })
+
+  it('names the commission rows the engine paid, so the function marks those and no others', () => {
+    const p = buildRunPayload({ companyId: 3, periodStart, periodEnd, payDate, employees, stubs, paidCommissionRows: { rep: [5, 6, 6], lead: [9] } })
+    expect(p.paid_rep_ids).toEqual([5, 6])
+    expect(p.paid_lead_ids).toEqual([9])
+    expect(base().paid_rep_ids).toEqual([])
+  })
 })
 
 const here = dirname(fileURLToPath(import.meta.url))

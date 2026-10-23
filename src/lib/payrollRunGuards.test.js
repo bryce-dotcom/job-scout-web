@@ -66,16 +66,18 @@ describe('run guards', () => {
     const same = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data, priorStubsByEmployee: { 37: [{ regular_hours: 80, hourly_rate: 22.5, pay_date: '2026-10-20' }] } })
     expect(same.warnings).toEqual([])
   })
-  it('blocks a commission staged for payroll but earned outside the period', () => {
+  it('warns about a commission earned before the period that is still unpaid', () => {
     const data = { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } }
-    const { blocks } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
+    const { blocks, warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
       repCommissions: [
-        { id: 1, employee_id: 37, amount: 500, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-05-02T12:00:00Z' },
-        { id: 2, employee_id: 37, amount: 700, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-06-20T12:00:00Z' },
-        { id: 3, employee_id: 37, amount: 900, payment_status: 'paid', queued_for_payroll: false, earned_at: '2026-01-20T12:00:00Z' },
+        { id: 1, employee_id: 37, amount: 500, payment_status: 'earned', earned_at: '2026-05-02T12:00:00Z' },
+        { id: 2, employee_id: 37, amount: 700, payment_status: 'earned', earned_at: '2026-06-20T12:00:00Z' },
+        { id: 3, employee_id: 37, amount: 900, payment_status: 'paid', earned_at: '2026-01-20T12:00:00Z' },
+        { id: 4, employee_id: 37, amount: 250, payment_status: 'earned', held_from_payroll: true, earned_at: '2026-04-02T12:00:00Z' },
       ] })
-    expect(blocks.map(b => b.key)).toEqual(['staged_outside:1'])
-    expect(blocks[0].label).toMatch(/\$500\.00 earned 2026-05-02/)
+    expect(blocks).toEqual([])
+    expect(warnings.map(w => w.key)).toEqual(['unpaid_before:1'])
+    expect(warnings[0].label).toMatch(/\$500\.00 earned 2026-05-02, before this period/)
   })
   it('warns when a check crosses a wage cap', () => {
     const { warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: { 37: { grossPay: 3000, regularHours: 80, overtimeHours: 0, netPay: 2400 } },

@@ -123,8 +123,8 @@ describe('the wiring', () => {
     const sql = read('supabase/migrations/20261023200000_process_payroll_run.sql')
     expect(sql).toMatch(/update public\.rep_commissions[\s\S]{0,300}covered_by_salary = coalesce\(\(r->>'covered'\)::boolean/)
     expect(sql).toMatch(/update public\.lead_commissions[\s\S]{0,300}covered_by_salary = coalesce\(\(r->>'covered'\)::boolean/)
-    // and the whole period counts for them, staged or not
-    expect(engine).toMatch(/greaterOf \? earnedSetter \+ earnedRep : queuedSetter \+ queuedRep/)
+    // and the whole period counts for them, held or not
+    expect(engine).toMatch(/greaterOf \? earnedSetter \+ earnedRep : sumAmt\(payableSetterRows\) \+ sumAmt\(payableRepRows\)/)
   })
 
   it('My Pay runs the same engine as Payroll, on the same inputs', () => {

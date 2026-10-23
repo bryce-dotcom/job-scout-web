@@ -45,18 +45,32 @@ describe('computeEmployeePay', () => {
     expect(computeEmployeePay(base(emp)).salaryPay).toBe(4000)
     expect(computeEmployeePay(base(emp, { payrollConfig: { ...cfg, pay_frequency: 'bi-weekly' } })).salaryPay).toBeCloseTo(96000 / 26, 2)
   })
-  it('a run pays only the commission that was added to it', () => {
+  it('a run pays every commission earned in the period, unless the office held it', () => {
+    // Bryce, 23 Oct 2026: earned this pay period means paid this pay period.
     const emp = { id: 3, is_commission: true, tax_classification: '1099' }
     const rows = [
       { id: 10, employee_id: 3, amount: 500, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-10-05T12:00:00Z' },
       { id: 11, employee_id: 3, amount: 700, payment_status: 'earned', queued_for_payroll: false, earned_at: '2026-10-06T12:00:00Z' },
+      { id: 13, employee_id: 3, amount: 300, payment_status: 'earned', held_from_payroll: true, earned_at: '2026-10-07T12:00:00Z' },
       { id: 12, employee_id: 3, amount: 900, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-09-20T12:00:00Z' },
+      { id: 14, employee_id: 3, amount: 50, payment_status: 'paid', earned_at: '2026-10-08T12:00:00Z' },
     ]
     const p = computeEmployeePay(base(emp, { repCommissions: rows }))
-    expect(p.commissionPay).toBe(500)
-    expect(p.grossPay).toBe(500)
+    expect(p.commissionPay).toBe(1200)          // 500 staged + 700 not staged; the held 300 and last period's 900 are not
+    expect(p.commissionHeld).toBe(300)
+    expect(p.paidCommissionRows).toEqual({ rep: [10, 11], lead: [] })
+    expect(p.grossPay).toBe(1200)
     expect(p.tax).toBeNull()
-    expect(p.netPay).toBe(500)
+    expect(p.netPay).toBe(1200)
+  })
+  it('salary and commission add up on a contractor\'s check', () => {
+    const emp = { id: 16, is_salary: true, annual_salary: 60000, is_commission: true, tax_classification: '1099' }
+    const rows = [{ id: 20, employee_id: 16, amount: 681.96, payment_status: 'earned', earned_at: '2026-10-09T12:00:00Z' }]
+    const p = computeEmployeePay(base(emp, { repCommissions: rows }))
+    expect(p.salaryPay).toBe(2500)
+    expect(p.commissionPay).toBe(681.96)
+    expect(p.grossPay).toBe(3181.96)
+    expect(p.netPay).toBe(3181.96)
   })
   it('a contractor gets no tax and nothing deducted from the card', () => {
     const emp = { id: 4, is_hourly: true, hourly_rate: 30, tax_classification: '1099' }

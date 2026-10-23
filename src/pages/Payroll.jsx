@@ -1335,6 +1335,10 @@ export default function Payroll() {
     const ids = (rows || []).map(r => r.id).filter(Boolean)
     if (!ids.length) return
     const patch = { queued_for_payroll: queued, queued_at: queued ? new Date().toISOString() : null }
+    // Commissions: earned in the period is paid in the period; "Remove from
+    // payroll" is a HOLD, and the only thing that keeps a row off the cheque
+    // (20261023230000). Bonuses still go by the staged flag.
+    if (table === 'rep_commissions' || table === 'lead_commissions') patch.held_from_payroll = !queued
     const { error } = await supabase.from(table).update(patch).in('id', ids)
     if (error) { alert('Could not update the payroll queue: ' + error.message); return }
     applyLocal(ids, patch)
@@ -2259,6 +2263,12 @@ export default function Payroll() {
         stubs: paystubs,
         ptoDaysFor: (id) => employeePayData[id]?.ptoDays || 0,
         settle,
+        // The commission rows the engine paid (earned in the period, not held).
+        paidCommissionRows: activeEmployees.reduce((acc, emp) => {
+          const rows = employeePayData[emp.id]?.paidCommissionRows
+          if (rows) { acc.rep.push(...(rows.rep || [])); acc.lead.push(...(rows.lead || [])) }
+          return acc
+        }, { rep: [], lead: [] }),
         liabilities: aggregateTaxLiabilities({ companyId, payrollRunId: null, periodStart, periodEnd, payDate, employees: activeEmployees, employeePayData, company }),
       })
       const { data: result, error: runError } = await supabase.rpc('process_payroll_run', { p: payload })
@@ -2521,11 +2531,13 @@ export default function Payroll() {
           const bonusReadyRows = eligBonuses.filter(b => !b.queued_for_payroll)
           const bonusQueuedRows = eligBonuses.filter(b => b.queued_for_payroll)
           const setterRows = data.leadCommissions.details || []
-          const setterReadyRows = setterRows.filter(c => !c.queued_for_payroll)
-          const setterQueuedRows = setterRows.filter(c => c.queued_for_payroll)
+          // Commissions: in this payroll unless held (20261023230000); the
+          // "ready" side is what the office held back.
+          const setterReadyRows = setterRows.filter(c => c.held_from_payroll)
+          const setterQueuedRows = setterRows.filter(c => !c.held_from_payroll)
           const repElig = repCommissions.filter(r => r.employee_id === emp.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= psStr && (r.earned_at || '').slice(0, 10) <= peStr)
-          const repReadyRows = repElig.filter(r => !r.queued_for_payroll)
-          const repQueuedRows = repElig.filter(r => r.queued_for_payroll)
+          const repReadyRows = repElig.filter(r => r.held_from_payroll)
+          const repQueuedRows = repElig.filter(r => !r.held_from_payroll)
           const readyToAdd = sumAmt(bonusReadyRows) + sumAmt(setterReadyRows) + sumAmt(repReadyRows)
           const inPayroll = sumAmt(bonusQueuedRows) + sumAmt(setterQueuedRows) + sumAmt(repQueuedRows)
           const bonusHeld = sumAmt(bonuses.filter(b => b.status === 'accrued' && b.needs_verification))
@@ -2551,11 +2563,11 @@ export default function Payroll() {
                   <DollarSign size={18} style={{ color: theme.accent }} /> Earnings
                 </h3>
                 {isAdmin && readyToAdd > 0 && (
-                  <button onClick={addAllReady} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Add all ready ({fmt(readyToAdd)}) to payroll</button>
+                  <button onClick={addAllReady} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Put all ({fmt(readyToAdd)}) in payroll</button>
                 )}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
-                {cell('Ready to add', readyToAdd, '#b45309', 'rgba(245,158,11,0.08)', 'rgba(245,158,11,0.25)')}
+                {cell('Not in this payroll', readyToAdd, '#b45309', 'rgba(245,158,11,0.08)', 'rgba(245,158,11,0.25)')}
                 {cell('In this payroll', inPayroll, '#16a34a', 'rgba(34,197,94,0.08)', 'rgba(34,197,94,0.25)')}
                 <div style={{ padding: '14px 16px', borderRadius: 10, backgroundColor: theme.bg, border: `1px solid ${theme.border}` }}>
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: theme.textMuted }}>Waiting on</div>
@@ -2761,20 +2773,21 @@ export default function Payroll() {
             )}
             {(() => {
               const details = data.leadCommissions.details || []
-              const readyRows = details.filter(c => !c.queued_for_payroll)
-              const queuedRows = details.filter(c => c.queued_for_payroll)
+              // Payable in the period is in this payroll unless held (20261023230000).
+              const readyRows = details.filter(c => c.held_from_payroll)
+              const queuedRows = details.filter(c => !c.held_from_payroll)
               const readyTot = readyRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
               const queuedTot = queuedRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 16, fontWeight: 600, color: '#f59e0b' }}>Ready: {fmt(readyTot)}</span>
-                    {queuedTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>}
+                    <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>
+                    {readyTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#f59e0b' }}>Held back: {fmt(readyTot)}</span>}
                   </div>
                   {isAdmin && details.length > 0 && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {readyRows.length > 0 && <button onClick={() => queueSetter(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
-                      {queuedRows.length > 0 && <button onClick={() => queueSetter(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
+                      {readyRows.length > 0 && <button onClick={() => queueSetter(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Put {fmt(readyTot)} back in payroll</button>}
+                      {queuedRows.length > 0 && <button onClick={() => queueSetter(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Hold back from payroll</button>}
                       <button onClick={() => { if (confirm(`Record ${fmt(readyTot + queuedTot)} of ${emp.name}'s setter commissions as ALREADY PAID outside JobScout?
 
 This does NOT pay them. It records that you paid them some other way, and removes the amount from payroll so it is not paid twice.
@@ -2835,20 +2848,21 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) markCommiss
                 {ready.length} payment{ready.length === 1 ? '' : 's'} this period · frozen when earned, so the amount never changes under a later invoice edit.
               </p>
               {(() => {
-                const readyRows = ready.filter(r => !r.queued_for_payroll)
-                const queuedRows = ready.filter(r => r.queued_for_payroll)
+                // Earned in the period is in this payroll unless held (20261023230000).
+                const readyRows = ready.filter(r => r.held_from_payroll)
+                const queuedRows = ready.filter(r => !r.held_from_payroll)
                 const readyTot = readyRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
                 const queuedTot = queuedRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 16, fontWeight: 600, color: '#22c55e' }}>Ready: {fmt(readyTot)}</span>
-                      {queuedTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>}
+                      <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>
+                      {readyTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#f59e0b' }}>Held back: {fmt(readyTot)}</span>}
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add {fmt(readyTot)} to payroll</button>}
-                        {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Remove from payroll</button>}
+                        {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Put {fmt(readyTot)} back in payroll</button>}
+                        {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Hold back from payroll</button>}
                         {ready.length > 0 && <button onClick={() => { if (confirm(`Record ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions as ALREADY PAID outside JobScout?
 
 This does NOT pay them. It records that you paid them some other way, and removes the amount from payroll so it is not paid twice.

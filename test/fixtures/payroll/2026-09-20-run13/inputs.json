@@ -1,6 +1,6 @@
 {
  "meta": {
-  "captured_at": "2026-10-23T22:32:35.012Z",
+  "captured_at": "2026-10-23T23:10:21.590Z",
   "company_id": 3,
   "payroll_run_id": 13,
   "source": "jobscout",
@@ -3739,7 +3739,8 @@
    "covered_by_salary": false,
    "queued_for_payroll": false,
    "override_for_employee_id": null,
-   "created_at": "2026-08-05T19:54:39.047829+00:00"
+   "created_at": "2026-08-05T19:54:39.047829+00:00",
+   "held_from_payroll": true
   },
   {
    "id": 8192,
@@ -3758,7 +3759,8 @@
    "covered_by_salary": null,
    "queued_for_payroll": true,
    "override_for_employee_id": null,
-   "created_at": "2026-09-17T16:01:39.274085+00:00"
+   "created_at": "2026-09-17T16:01:39.274085+00:00",
+   "held_from_payroll": false
   },
   {
    "id": 8194,
@@ -3777,7 +3779,8 @@
    "covered_by_salary": null,
    "queued_for_payroll": true,
    "override_for_employee_id": null,
-   "created_at": "2026-09-17T16:01:39.274085+00:00"
+   "created_at": "2026-09-17T16:01:39.274085+00:00",
+   "held_from_payroll": false
   },
   {
    "id": 8224,
@@ -3796,7 +3799,8 @@
    "covered_by_salary": false,
    "queued_for_payroll": false,
    "override_for_employee_id": null,
-   "created_at": "2026-09-17T16:02:10.592963+00:00"
+   "created_at": "2026-09-17T16:02:10.592963+00:00",
+   "held_from_payroll": true
   }
  ],
  "leadCommissions": [
@@ -3815,7 +3819,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 279,
@@ -3832,7 +3837,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 280,
@@ -3849,7 +3855,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 281,
@@ -3866,7 +3873,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 282,
@@ -3883,7 +3891,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 283,
@@ -3900,7 +3909,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 284,
@@ -3917,7 +3927,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 285,
@@ -3934,7 +3945,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 286,
@@ -3951,7 +3963,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 287,
@@ -3968,7 +3981,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 288,
@@ -3985,7 +3999,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 289,
@@ -4002,7 +4017,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 290,
@@ -4019,7 +4035,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 291,
@@ -4036,7 +4053,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 292,
@@ -4053,7 +4071,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 293,
@@ -4070,7 +4089,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 294,
@@ -4087,7 +4107,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 295,
@@ -4104,7 +4125,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 296,
@@ -4121,7 +4143,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 297,
@@ -4138,7 +4161,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 298,
@@ -4155,7 +4179,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 299,
@@ -4172,7 +4197,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 300,
@@ -4190,6 +4216,7 @@
    "queued_at": "2026-09-18T18:33:35.094+00:00",
    "covered_by_salary": null,
    "paid_payroll_run_id": null,
+   "held_from_payroll": false,
    "paid_at": null
   },
   {
@@ -4207,7 +4234,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 302,
@@ -4224,7 +4252,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 303,
@@ -4241,7 +4270,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 304,
@@ -4258,7 +4288,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 305,
@@ -4275,7 +4306,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 306,
@@ -4292,7 +4324,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 307,
@@ -4309,7 +4342,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 308,
@@ -4326,7 +4360,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 317,
@@ -4344,6 +4379,7 @@
    "queued_at": "2026-09-18T18:33:35.094+00:00",
    "covered_by_salary": null,
    "paid_payroll_run_id": null,
+   "held_from_payroll": false,
    "paid_at": null
   },
   {
@@ -4362,6 +4398,7 @@
    "queued_at": "2026-09-18T18:33:35.094+00:00",
    "covered_by_salary": null,
    "paid_payroll_run_id": null,
+   "held_from_payroll": false,
    "paid_at": null
   },
   {
@@ -4379,7 +4416,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 393,
@@ -4397,6 +4435,7 @@
    "queued_at": "2026-09-18T18:33:35.094+00:00",
    "covered_by_salary": null,
    "paid_payroll_run_id": null,
+   "held_from_payroll": false,
    "paid_at": null
   },
   {
@@ -4414,7 +4453,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 395,
@@ -4432,6 +4472,7 @@
    "queued_at": "2026-09-18T18:33:35.094+00:00",
    "covered_by_salary": null,
    "paid_payroll_run_id": null,
+   "held_from_payroll": false,
    "paid_at": null
   },
   {
@@ -4449,7 +4490,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   },
   {
    "id": 408,
@@ -4466,7 +4508,8 @@
    "queued_for_payroll": false,
    "queued_at": null,
    "covered_by_salary": false,
-   "paid_payroll_run_id": null
+   "paid_payroll_run_id": null,
+   "held_from_payroll": true
   }
  ],
  "bonusRows": [
