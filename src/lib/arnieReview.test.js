@@ -34,7 +34,7 @@ describe('what makes the list', () => {
   const r = buildReview({ companyName: 'HHH Services', since, events, messages, failures: [{ error_kind: 'overloaded' }], usage: { cost: 12.5 } })
 
   it('counts each kind', () => {
-    expect(r.counts).toEqual({ caught: 1, unverified: 1, pushback: 1, gaveUp: 1, failed: 1 })
+    expect(r.counts).toEqual({ caught: 1, unverified: 1, pushback: 1, gaveUp: 1, failed: 1, lessons: 0 })
     expect(r.toLook).toBe(5)
     expect(r.people).toBe(3)
     expect(r.subject).toBe('Arnie this week at HHH Services: 5 to look at')

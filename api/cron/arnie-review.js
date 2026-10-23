@@ -49,31 +49,50 @@ const KIND_WORDS = {
   guess: 'said an amount could not be read, then gave one anyway',
 }
 
+const APP = 'https://jobscout.appsannex.com'
+
+/**
+ * Every time someone told him he was wrong this week, with what he had said
+ * just before. The "Someone said he was wrong" list, and what arnie-lessons
+ * reads for lessons (the learning loop, part 2).
+ */
+function pushbacksOf(messages = []) {
+  const bySession = new Map()
+  for (const m of messages) bySession.set(m.session_id, [...(bySession.get(m.session_id) || []), m])
+  const out = []
+  for (const turns of bySession.values()) {
+    turns.forEach((m, i) => {
+      if (m.role !== 'user' || i === 0 || !isPushback(m.content)) return
+      const prev = turns.slice(0, i).reverse().find((t) => t.role === 'assistant')
+      const { text, receipt } = splitReceipt(prev?.content)
+      out.push({ when: m.created_at, who: m.email, said: m.content, prevText: text, prevReceipt: receipt })
+    })
+  }
+  return out
+}
+
 /**
  * The review for one company, from rows already read. Pure: no fetching here.
  * messages: [{ role, content, created_at, email }] oldest first, one conversation's
- * turns kept together (session_id).
+ * turns kept together (session_id). lessons: what arnie-lessons drafted from
+ * this week's corrections, each waiting for an admin.
  */
-function buildReview({ companyName, tz = 'America/Denver', since, events = [], messages = [], failures = [], usage = {} }) {
+function buildReview({ companyName, tz = 'America/Denver', since, events = [], messages = [], failures = [], usage = {}, lessons = [] }) {
   const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return iso } }
   const who = (email) => String(email || 'someone').split('@')[0].replace(/^./, (c) => c.toUpperCase())
 
   const caught = events.map((e) => ({ when: e.created_at, who: e.employee_email, kind: e.kind, shown: !!e.shown, said: e.said, reply: e.reply }))
 
-  const unverified = [], pushback = [], gaveUp = []
+  const unverified = [], gaveUp = []
+  const pushback = pushbacksOf(messages)
   const bySession = new Map()
   for (const m of messages) bySession.set(m.session_id, [...(bySession.get(m.session_id) || []), m])
   for (const turns of bySession.values()) {
     turns.forEach((m, i) => {
-      if (m.role === 'assistant') {
-        const { text, receipt } = splitReceipt(m.content)
-        if (!text.trim() || GAVE_UP.test(text)) gaveUp.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
-        else if (receipt === 'No lookups this reply' && FIGURE.test(text)) unverified.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
-      } else if (m.role === 'user' && isPushback(m.content) && i > 0) {
-        const prev = turns.slice(0, i).reverse().find((t) => t.role === 'assistant')
-        const { text, receipt } = splitReceipt(prev?.content)
-        pushback.push({ when: m.created_at, who: m.email, said: m.content, prevText: text, prevReceipt: receipt })
-      }
+      if (m.role !== 'assistant') return
+      const { text, receipt } = splitReceipt(m.content)
+      if (!text.trim() || GAVE_UP.test(text)) gaveUp.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
+      else if (receipt === 'No lookups this reply' && FIGURE.test(text)) unverified.push({ when: m.created_at, who: m.email, said: turns[i - 1]?.role === 'user' ? turns[i - 1].content : '', text })
     })
   }
 
@@ -89,8 +108,21 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
     : ''
   const quote = (s, n) => `<span style="color:#5a6349">“${esc(clip(s, n))}”</span>`
 
+  // First, because it is the one part that asks something of them: the week's
+  // corrections that would make a rule for everyone, each waiting to be
+  // approved or rejected. Nothing changes until an admin says so.
+  const lessonsHtml = lessons.length
+    ? `<div style="margin:16px 0 20px;padding:14px 16px;border:1px solid #d6cdb8;border-radius:10px;background:#fbfaf6">`
+      + `<h3 style="margin:0 0 4px;font-size:15px">Lessons waiting for an admin <span style="color:#7d8a7f;font-weight:normal">(${lessons.length})</span></h3>`
+      + `<p style="margin:0 0 10px;color:#5a6349">From this week's corrections. Approve one and every assistant follows it from the next message. Reject it and nothing changes.</p>`
+      + `<ul style="padding-left:18px;margin:0 0 12px">${lessons.slice(0, 15).map((l) => `<li style="margin:0 0 10px"><b>${esc(clip(l.rule, 300))}</b><br><span style="color:#7d8a7f">from ${esc(who(l.who))}'s correction: ${quote(l.said, 160)}</span></li>`).join('')}</ul>`
+      + `<a href="${APP}/agents/arnie/settings" style="display:inline-block;padding:9px 16px;background:#5a6349;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">Approve or reject on Arnie → Setup</a>`
+      + `</div>`
+    : ''
+
   const html = `<div style="font:14px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#2c3530;max-width:680px">`
     + `<p>Arnie at ${esc(companyName)}, the week since ${esc(when(since))}: <b>${people.size}</b> ${people.size === 1 ? 'person' : 'people'}, <b>${replies}</b> replies${usage.cost != null ? `, about <b>$${Number(usage.cost).toFixed(2)}</b> of AI` : ''}.</p>`
+    + lessonsHtml
     + (toLook ? `<p><b>${toLook} thing${toLook === 1 ? '' : 's'} worth a look.</b> Each one is a place someone may have been told something that was not true, or got nothing back.</p>` : '<p><b>Nothing to look at this week.</b> No caught claims, no unchecked figures, no pushback, no blank replies.</p>')
     + section('Caught by the fact-check', caught, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — he ${esc(KIND_WORDS[r.kind] || r.kind)}${r.shown ? ' <b>and they saw it before he took it back</b>' : ' (caught before they saw it)'}: ${quote(r.reply, 200)}`)
     + section('Figures he never looked up', unverified, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — his answer had figures and the receipt says no lookups: ${quote(r.text, 220)}`)
@@ -101,8 +133,9 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
 
   return {
     toLook, people: people.size, replies,
-    counts: { caught: caught.length, unverified: unverified.length, pushback: pushback.length, gaveUp: gaveUp.length, failed: failedTotal },
-    subject: toLook ? `Arnie this week at ${companyName}: ${toLook} to look at` : `Arnie this week at ${companyName}: all clear`,
+    counts: { caught: caught.length, unverified: unverified.length, pushback: pushback.length, gaveUp: gaveUp.length, failed: failedTotal, lessons: lessons.length },
+    subject: (toLook ? `Arnie this week at ${companyName}: ${toLook} to look at` : `Arnie this week at ${companyName}: all clear`)
+      + (lessons.length ? `, ${lessons.length} lesson${lessons.length === 1 ? '' : 's'} to approve` : ''),
     html,
   }
 }
@@ -148,7 +181,21 @@ async function handler(req, res) {
       const costs = await get(`ai_usage?select=est_cost_usd&company_id=eq.${companyId}&feature=eq.arnie-chat&created_at=gte.${since}&limit=50000`)
       const cost = costs.reduce((s, r) => s + (Number(r.est_cost_usd) || 0), 0)
 
-      const review = buildReview({ companyName: co?.company_name || 'your company', tz: co?.timezone || 'America/Denver', since, events, messages, failures, usage: { cost } })
+      // The learning loop: this week's corrections → rules waiting for an
+      // admin (drafted by arnie-lessons; a dry run drafts nothing). If it
+      // fails, the review still goes — without the lessons.
+      let lessons = []
+      const corrections = pushbacksOf(messages).map((p) => ({ who: p.who, said: p.said, before: p.prevText, when: p.when }))
+      if (corrections.length) {
+        try {
+          const lr = await fetch(`${url}/functions/v1/arnie-lessons`, { method: 'POST', headers: H, body: JSON.stringify({ company_id: companyId, corrections, dry }) })
+          const lj = await lr.json().catch(() => ({}))
+          lessons = Array.isArray(lj.lessons) ? lj.lessons : []
+          if (!lr.ok) console.warn('arnie-review: lessons', lr.status, lj.error)
+        } catch (e) { console.warn('arnie-review: lessons failed', e.message) }
+      }
+
+      const review = buildReview({ companyName: co?.company_name || 'your company', tz: co?.timezone || 'America/Denver', since, events, messages, failures, usage: { cost }, lessons })
       if (!review.replies && !review.toLook) { out.push({ companyId, skipped: 'no Arnie this week' }); continue }
 
       const owners = await get(`employees?select=email&company_id=eq.${companyId}&active=eq.true&or=(user_role.in.(Owner,%22Super%20Admin%22),role.eq.Owner)`)
@@ -172,3 +219,4 @@ module.exports = handler
 module.exports.buildReview = buildReview
 module.exports.PUSHBACK = PUSHBACK
 module.exports.isPushback = isPushback
+module.exports.pushbacksOf = pushbacksOf
