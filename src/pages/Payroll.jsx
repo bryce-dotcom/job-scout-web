@@ -2288,7 +2288,11 @@ export default function Payroll() {
           famli_employer:           t.famliEmployer || 0,
           pre_tax_deductions:       t.preTaxDeductions || 0,
           post_tax_deductions:      t.postTaxDeductions || 0,
-          net_pay:                  t.netPay || data.grossPay,
+          // A contractor has no tax object, so this used to record the
+          // gross as the net and lose every adjustment on the stub: Doug's
+          // Sep 20 stub says 4,835.88 both ways while 5,438 of additions
+          // went out with it (golden 2026-09-20-run13).
+          net_pay:                  data.is1099 ? data.netPay : (t.netPay || data.grossPay),
         }
       })
 

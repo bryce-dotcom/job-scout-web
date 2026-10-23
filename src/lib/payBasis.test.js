@@ -104,6 +104,10 @@ describe('the wiring', () => {
     expect(payroll).toMatch(/computeEmployeePay\(/)
   })
 
+  it('a contractor stub records the net that went out, adjustments included', () => {
+    expect(payroll).toMatch(/net_pay:\s+data\.is1099 \? data\.netPay : \(t\.netPay \|\| data\.grossPay\)/)
+  })
+
   it('Payroll shows the comparison in the review', () => {
     expect(payroll).toMatch(/greaterOfSummary\(data\.payBasis, fmt\)/)
   })
