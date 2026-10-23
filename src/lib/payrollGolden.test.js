@@ -85,7 +85,10 @@ describe('golden replays', () => {
   for (const d of dirs) {
     const inputs = load(d, 'inputs.json')
     const expected = load(d, 'expected.json')
-    const gusto = expected.meta.source === 'gusto'
+    // Only a run this engine's predecessor paid in full is asserted. Gusto's
+    // runs and the August catch-ups (commissions paid by JobScout for periods
+    // Gusto had paid the wages of, stubs rebuilt in October) are reported.
+    const gusto = expected.meta.source !== 'jobscout'
 
     // Differences that are understood and meant: the engine was corrected
     // after this run was paid (Utah's withholding schedule on 5 Oct, for
@@ -95,7 +98,7 @@ describe('golden replays', () => {
     // either means the engine moved without anyone deciding it should.
     const accepted = (existsSync(join(root, d, 'accepted.json')) ? load(d, 'accepted.json') : []).filter(a => a.diff)
 
-    it(`${d}: ${gusto ? 'JobScout inputs against what Gusto paid' : 'the engine reproduces every stub to the cent, except where it was corrected since'}`, () => {
+    it(`${d}: ${gusto ? `JobScout inputs against what was paid (${expected.meta.source}, informational)` : 'the engine reproduces every stub to the cent, except where it was corrected since'}`, () => {
       const got = replayFixture(inputs)
       if (gusto) {
         // Hours were typed into Gusto, and an imported stub's hours are its

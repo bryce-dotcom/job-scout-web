@@ -80,6 +80,8 @@ const employees = employeesRaw.map(e => {
   // The page wrote a stub for every active employee, zero or not. Someone
   // active today with no stub was not active that morning.
   if (!s) { if (stubbedEveryone && e.active !== false) { rateNotes.push(`emp_${e.id}: active now, no stub then — inactive in the fixture`); o.active = false } return o }
+  // A stub means they were on the run; a card switched off since does not change that.
+  if (e.active === false) { rateNotes.push(`emp_${e.id}: inactive now, paid then — active in the fixture`); o.active = true }
   if (Number(s.hourly_rate) > 0 && Math.abs(Number(s.hourly_rate) - Number(e.hourly_rate || 0)) > 0.004) { rateNotes.push(`emp_${e.id}: hourly ${e.hourly_rate} now, ${s.hourly_rate} on the stub`); o.hourly_rate = Number(s.hourly_rate) }
   const salaried = Number(s.salary_amount) > 0
   if (salaried !== !!e.is_salary) { rateNotes.push(`emp_${e.id}: ${e.is_salary ? 'salary' : 'not salary'} now, ${salaried ? 'salary' : 'no salary'} on the stub`); o.is_salary = salaried }
@@ -169,7 +171,9 @@ const meta = {
   period: { start: ps, end: pe }, pay_date: payDate,
   note: SOURCE === 'gusto'
     ? 'Stubs were produced by Gusto (hours typed by the office) and imported; the replay compares JobScout\'s own inputs with what Gusto paid.'
-    : 'Stubs were produced by this engine\'s predecessor on the Payroll page; the replay must reproduce them to the cent.',
+    : SOURCE === 'catch_up'
+      ? 'A catch-up run: commissions and bonuses paid by JobScout for a period whose wages Gusto had paid, with stubs restored or rebuilt in October 2026. Not reproducible from the period\'s inputs; the replay reports, it does not assert.'
+      : 'Stubs were produced by this engine\'s predecessor on the Payroll page; the replay must reproduce them to the cent.',
   rate_overrides: rateNotes,
   counts: { employees: employees.length, stubs: stubs.length, timeEntries: timeEntries.length, timeLogEntries: timeLogEntries.length, repCommissions: repCommissions.length, leadCommissions: leadCommissions.length, bonusRows: bonusRows.length, periodTimeOff: periodTimeOff.length, adjustments: adjustments.length, benefits: benefits.length },
 }
