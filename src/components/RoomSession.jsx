@@ -147,24 +147,45 @@ function deviceMessage({ failure, kind }, detail) {
   if (detail.count === 0) return `Windows is not offering this browser a ${thing} at all. Check Settings → Privacy & security → ${kind === 'audioinput' ? 'Microphone' : 'Camera'} and allow desktop apps.`
   if (detail.plainWorks) return `Your ${thing} works, but not at the quality we asked for. Pick a different ${thing} from the arrow beside the button — or tell Bryce and this gets fixed properly.`
   if (detail.name === 'NotReadableError' || detail.name === 'TrackStartError') return `Another app is holding the ${thing} — Teams, Zoom or OBS in the tray. Close it and rejoin.`
+  // "Timeout starting video source". The browser asked Windows and Windows
+  // never handed the device over — below the browser entirely, so allowing
+  // the site again does nothing. Bryce lost an afternoon to this one, being
+  // told to click the padlock on a permission that was already granted.
+  if (detail.name === 'AbortError' || detail.name === 'TimeoutError') {
+    const hog = (detail.labels || []).find(l => VIRTUAL_DEVICE.test(l))
+    if (hog) return `Windows will not release the ${thing}. ${hog.replace(/\s*\([^)]*\)\s*$/, '')} takes it over — quit it from the system tray, not just its window, then restart your browser.`
+    return `Windows never handed over the ${thing}. That is below the browser, so allowing it again will not help: close anything else that uses a ${thing}, restart your browser, and reboot if it keeps happening.`
+  }
   if (detail.name === 'NotAllowedError') return `Your browser is blocking the ${thing}. Click the padlock in the address bar, allow it, then rejoin.`
   if (detail.name === 'OverconstrainedError') return `This ${thing} cannot do the quality we asked for. Tell Bryce — it is ours to fix, not yours.`
   return `The ${thing} could not start (${detail.name || 'unknown'}). ${detail.count} found. You can still see and hear everyone else.`
 }
 
 // Ask the browser directly, because LiveKit's "Other" tells us nothing.
+// Apps that insert themselves between the hardware and the browser. When one
+// of these is installed it usually OWNS the real camera, and when it is in a
+// bad state nothing else can start it — including the physical camera it is
+// wrapping. Naming the culprit saves the half hour of closing things at
+// random that finding it the first time cost.
+const VIRTUAL_DEVICE = /nvidia broadcast|obs virtual|streamlabs|snap camera|manycam|xsplit|camo|droidcam|epoccam|virtual camera/i
+
 async function probeDevice(kind) {
   const want = kind === 'audioinput' ? 'audioinput' : 'videoinput'
   // Check this first: on an insecure origin navigator.mediaDevices does not
   // exist, so every call below would throw a TypeError that tells you
   // nothing about the real cause.
   if (typeof navigator === 'undefined' || !navigator.mediaDevices || window.isSecureContext === false) {
-    return { count: null, plainWorks: false, name: null, insecure: true }
+    return { count: null, labels: [], plainWorks: false, name: null, insecure: true }
   }
   let count = null
+  let labels = []
   try {
     const devices = await navigator.mediaDevices.enumerateDevices()
-    count = devices.filter(d => d.kind === want).length
+    const mine = devices.filter(d => d.kind === want)
+    count = mine.length
+    // Labels are only populated once permission is granted — which is itself
+    // a signal: if we can read them, blocking is not the problem.
+    labels = mine.map(d => d.label).filter(Boolean)
   } catch { /* enumerate can throw in locked-down browsers */ }
 
   // No constraints at all. Succeeding here while LiveKit failed is the
@@ -174,9 +195,9 @@ async function probeDevice(kind) {
       want === 'audioinput' ? { audio: true } : { video: true },
     )
     stream.getTracks().forEach(t => t.stop())
-    return { count, plainWorks: true, name: null }
+    return { count, labels, plainWorks: true, name: null }
   } catch (err) {
-    return { count, plainWorks: false, name: err?.name || null }
+    return { count, labels, plainWorks: false, name: err?.name || null }
   }
 }
 
