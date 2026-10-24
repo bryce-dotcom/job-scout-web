@@ -225,9 +225,13 @@ export default function WalterPhotoSheet({
     if (chosen.length === 0) return
     setAdding(true)
     setError(null)
-    const payload = chosen.map((row, n) => {
-      const idx = [...picked].sort((a, b) => a - b)[n]
-      const run = result.runs[idx]
+    // Walk the ticked indices themselves rather than reading them back out of
+    // the order of `chosen`. The two agree today, but nothing makes them: any
+    // change to how `chosen` is built would quietly paste one run's reasons
+    // onto another run's row, and the rows would still look right.
+    const payload = [...picked].sort((a, b) => a - b).map((i) => {
+      const row = rows[i]
+      const run = result.runs[i]
       const type = types.find((t) => t.type_code === row.type_code) || null
       return {
         ...row,
