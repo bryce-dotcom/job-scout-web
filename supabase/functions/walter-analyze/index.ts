@@ -105,13 +105,24 @@ serve(async (req) => {
       return json({ success: false, error: ai.friendly, ai_unavailable: ai.unavailable === true }, 500);
     }
 
-    const content = ai.data?.content?.[0]?.text || '';
+    // Every TEXT block, not content[0]. A reasoning model puts a thinking
+    // block first and content[0].text is then undefined — which came back as
+    // an empty string and read, for one confusing deploy, as "the model said
+    // nothing" when it had answered in full.
+    const blocks: any[] = Array.isArray(ai.data?.content) ? ai.data.content : [];
+    const content = blocks.filter((b) => b?.type === 'text').map((b) => b.text || '').join('\n');
     const match = content.match(/\{[\s\S]*\}/);
     if (!match) {
       return json({
         success: false,
-        error: 'Walter looked at the photo but did not answer in a form the count sheet can read.',
+        error: ai.data?.stop_reason === 'max_tokens'
+          ? 'Walter ran out of room before he finished counting. Try a photo of one elevation rather than the whole street.'
+          : 'Walter looked at the photo but did not answer in a form the count sheet can read.',
+        // What actually came back, so a failure like this is diagnosable from
+        // the response instead of from the function logs.
         raw: content.slice(0, 500),
+        stop_reason: ai.data?.stop_reason ?? null,
+        blocks: blocks.map((b) => b?.type),
       });
     }
 
