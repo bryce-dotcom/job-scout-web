@@ -161,6 +161,21 @@ describe('the gate on what comes back', () => {
     expect(a.scale.reliability).toBe('high')
   })
 
+  it('survives being normalised a second time without the table', () => {
+    // walter-analyze normalises with the catalogue in hand; the screen
+    // normalises again without it, so nothing invented can be rendered from a
+    // stale deploy. The second pass must not undo the first. It did: the rep
+    // was shown the bare code "entry_door" where the name, the inches and the
+    // reliability belonged.
+    const once = normalizeAnalysis(analysis(), TYPES, SCALE)
+    const twice = normalizeAnalysis(once, TYPES)
+    expect(twice.scale).toEqual(once.scale)
+    expect(twice.scale.reference_name).toBe('Entry door leaf')
+    expect(twice.scale.dimension_in).toBe(80)
+    expect(twice.runs).toEqual(once.runs)
+    expect(twice).toEqual(once)
+  })
+
   it('keeps a reference it cannot find, with nothing invented around it', () => {
     const a = normalizeAnalysis(
       analysis({ scale: { reference_code: 'fence_post', how: 'the fence' } }), TYPES, SCALE,

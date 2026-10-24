@@ -83,7 +83,6 @@ export default function WalterPhotoSheet({
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
   const [photoPath, setPhotoPath] = useState(null)
-  const [photoUrl, setPhotoUrl] = useState(null)
   const [photoKept, setPhotoKept] = useState(null)
   const [picked, setPicked] = useState(() => new Set())
   const [adding, setAdding] = useState(false)
@@ -97,7 +96,6 @@ export default function WalterPhotoSheet({
     setError(null)
     setResult(null)
     setPhotoPath(null)
-    setPhotoUrl(null)
     setPhotoKept(null)
     setMediaType(file.type || 'image/jpeg')
     const reader = new FileReader()
@@ -110,7 +108,6 @@ export default function WalterPhotoSheet({
     setResult(null)
     setError(null)
     setPhotoPath(null)
-    setPhotoUrl(null)
     setPhotoKept(null)
     setPicked(new Set())
     if (fileRef.current) fileRef.current.value = ''
@@ -158,23 +155,23 @@ export default function WalterPhotoSheet({
 
     // 1. Keep it. A failed upload does not stop the count — it is evidence,
     //    not a gate — but the rep is told the picture was not saved.
+    //
+    //    The PATH is stored and no URL is. audit-photos is a private bucket,
+    //    so getPublicUrl() hands back a link that answers 400 — the same trap
+    //    that left every employee headshot broken. Whatever shows this photo
+    //    later signs the path; a stored public URL would be a dead one.
     let path = null
-    let url = null
     try {
       const ext = (mediaType.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
       const key = `areas/${companyId}/walter/${assessmentId}/${Date.now()}.${ext}`
       const bin = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
       const up = await supabase.storage.from('audit-photos')
         .upload(key, bin, { contentType: mediaType, upsert: false })
-      if (!up.error) {
-        path = key
-        url = supabase.storage.from('audit-photos').getPublicUrl(key)?.data?.publicUrl || null
-      }
+      if (!up.error) path = key
     } catch {
       // Keeping the photo is best-effort; reading it is the job.
     }
     setPhotoPath(path)
-    setPhotoUrl(url)
     setPhotoKept(!!path)
 
     // 2. Read it.
@@ -239,7 +236,6 @@ export default function WalterPhotoSheet({
         // Kept in step with the takeoff the way the count sheet does it.
         pane_count: rowPanes(row, type).panes,
         photo_path: photoPath,
-        photos: photoUrl ? [photoUrl] : null,
         // What Walter said, in the rep's own notes field, so the reason a run
         // is on the bid survives the sheet being closed.
         notes: [run.why, run.watch_for ? `Watch for: ${run.watch_for}` : null]

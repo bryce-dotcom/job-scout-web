@@ -300,9 +300,15 @@ export function normalizeAnalysis(raw: any, types: any[], scale: any[] = []): Ph
     scale: refCode
       ? {
           reference_code: refCode,
-          reference_name: ref ? String(ref.reference_name) : null,
-          dimension_in: ref ? Number(ref.dimension_in) : null,
-          reliability: ref ? String(ref.reliability) : null,
+          // The table first, then whatever the input already carried. The
+          // second half is what makes this idempotent: walter-analyze
+          // normalises with the table in hand and the screen normalises again
+          // without it, and the first pass's answer must survive the second.
+          // It did not, and the rep was shown the bare code "entry_door"
+          // where the name, the inches and the reliability belonged.
+          reference_name: ref ? String(ref.reference_name) : str(raw?.scale?.reference_name, 80),
+          dimension_in: ref ? Number(ref.dimension_in) : clamp(raw?.scale?.dimension_in, 1, 1200),
+          reliability: ref ? String(ref.reliability) : str(raw?.scale?.reliability, 20),
           how: str(raw?.scale?.how, 300),
         }
       : null,
