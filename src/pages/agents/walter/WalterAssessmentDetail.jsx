@@ -25,10 +25,16 @@ import {
   TYPICAL_SHARE_OF_REPLACEMENT,
 } from '../../../lib/windowEstimator'
 import { priceAssessment } from '../../../lib/walterRows'
+import { rowPanes } from '../../../lib/windowTypes'
 import WalterMarkSheet from './WalterMarkSheet'
 import WalterDetailsSheet from './WalterDetailsSheet'
+import WalterCountSheet from './WalterCountSheet'
 import { Card, SectionLabel, Field, MiniStat, Note, Btn, Tag } from './WalterUI'
 import { money, money2, pct } from '../../../lib/walterFormat'
+
+// The light-topo theme carries no danger token, so the colour the Note
+// component uses for its danger tone is reused rather than invented here.
+const DANGER = '#dc2626'
 
 // Why a mark will not be resurfaced, in words a customer can be shown.
 const NOT_RESTORABLE_LABEL = {
@@ -70,17 +76,38 @@ export default function WalterAssessmentDetail() {
   const [markSheet, setMarkSheet] = useState({ open: false, editing: null })
   const [detailsOpen, setDetailsOpen] = useState(false)
 
+  // The cleaning half. `areas` is the counted takeoff, `types` the window
+  // catalogue it is counted against, and products/groups the price book the
+  // lines come off. All four are needed before a pane count is money.
+  const [areas, setAreas] = useState([])
+  const [types, setTypes] = useState([])
+  const [groups, setGroups] = useState([])
+  const [countSheet, setCountSheet] = useState({ open: false, editing: null })
+  const products = useStore((s) => s.products)
+
   const load = useCallback(async () => {
     if (!companyId || !id) return
-    const [{ data: a }, { data: rows }] = await Promise.all([
-      supabase.from('glass_assessments').select('*')
-        .eq('company_id', companyId).eq('id', id).maybeSingle(),
-      supabase.from('glass_damage_items').select('*')
-        .eq('company_id', companyId).eq('assessment_id', id)
-        .order('code', { ascending: true }),
-    ])
+    const [{ data: a }, { data: rows }, { data: areaRows }, { data: typeRows }, { data: groupRows }] =
+      await Promise.all([
+        supabase.from('glass_assessments').select('*')
+          .eq('company_id', companyId).eq('id', id).maybeSingle(),
+        supabase.from('glass_damage_items').select('*')
+          .eq('company_id', companyId).eq('assessment_id', id)
+          .order('code', { ascending: true }),
+        supabase.from('glass_areas').select('*')
+          .eq('company_id', companyId).eq('assessment_id', id)
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('id', { ascending: true }),
+        // Global reference data, not the tenant's — a double-hung sash is
+        // two panes of glass in every state.
+        supabase.from('window_types').select('*').order('type_name'),
+        supabase.from('product_groups').select('id, name').eq('company_id', companyId),
+      ])
     setAssessment(a || null)
     setItems(rows || [])
+    setAreas(areaRows || [])
+    setTypes(typeRows || [])
+    setGroups(groupRows || [])
   }, [companyId, id])
 
   // load() runs again after every saved mark, and deliberately does not
@@ -92,11 +119,11 @@ export default function WalterAssessmentDetail() {
 
   // The same mapping the list uses, so the two screens cannot disagree about
   // what a register is worth. See lib/walterRows.
-  const { bid, zones, counts } = useMemo(
+  const { bid, zones, counts, takeoff } = useMemo(
     () => (assessment
-      ? priceAssessment(assessment, items)
-      : { bid: null, zones: [], counts: null }),
-    [assessment, items],
+      ? priceAssessment(assessment, items, { areas, products, groups, types })
+      : { bid: null, zones: [], counts: null, takeoff: null }),
+    [assessment, items, areas, products, groups, types],
   )
 
   // What is wrong with the register, decided by the engine that prices it.
@@ -118,6 +145,11 @@ export default function WalterAssessmentDetail() {
       </Card>
     </Shell>
   }
+
+  // The same two questions walterRows asks, so the page shows the half it
+  // priced and no more. A restoration-only visit has no pane count to take.
+  const vertical = assessment.vertical || 'both'
+  const wantsCleaning = vertical === 'cleaning' || vertical === 'both'
 
   const counted = countableZones(zones)
   const excluded = excludedZones(zones)
@@ -370,6 +402,171 @@ export default function WalterAssessmentDetail() {
         </div>
       )}
 
+      {/* ── the cleaning takeoff ───────────────────────────────────── */}
+      {wantsCleaning && (
+        <>
+          <SectionLabel
+            right={
+              <Btn onClick={() => setCountSheet({ open: true, editing: null })}>
+                <Plus size={15} /> Count windows
+              </Btn>
+            }
+          >
+            The windows counted
+          </SectionLabel>
+
+          {areas.length === 0 ? (
+            <Card>
+              <div style={{ fontWeight: 700, color: theme.text }}>Nothing counted yet</div>
+              <p style={{ color: theme.textMuted, fontSize: 14, margin: "6px 0 12px" }}>
+                Count a run of windows and Walter prices it off your own price book — the
+                product you already sell, at the price you already charge. Pick the KIND of
+                window and the pane count comes from the catalogue: six double-hungs is
+                twelve panes, six casements is six.
+              </p>
+              <Btn onClick={() => setCountSheet({ open: true, editing: null })}>
+                <Plus size={15} /> Count windows
+              </Btn>
+            </Card>
+          ) : (
+            <>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))',
+                gap: 10, marginBottom: 10,
+              }}>
+                <MiniStat label="Windows counted" value={takeoff?.counts?.units ?? 0} />
+                <MiniStat label="Panes of glass" value={takeoff?.counts?.panes ?? 0} />
+                <MiniStat label="Pane-faces billed" value={takeoff?.counts?.pane_faces ?? 0} />
+                <MiniStat label="Cleaning, from the book" value={money(takeoff?.total)} />
+              </div>
+
+              <Card pad={0}>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 520 }}>
+                    <Row theme={theme} head>
+                      <span>Product</span><span>Qty</span><span>Price</span><span>Total</span>
+                    </Row>
+                    {(takeoff?.lines || []).map((l, i) => (
+                      <Row theme={theme} key={`${l.work}-${l.segment}-${i}`}>
+                        <span>
+                          <span style={{ fontWeight: 700, color: l.unpriced ? DANGER : theme.text }}>
+                            {l.item_name}
+                          </span>
+                          <span style={{ display: 'block', fontSize: 12, color: theme.textMuted }}>
+                            {(l.areas || []).join(', ') || l.work.replace(/_/g, ' ')}
+                          </span>
+                        </span>
+                        <span>{l.quantity}</span>
+                        <span>{l.unpriced ? "—" : money2(l.price)}</span>
+                        <span style={{ fontWeight: 700 }}>
+                          {l.unpriced ? "no product" : money2(l.line_total)}
+                        </span>
+                      </Row>
+                    ))}
+                    <Row theme={theme} total>
+                      <span>Cleaning</span><span /><span />
+                      <span style={{ fontWeight: 800, color: theme.accent }}>
+                        {money2(takeoff?.total)}
+                      </span>
+                    </Row>
+                  </div>
+                </div>
+              </Card>
+
+              <Card pad={0}>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 560 }}>
+                    <AreaRow theme={theme} head>
+                      <span>Where</span><span>What</span><span>How many</span>
+                      <span>Panes</span><span>Sides</span>
+                    </AreaRow>
+                    {areas.map((r) => {
+                      const t = types.find((x) => x.type_code === r.type_code) || null
+                      const p = rowPanes(r, t)
+                      return (
+                        <AreaRow
+                          theme={theme}
+                          key={r.id}
+                          onClick={() => setCountSheet({ open: true, editing: r })}
+                        >
+                          <span style={{ fontWeight: 600, color: theme.text }}>
+                            {r.area_name || '—'}
+                          </span>
+                          <span>
+                            {t?.type_name || r.type_code}
+                            {p.basis === 'lites' && (
+                              <span style={{ color: theme.textMuted }}> · by the lites</span>
+                            )}
+                          </span>
+                          <span>{p.units}</span>
+                          <span>{p.panes}</span>
+                          <span style={{ color: theme.textMuted }}>
+                            {r.face === 'both' ? 'in and out' : r.face === 'in' ? 'inside' : 'outside'}
+                            {Number(r.floor) > 1 ? ` · ${r.floor}F` : ''}
+                          </span>
+                        </AreaRow>
+                      )
+                    })}
+                  </div>
+                </div>
+              </Card>
+
+              {(takeoff?.unpriced || []).length > 0 && (
+                <Note tone="danger" icon={AlertTriangle}>
+                  <strong>The price book has nothing for{" "}
+                  {takeoff.unpriced.map((u) => u.work.replace(/_/g, ' ')).join(', ')}.</strong>{' '}
+                  Those lines show at nothing rather than at a rate Walter made up. Somebody
+                  adding the product is the fix.
+                </Note>
+              )}
+
+              {(takeoff?.ambiguities || []).length > 0 && (
+                <Note tone="warning" icon={AlertTriangle}>
+                  <strong>The book prices some of this twice.</strong>{" "}
+                  {takeoff.ambiguities.map((a) => `${a.work.replace(/_/g, ' ')} at ${money(a.low)} or ${money(a.high)}`).join('; ')}.
+                  Walter took the first by name, which is alphabetical order and not a
+                  decision anybody made.
+                </Note>
+              )}
+
+              {(takeoff?.unknown_types || []).length > 0 && (
+                <Note tone="warning">
+                  The window catalogue has no entry for {takeoff.unknown_types.join(', ')}, so
+                  those are counted at one pane each. Anything with two sashes is billed at half.
+                </Note>
+              )}
+
+              {takeoff && bid?.tiers?.expected > 0 && (
+                <Card>
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                    gap: 12, flexWrap: "wrap",
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: theme.text }}>
+                        Cleaning and restoration together
+                      </div>
+                      <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>
+                        {money2(takeoff.total)} of cleaning off the price book, plus{" "}
+                        {money2(bid.tiers.expected)} of restoration from the engine. Added, not
+                        blended — the two halves are priced different ways and this is the sum.
+                      </div>
+                    </div>
+                    <div style={{
+                      fontSize: 24, fontWeight: 800, color: theme.accent,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {money2(takeoff.total + bid.tiers.expected)}
+                    </div>
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </>
+      )}
+
       {/* ── the register ───────────────────────────────────────────── */}
       <SectionLabel
         right={
@@ -555,6 +752,19 @@ export default function WalterAssessmentDetail() {
         onClose={() => setMarkSheet({ open: false, editing: null })}
         onSaved={load}
       />}
+      {countSheet.open && <WalterCountSheet
+        key={countSheet.editing?.id ?? 'new'}
+        editing={countSheet.editing}
+        companyId={companyId}
+        assessmentId={assessment.id}
+        isMobile={isMobile}
+        types={types}
+        products={products}
+        groups={groups}
+        recurring={!!assessment.recurring}
+        onClose={() => setCountSheet({ open: false, editing: null })}
+        onSaved={load}
+      />}
       {detailsOpen && <WalterDetailsSheet
         assessment={assessment}
         companyId={companyId}
@@ -628,6 +838,34 @@ function Row({ theme, children, head, total }) {
       fontVariantNumeric: 'tabular-nums',
       alignItems: 'center',
     }}>
+      {children}
+    </div>
+  )
+}
+
+// One counted run of windows. Five columns rather than the register's six,
+// because a run has no severity and no repeat.
+function AreaRow({ theme, children, head, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'grid',
+        gridTemplateColumns:
+          'minmax(0,1.6fr) minmax(0,1.8fr) minmax(0,0.8fr) minmax(0,0.6fr) minmax(0,1.2fr)',
+        gap: 10, padding: '9px 16px',
+        borderTop: head ? 'none' : `1px solid ${theme.border}`,
+        background: head ? theme.bg : 'transparent',
+        fontSize: head ? 10 : 13,
+        fontWeight: head ? 700 : 500,
+        color: head ? theme.textMuted : theme.textSecondary,
+        textTransform: head ? 'uppercase' : 'none',
+        letterSpacing: head ? '0.05em' : 'normal',
+        fontVariantNumeric: 'tabular-nums',
+        alignItems: 'center',
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
       {children}
     </div>
   )

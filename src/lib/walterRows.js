@@ -9,6 +9,7 @@
 // from windowEstimator.walterEstimate().
 
 import { walterEstimate, registerCounts } from './windowEstimator'
+import { priceTakeoff } from './glassCleaningPricing'
 
 /**
  * glass_damage_items rows → the zones the engine counts.
@@ -38,8 +39,20 @@ export function zonesFromRows(items) {
  * `vertical` decides which half runs: a cleaning-only visit must not be handed
  * a damage register to resurface, and a restoration-only one must not bill a
  * pane count nobody took.
+ *
+ * `book` is the tenant price book — their products, their groups, and the
+ * window catalogue — plus the counted areas. Given those, the cleaning side
+ * is priced from what they SELL (priceTakeoff) instead of from minutes per
+ * pane, and the result comes back as `takeoff` BESIDE the engine bid rather
+ * than folded into it.
+ *
+ * Two differently-sourced numbers stay two numbers. The register still
+ * prices the way it priced yesterday, the cleaning side comes off the book,
+ * and the page says which figure came from where — because a single total
+ * that silently mixed an invented rate with a listed price would be the
+ * hardest kind of wrong to find.
  */
-export function priceAssessment(assessment, itemRows) {
+export function priceAssessment(assessment, itemRows, book = {}) {
   const a = assessment || {}
   const items = itemRows || a.glass_damage_items || []
   const zones = zonesFromRows(items)
@@ -47,8 +60,25 @@ export function priceAssessment(assessment, itemRows) {
   const wantsCleaning = v === 'cleaning' || v === 'both'
   const wantsRestoration = v === 'restoration' || v === 'both'
 
+  // Counted areas, priced from the book. An assessment that has them has a
+  // real takeoff; the flat `panes` column is what Walter had before anybody
+  // could record WHICH windows, and it is kept only so an old assessment
+  // still shows the figure it was sent with.
+  const areas = book.areas || a.glass_areas || []
+  const takeoff = wantsCleaning && areas.length
+    ? priceTakeoff(areas, {
+        products: book.products || [],
+        groups: book.groups || [],
+        types: book.types || [],
+        recurring: !!a.recurring,
+      })
+    : null
+
   const bid = walterEstimate({
-    cleaning: wantsCleaning && a.panes
+    // A counted takeoff IS the cleaning side. Handing the engine the flat
+    // pane count as well would bill the same glass twice — once from the
+    // book and once at minutes per pane.
+    cleaning: wantsCleaning && !takeoff && a.panes
       ? {
           panes: a.panes,
           faces: a.faces ?? 2,
@@ -73,5 +103,16 @@ export function priceAssessment(assessment, itemRows) {
   // moved in, so there is one rule rather than two that can drift. Called
   // directly rather than read off bid.restoration.register, because a
   // cleaning-only visit has no restoration block and still has a register.
-  return { bid, zones, counts: registerCounts(zones), rows: items.length }
+  // One number for a list view. ADDED, not blended: the restoration half is
+  // the engine tier and the cleaning half is the sum of the book lines.
+  const combined = (Number(bid?.tiers?.expected) || 0) + (Number(takeoff?.total) || 0)
+
+  return {
+    bid,
+    zones,
+    counts: registerCounts(zones),
+    rows: items.length,
+    takeoff,
+    combined,
+  }
 }

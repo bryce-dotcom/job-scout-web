@@ -26,7 +26,7 @@ export const GLASS_WORK_KEYWORDS = {
   post_construction: ['post construction', 'post-construction', 'construction clean'],
   hard_water:        ['hard water', 'mineral', 'stain removal'],
   screens:           ['screen cleaning', 'screen sterilis', 'screen steriliz'],
-  screen_repair:     ['screen repair', 'screen replacement'],
+  screen_repair:     ['screen repair'],
   partition:         ['partition glass', 'partition'],
   window_well:       ['window well'],
   mirror:            ['mirror'],
@@ -43,6 +43,54 @@ export const GLASS_WORK_KEYWORDS = {
   restoration_light: ['light abrasion'],
   restoration_deep:  ['deep or edge', 'deep abrasion'],
   optical_finish:    ['optical finishing', 'final polish'],
+
+  // ── cleaning, inside and out ──────────────────────────────────────────
+  // The in-and-out combination is its own product and NOT the two halves
+  // added up. Residential happens to agree ($3 + $6 = the $9 combo) but
+  // commercial does not: $2 inside plus $4 outside is $6, and
+  // "Interior/Exterior Cleaning of Commercial" is $7. So a bid that quietly
+  // substituted one for the other would be a dollar a pane out, in the
+  // tenant's favour on a house and against them at a storefront.
+  interior_exterior: ['interior/exterior', 'interior & exterior', 'in/out'],
+
+  // ── size, for post-construction ───────────────────────────────────────
+  // Post-construction is not one product with a size modifier. It is three
+  // products, and until these keys existed the matcher saw four candidates
+  // at an identical score — $4, $6, $4 and $20 — and picked whichever sorted
+  // first alphabetically. A five-times price swing decided by the letter B.
+  post_construction_small:  ['less than 4ft'],
+  post_construction_medium: ['more than 4ft'],
+  post_construction_large:  ['more than 6ft'],
+  // HHH spells it both ways in the same book — "Basic Tract Home" and
+  // "Interior/Exterior Track Home" — so both spellings are matched. They are
+  // still two products at $4 and $15, which is a question for a person.
+  post_construction_tract:  ['tract home', 'track home'],
+  post_construction_custom: ['custom home'],
+
+  // ── reach ─────────────────────────────────────────────────────────────
+  // What the book has ACTIVE today, which is not what it had a year ago.
+  // Walter's first engine multiplied a base rate by an access factor, and
+  // the comment at the top of this file cited "Commercial Windows (LIFT Up
+  // To 10 Floors)" at $5 as the real product to use instead. That product is
+  // now INACTIVE, along with every other LIFT row. The live ones are ladder
+  // work and a waterfed pole, so those are the keys that can be sold.
+  walkup_interior:   ['walk up'],
+  ladder_interior:   ['interior ladder window'],
+  ladder_exterior:   ['exterior ladder window'],
+  waterfed:          ['waterfed', 'water fed'],
+  // Deliberately kept although nothing active matches it. accessFor returns
+  // `lift` above four storeys, and the honest result there is a reported gap
+  // — the screen says the book has nothing for it — rather than silence.
+  lift:              ['lift up to', 'lift window'],
+
+  // ── the rest of the ticket ────────────────────────────────────────────
+  tracks:            ['window track', 'track cleaning'],
+  // Repair and replacement were one key, which let a $25 repair resolve to a
+  // $95 replacement on an alphabetical tie. They are different work.
+  screen_replacement: ['screen replacement'],
+  glass_protectant:  ['glass protectant', 'repellant', 'repellent'],
+  solar_panel:       ['solar panel'],
+  shower_restoration: ['shower restoration', 'shower glass restoration'],
 }
 
 /**
@@ -165,4 +213,42 @@ export function bestGlassProduct(products, opts) {
  */
 export function missingGlassWork(products, works, opts = {}) {
   return (works || []).filter((w) => !bestGlassProduct(products, { ...opts, work: w }))
+}
+/**
+ * Two products the tenant sells for the same work, at different prices.
+ *
+ * matchGlassProducts breaks a tie on NAME, never on price, because picking
+ * the cheaper product is a silent discount. That is the right rule and it has
+ * a consequence: on a genuine tie the winner is decided by the alphabet, and
+ * against HHH's real book that happened on five separate work keys — including
+ * post-construction, where four products scored identically at $4, $6, $4 and
+ * $20.
+ *
+ * So the tie is REPORTED. A screen showing "$4 or $20, somebody choose" is a
+ * question a person can answer in a second; a bid that quietly picked one is
+ * a number nobody can audit.
+ *
+ * Only a tie whose PRICES differ is returned. The book has literal duplicate
+ * rows — two "Window Screen Repair/Replacement" at $10 apiece — and those
+ * cost nobody anything, so they are not a decision and not reported.
+ */
+export function glassMatchAmbiguity(products, opts = {}) {
+  const all = matchGlassProducts(products, opts)
+  if (all.length < 2) return null
+  const top = all[0].score
+  const tied = all.filter((r) => r.score === top)
+  if (tied.length < 2) return null
+  const prices = [...new Set(tied.map((t) => Number(t.product.unit_price)))]
+  if (prices.length < 2) return null
+  const low = Math.min(...prices)
+  const high = Math.max(...prices)
+  return {
+    work: opts?.work ?? null,
+    chosen: all[0].product,
+    candidates: tied.map((t) => t.product),
+    low,
+    high,
+    // How much the alphabet is deciding. A screen can put the worst first.
+    spread: low > 0 ? Math.round((high / low) * 100) / 100 : null,
+  }
 }
