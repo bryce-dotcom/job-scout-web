@@ -176,6 +176,19 @@ describe('the gate on what comes back', () => {
     expect(a.runs[0].floor).toBe(60)
   })
 
+  it('reads a reach of 0 as no measurement at all', () => {
+    // The first real answer off an elevation with no door in frame said
+    // "reach_in is left null" in its own scale note and then put 0 on all
+    // eight runs. Zero is not a low window, it is a window lying on the
+    // ground, and accessFor() reads this number to decide about ladders.
+    for (const v of [0, '0', -40, 0.5]) {
+      expect(normalizeAnalysis(analysis({ runs: [run({ reach_in: v })] }), TYPES, SCALE).runs[0].reach_in)
+        .toBeNull()
+    }
+    // A real low window still measures.
+    expect(normalizeAnalysis(analysis({ runs: [run({ reach_in: 36 })] }), TYPES, SCALE).runs[0].reach_in).toBe(36)
+  })
+
   it('turns a nonsense count into one window rather than zero or NaN', () => {
     for (const units of [0, -3, 'lots', null, undefined, NaN]) {
       expect(normalizeAnalysis(analysis({ runs: [run({ units })] }), TYPES, SCALE).runs[0].units).toBe(1)

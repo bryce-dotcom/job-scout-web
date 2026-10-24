@@ -163,7 +163,7 @@ ${scaleTable(scale)}
 Then for each run give:
   • floor — 1 for ground, 2 for the second storey, and so on. Count storeys off the glazing lines, not off apparent height.
   • reach_in — how far ABOVE THE GROUND the TOP of that glass is, in inches, derived from the reference. This is the number that decides whether the crew is on a ladder, a waterfed pole or a lift, so it matters more than the window's own size.
-If no reference is in the frame, say so in scale.how, leave reach_in null, and still give floor if you can count storeys. A named reference with a reliability of low beats a confident guess with none.
+If no reference is in the frame, say so in scale.how and set reach_in to null — the JSON value null, NOT 0. Zero says the glass is lying on the ground, and that number decides whether anybody takes a ladder. Still give floor if you can count storeys. A named reference with a reliability of low beats a confident guess with none.
 
 STEP 6 — CONDITION
   • maintenance — ordinary dirt, a house that gets cleaned.
@@ -171,6 +171,9 @@ STEP 6 — CONDITION
   • post_construction — stickers or labels still on the glass, stucco or paint spatter, mortar haze, no landscaping in, dirt where a lawn will go. This one changes the whole price, so only say it when the picture shows building work.
   • hard_water — white or cloudy mineral staining, usually on the lower glass and usually on the sprinkler side.
 Default to maintenance. Do not read a dirty photograph as dirty glass.
+
+STEP 6b — SCREENS: ONLY ANSWER IF YOU CAN SEE
+screens_visible is true if screens are plainly fitted, false ONLY if you can see the glass bare and are sure there are none, and null if you cannot tell — which is the usual answer at any distance, because a screen reads as a faint grey wash and a clean one is nearly invisible in a photograph. Do not say how MANY; the catalogue knows a slider carries one and a bow carries four. A false here is taken as a hard zero and the customer is billed for no screens at all, so it has to be something you actually saw.
 
 STEP 7 — SAY WHAT YOU CANNOT SEE
 A photograph of the front of a house is not a count of the house. List in not_counted every obvious thing this frame does not show: the other elevations, the inside, windows behind a tree or a vehicle, basement or below-grade openings, skylights, anything cut off by the edge of the frame. The rep is going to walk the property and this list is what they walk with. Be specific — "the rear and both side elevations", not "other windows".
@@ -180,7 +183,7 @@ One run = one type of window, on one storey, that the crew treats the same way. 
 Set confidence per run: high if you can see it plainly, medium if you are inferring from partial view or resolution, low if you are largely guessing. A low-confidence run is useful; a run dressed up as high is not.
 
 STEP 9 — RETURN ONLY THIS JSON, AND NOTHING ELSE
-No preamble, no markdown fence, no commentary after it. Keep every string SHORT — a dozen words, not a paragraph. A rep reads this on a phone in a driveway, and a long answer is also one that runs out of room before the last run is counted.
+No preamble, no markdown fence, no commentary after it, and no comments inside it — JSON has none, and one would make the whole answer unreadable. Keep every string SHORT: a dozen words, not a paragraph, and wall_material in one to three words. A rep reads this on a phone in a driveway, and a long answer is also one that runs out of room before the last run is counted.
 
 {
   "surface": "under 15 words on what this photograph is, e.g. front elevation of a two-storey brick house",
@@ -229,6 +232,21 @@ const str = (v: unknown, max = 400): string | null => {
 
 const tri = (v: unknown): boolean | null => (v === true ? true : v === false ? false : null)
 
+/**
+ * How far above the ground the top of the glass is, or nothing.
+ *
+ * A reach of 0 says the glass sits at ground level, which is not a window —
+ * it is the model filling in a field it meant to leave empty. The first real
+ * answer back from an elevation with no door in frame said "reach_in is left
+ * null" in its own scale note and then put 0 on all eight runs. An absent
+ * measurement has to stay absent, because accessFor() reads this number to
+ * decide whether anybody needs a ladder.
+ */
+const reach = (v: unknown): number | null => {
+  const n = clamp(v, 0, 9600)
+  return n === null || n < 1 ? null : n
+}
+
 const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T | null): T | null => {
   const s = typeof v === 'string' ? v.trim().toLowerCase() : ''
   return (list as readonly string[]).includes(s) ? (s as T) : fallback
@@ -259,7 +277,7 @@ export function normalizeAnalysis(raw: any, types: any[], scale: any[] = []): Ph
       type_code_rejected: ok ? null : said,
       units: clamp(r?.units, 1, 500) ?? 1,
       floor: clamp(r?.floor, 1, 60) ?? 1,
-      reach_in: clamp(r?.reach_in, 0, 9600),
+      reach_in: reach(r?.reach_in),
       width_in: clamp(r?.width_in, 1, 600),
       height_in: clamp(r?.height_in, 1, 600),
       divided_lites: tri(r?.divided_lites),
