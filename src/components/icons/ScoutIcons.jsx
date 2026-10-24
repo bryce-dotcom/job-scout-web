@@ -615,13 +615,39 @@ export function TimeClockMark(props) {
 /** My Pay. The wallet — the one money screen that is yours, not the company's. */
 export function MyPayMark(props) {
   return (
-    <ScoutMark {...props} ramps={['leather', 'enamel', 'copper']}>
+    <ScoutMark {...props} ramps={['enamel', 'brass', 'brassDark']}>
       {(m) => (
         <>
-          <rect x="6.4" y="3.8" width="11.2" height="4.4" rx="0.6" fill={m.enamel} />
-          <rect x="2.6" y="6.6" width="18.8" height="13.6" rx="1.7" fill={m.leather} />
-          <path d="M2.6 11 H21.4" stroke="#3b2512" strokeWidth="1.1" opacity="0.65" />
-          <circle cx="17.4" cy="15.6" r="2.3" fill={m.copper} />
+          {/* Cash and a coin, not a wallet. For most of the crew this is the
+              only screen in the whole app that is about THEM, so it gets the
+              thing money actually looks like rather than the container you
+              keep it in -- and a glint across it every few seconds, so the
+              row has a pulse instead of sitting there like a filing cabinet.
+              The sweep is a bar in a rotated group; the outer svg clips it,
+              which is why it can start and end outside the art. */}
+          <rect x="2.6" y="5.4" width="15.6" height="9.4" rx="1.1" fill={m.enamel} transform="rotate(-10 12 11)" />
+          <rect x="4.6" y="6.6" width="15.8" height="9.6" rx="1.1" fill={m.enamel} transform="rotate(5 12 11)" />
+          <g transform="rotate(5 12 11)">
+            <rect x="6.3" y="8.3" width="12.4" height="6.2" rx="0.7" fill="#ffffff" opacity="0.16" />
+            <ellipse cx="10.1" cy="11.4" rx="1.9" ry="2.3" fill="#ffffff" opacity="0.42" />
+            <path d="M14.2 10 H17.6 M14.2 12.9 H16.8" stroke="#ffffff" strokeWidth="1.05" strokeLinecap="round" opacity="0.5" />
+          </g>
+          <circle cx="16.6" cy="17.6" r="4.6" fill={m.brass} />
+          <circle cx="16.6" cy="17.6" r="2.8" fill={m.brassDark} opacity="0.4" />
+          <path d="M14.9 15.4 a3.2 3.2 0 0 1 3.4 -0.5" stroke="#fdf0c4" strokeWidth="0.85" strokeLinecap="round" fill="none" opacity="0.8" />
+          <g transform="rotate(20 12 12)">
+            <rect className="scout-glint" x="0" y="0" width="5" height="24" fill="#fff7dc" opacity="0" />
+          </g>
+          <style>{`
+            @keyframes scout-glint-sweep {
+              0%, 62%  { transform: translateX(-9px); opacity: 0; }
+              67%      { transform: translateX(-4px); opacity: 0.55; }
+              84%      { transform: translateX(19px); opacity: 0.55; }
+              90%, 100% { transform: translateX(26px); opacity: 0; }
+            }
+            .scout-glint { animation: scout-glint-sweep 5.2s ease-in-out infinite; }
+            @media (prefers-reduced-motion: reduce) { .scout-glint { animation: none; opacity: 0; } }
+          `}</style>
         </>
       )}
     </ScoutMark>
@@ -762,15 +788,20 @@ export function SalesPerformanceMark(props) {
     is real and somebody came this way on purpose. */
 export function EosMark(props) {
   return (
-    <ScoutMark {...props} ramps={['steel']}>
+    <ScoutMark {...props} ramps={['steel', 'gunmetal']}>
       {(m) => (
-        <g fill={m.steel}>
-          <ellipse cx="12" cy="19.6" rx="6.6" ry="2.7" />
-          <ellipse cx="11.3" cy="15.3" rx="5.2" ry="2.5" />
-          <ellipse cx="12.5" cy="11.4" rx="4" ry="2.2" />
-          <ellipse cx="11.7" cy="7.8" rx="2.8" ry="1.9" />
-          <ellipse cx="12.2" cy="4.8" rx="1.8" ry="1.4" />
-        </g>
+        <>
+          {/* Hand-stacked, so no two stones match and none of them sit
+              square. The first version was five identical ellipses in one
+              material and read as a snowman -- smooth, uniform, seamless.
+              Alternating stone keeps neighbours apart by value, and each
+              stone's own gradient puts its dark underside against the light
+              top of the one below, which is what makes the joins read. */}
+          <polygon points="3.0,21.4 20.4,21.1 19.6,17.9 3.9,17.6" fill={m.steel} />
+          <polygon points="4.6,17.8 16.2,17.6 15.4,12.9 6.6,12.4 4.9,14.8" fill={m.gunmetal} />
+          <polygon points="6.1,12.9 19.0,12.4 18.2,9.9 9.2,9.6 6.4,10.6" fill={m.steel} />
+          <polygon points="8.4,9.8 14.6,9.6 13.6,5.8 10.8,4.6 8.9,6.6" fill={m.gunmetal} />
+        </>
       )}
     </ScoutMark>
   )

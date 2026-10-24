@@ -441,7 +441,11 @@ export default function Layout() {
       baseItems: [
         { to: '/employees', icon: EmployeesMark, label: 'Employees', hint: 'Manage team members and roles' },
         { to: '/time-clock', icon: TimeClockMark, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
-        { to: '/my-pay', icon: MyPayMark, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
+        // `hero`: CampFire's treatment -- near-black, bold, a bigger mark.
+        // Everything else in TEAM is the company looking at you. This one
+        // is you looking at your own money, and it should not read like a
+        // row in a list.
+        { to: '/my-pay', icon: MyPayMark, label: 'My Pay', subtitle: 'what you earned', hero: true, hint: 'Your commissions, pending payouts, and hours' },
         { to: '/payroll', icon: PayrollMark, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' },
         { to: '/payroll/inbox', icon: PayrollInboxMark, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' },
         { to: '/payroll/setup', icon: PayrollSetupMark, label: 'Payroll setup', hint: 'Tax accounts, people, bank, and the checks your old provider paid — the walk off Gusto' }
@@ -686,16 +690,16 @@ export default function Layout() {
         padding: item.isChildAgent ? '5px 10px' : '8px 12px',
         marginLeft: item.isChildAgent ? '28px' : 0,
         borderRadius: item.isChildAgent ? '4px' : '6px',
-        color: item.isAgent ? (isActive ? '#a855f7' : theme.textMuted) : (isActive ? theme.accent : theme.textMuted),
+        color: item.isAgent ? (isActive ? '#a855f7' : theme.textMuted) : (isActive ? theme.accent : (item.hero ? theme.text : theme.textMuted)),
         backgroundColor: item.isAgent ? (isActive ? 'rgba(168,85,247,0.12)' : 'transparent') : (isActive ? theme.accentBg : 'transparent'),
         textDecoration: 'none',
-        fontSize: item.isChildAgent ? '11px' : '13px',
-        fontWeight: isActive ? '500' : '400',
+        fontSize: item.isChildAgent ? '11px' : (item.hero ? '14.5px' : '13px'),
+        fontWeight: item.hero ? '700' : (isActive ? '500' : '400'),
         transition: 'all 0.15s ease',
         minHeight: mobile ? (item.isChildAgent ? '36px' : '44px') : (item.isChildAgent ? '28px' : '36px')
       })}
     >
-      <item.icon size={item.isChildAgent ? 12 : 18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
+      <item.icon size={item.isChildAgent ? 12 : (item.hero ? 26 : 18)} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
       {/* `title` beats `label`, and `label` is never renamed.
           `label` is a KEY: getAgentsForSection() and getSalesFlowChildAgents()
           parent every placed agent by it, and ai_modules rows hold those

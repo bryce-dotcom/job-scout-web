@@ -728,6 +728,16 @@ export default function Dashboard() {
     return mobile ? 14 : 15
   }
 
+  // Scope gradations. Defined out here so nine tiles share one set of
+  // objects instead of rebuilding four each on every render.
+  const RETICLE_BASE = { position: 'absolute', backgroundColor: 'rgba(176,124,38,0.5)', borderRadius: '1px' }
+  const RETICLE = [
+    { top: '8px', left: '50%', width: '2px', height: '7px', transform: 'translateX(-50%)' },
+    { bottom: '8px', left: '50%', width: '2px', height: '7px', transform: 'translateX(-50%)' },
+    { left: '8px', top: '50%', width: '7px', height: '2px', transform: 'translateY(-50%)' },
+    { right: '8px', top: '50%', width: '7px', height: '2px', transform: 'translateY(-50%)' },
+  ]
+
   const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, avgLabel, avgValue, hint }) => (
     <div
       onClick={onClick}
@@ -740,21 +750,48 @@ export default function Dashboard() {
         // its content — a long currency string would push the row wider
         // than the page, which is the clipping bug all over again.
         minWidth: 0,
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         backgroundColor: theme.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${theme.border}`,
-        padding: '20px',
+        // The Lookout is the page you reach through a spyglass, so a tile
+        // is a porthole: a brass ring, a highlight where the lens seats
+        // into the barrel, and the field falling off toward the rim.
+        //
+        // Hard-rounded rather than a true circle on purpose. The YTD /
+        // Last Month / 90-Day figures below need a full line, and a circle
+        // is exactly what brings back the 375px clipping the comments
+        // further down this component exist to describe.
+        backgroundImage: 'radial-gradient(circle at 50% 36%, #ffffff 46%, rgba(62,54,32,0.06) 76%, rgba(62,54,32,0.15) 100%)',
+        borderRadius: '26px',
+        border: '2px solid rgba(176,124,38,0.6)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)',
+        padding: '22px',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.15s ease'
       }}
-      onMouseEnter={(e) => onClick && (e.currentTarget.style.transform = 'translateY(-2px)')}
-      onMouseLeave={(e) => onClick && (e.currentTarget.style.transform = 'translateY(0)')}
+      onMouseEnter={(e) => {
+        if (!onClick) return
+        e.currentTarget.style.transform = 'translateY(-2px)'
+        e.currentTarget.style.borderColor = 'rgba(176,124,38,0.78)'
+        e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.95), inset 0 0 0 3px rgba(176,124,38,0.3), 0 6px 18px rgba(90,99,73,0.16)'
+      }}
+      onMouseLeave={(e) => {
+        if (!onClick) return
+        e.currentTarget.style.transform = 'translateY(0)'
+        e.currentTarget.style.borderColor = 'rgba(176,124,38,0.6)'
+        e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)'
+      }}
     >
+      {/* Reticle. Four gradations on the inner barrel, at the quarters.
+          Decoration, so it is hidden from assistive tech rather than read
+          out four times on every tile. */}
+      {RETICLE.map((tick, i) => (
+        <span key={i} aria-hidden="true" style={{ ...RETICLE_BASE, ...tick }} />
+      ))}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
         <div style={{
-          width: '44px', height: '44px', borderRadius: '10px',
+          width: '44px', height: '44px', borderRadius: '50%',
           backgroundColor: color || theme.accentBg,
           display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
