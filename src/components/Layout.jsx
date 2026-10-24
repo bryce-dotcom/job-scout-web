@@ -1000,7 +1000,7 @@ export default function Layout() {
               <NavLink
                 to="/"
                 end
-                title="Overview of your business metrics and activity"
+                title="The key landmarks: numbers, what is due, what needs attention"
                 style={({ isActive }) => ({
                   display: 'flex',
                   alignItems: 'center',
@@ -1016,7 +1016,10 @@ export default function Layout() {
                 })}
               >
                 <LookoutMark size={20} />
-                The Lookout
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>The Lookout</span>
+                  <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>key landmarks</span>
+                </span>
               </NavLink>
               {/* Directly under Dashboard. It was up in the logo block, which
                   reads as branding rather than somewhere you can go. A hover
@@ -1042,7 +1045,10 @@ export default function Layout() {
                 })}
               >
                 <CalendarMark size={20} />
-                Company Calendar
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>Company Calendar</span>
+                  <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>who's booked, who's off</span>
+                </span>
               </NavLink>
               {/* Paired with Company Calendar on purpose: the calendar is
                   where the day is, this is where the day IS. Same question,
@@ -1060,7 +1066,10 @@ export default function Layout() {
                 })}
               >
                 <MapMark size={20} />
-                Company Map
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>Company Map</span>
+                  <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>where everyone is</span>
+                </span>
               </NavLink>
               {/* No "Rooms" item here. Bryce, 2026-10-22: "rooms and campfire
                   UI should morph into one — don't show it in the menu, it's
@@ -1087,7 +1096,10 @@ export default function Layout() {
                 })}
               >
                 <CompassMark size={20} />
-                Field Scout
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>Field Scout</span>
+                  <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>clock in, today's work</span>
+                </span>
               </NavLink>}
               {/* A lookup, not a stage. You jump to a customer mid-task from
                   wherever you happen to be — which is what everything else up
@@ -1105,7 +1117,10 @@ export default function Layout() {
                 })}
               >
                 <CustomersMark size={20} />
-                Customers
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block' }}>Customers</span>
+                  <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>everyone you've worked for</span>
+                </span>
               </NavLink>}
             </div>
 
@@ -1650,7 +1665,7 @@ export default function Layout() {
                     to="/"
                     end
                     onClick={() => setMobileMenuOpen(false)}
-                    title="Overview of your business metrics and activity"
+                    title="The key landmarks: numbers, what is due, what needs attention"
                     style={({ isActive }) => ({
                       display: 'flex',
                       alignItems: 'center',
@@ -1667,7 +1682,10 @@ export default function Layout() {
                     })}
                   >
                     <LookoutMark size={20} />
-                    The Lookout
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block' }}>The Lookout</span>
+                      <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>key landmarks</span>
+                    </span>
                   </NavLink>
                   <NavLink
                     to="/company-calendar"
@@ -1682,7 +1700,10 @@ export default function Layout() {
                     })}
                   >
                     <CalendarMark size={20} />
-                    Company Calendar
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block' }}>Company Calendar</span>
+                      <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>who's booked, who's off</span>
+                    </span>
                   </NavLink>
                   <NavLink
                     to="/company-map"
@@ -1697,7 +1718,10 @@ export default function Layout() {
                     })}
                   >
                     <MapMark size={20} />
-                    Company Map
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block' }}>Company Map</span>
+                      <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>where everyone is</span>
+                    </span>
                   </NavLink>
                   {/* See the desktop copy — the clock, one tap from the top. */}
                   {!userIsFieldTech && <NavLink
@@ -1713,7 +1737,10 @@ export default function Layout() {
                     })}
                   >
                     <CompassMark size={20} />
-                    Field Scout
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block' }}>Field Scout</span>
+                      <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>clock in, today's work</span>
+                    </span>
                   </NavLink>}
                   {/* See the desktop copy — a lookup, not a stage. */}
                   {!userIsFieldTech && <NavLink
@@ -1729,7 +1756,10 @@ export default function Layout() {
                     })}
                   >
                     <CustomersMark size={20} />
-                    Customers
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block' }}>Customers</span>
+                      <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>everyone you've worked for</span>
+                    </span>
                   </NavLink>}
                 </div>
 
