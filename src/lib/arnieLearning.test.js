@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { PUSHBACK, isCorrection, correctionNote, FLAG_PREFIX } from '../../supabase/functions/_shared/arnieLearning.ts'
 
-const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
+const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const require = createRequire(import.meta.url)
 
 describe('what counts as a correction', () => {
