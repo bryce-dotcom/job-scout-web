@@ -738,100 +738,131 @@ export default function Dashboard() {
     { right: '8px', top: '50%', width: '7px', height: '2px', transform: 'translateY(-50%)' },
   ]
 
+  // The headline sits inside a circle, so it is sized against the lens
+  // rather than against a card's full width. fitValue above does the same job
+  // for the smaller figures underneath.
+  const fitHeadline = (v, mobile) => {
+    const n = String(v ?? '').length
+    if (n <= 4) return mobile ? 30 : 34
+    if (n <= 7) return mobile ? 26 : 29
+    if (n <= 10) return mobile ? 21 : 24
+    return mobile ? 17 : 19
+  }
+
+  // One diameter for every lens, so a row of them reads as a set of glasses
+  // rather than as tiles that happen to be round. A tile wider than this
+  // centres its lens instead of stretching it into an oval.
+  const LENS = '208px'
+
   const MetricCard = ({ icon: Icon, label, value, color, onClick, subtitle, ytdLabel, ytdValue, lastLabel, lastValue, avgLabel, avgValue, hint }) => (
     <div
       onClick={onClick}
       title={hint || ''}
       style={{
-        // One tile per row on a phone; otherwise at least 220px and share
-        // the line equally, growing to fill a part-empty last row.
-        flex: isMobile ? '1 1 100%' : '1 1 220px',
+        // Two per row on a phone -- one-per-row made nine tiles a 2,630px
+        // scroll -- otherwise at least 220px and share the line equally,
+        // growing to fill a part-empty last row. The 8px is half the gap.
+        flex: isMobile ? '1 1 calc(50% - 8px)' : '1 1 220px',
         // A flex item defaults to min-width:auto and will not shrink below
         // its content — a long currency string would push the row wider
         // than the page, which is the clipping bug all over again.
         minWidth: 0,
-        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: theme.bgCard,
-        // The Lookout is the page you reach through a spyglass, so a tile
-        // is a porthole: a brass ring, a highlight where the lens seats
-        // into the barrel, and the field falling off toward the rim.
-        //
-        // Hard-rounded rather than a true circle on purpose. The YTD /
-        // Last Month / 90-Day figures below need a full line, and a circle
-        // is exactly what brings back the 375px clipping the comments
-        // further down this component exist to describe.
-        backgroundImage: 'radial-gradient(circle at 50% 36%, #ffffff 46%, rgba(62,54,32,0.06) 76%, rgba(62,54,32,0.15) 100%)',
-        borderRadius: '26px',
-        border: '2px solid rgba(176,124,38,0.6)',
-        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)',
-        padding: '22px',
+        alignItems: 'center',
+        gap: '11px',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'all 0.15s ease'
-      }}
-      onMouseEnter={(e) => {
-        if (!onClick) return
-        e.currentTarget.style.transform = 'translateY(-2px)'
-        e.currentTarget.style.borderColor = 'rgba(176,124,38,0.78)'
-        e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.95), inset 0 0 0 3px rgba(176,124,38,0.3), 0 6px 18px rgba(90,99,73,0.16)'
-      }}
-      onMouseLeave={(e) => {
-        if (!onClick) return
-        e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.borderColor = 'rgba(176,124,38,0.6)'
-        e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)'
       }}
     >
-      {/* Reticle. Four gradations on the inner barrel, at the quarters.
-          Decoration, so it is hidden from assistive tech rather than read
-          out four times on every tile. */}
-      {RETICLE.map((tick, i) => (
-        <span key={i} aria-hidden="true" style={{ ...RETICLE_BASE, ...tick }} />
-      ))}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+      {/* THE LENS. A real circle: brass bezel, a highlight where the glass
+          seats into the barrel, the field falling off toward the rim, and
+          gradations at the quarters. It holds the headline only — what you
+          see when you put your eye to it. */}
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: LENS,
+          aspectRatio: '1 / 1',
+          borderRadius: '50%',
+          backgroundColor: theme.bgCard,
+          backgroundImage: 'radial-gradient(circle at 50% 36%, #ffffff 44%, rgba(62,54,32,0.06) 73%, rgba(62,54,32,0.17) 100%)',
+          border: '2px solid rgba(176,124,38,0.6)',
+          boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '7px',
+          padding: isMobile ? '15px' : '20px',
+          textAlign: 'center',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!onClick) return
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.borderColor = 'rgba(176,124,38,0.82)'
+          e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.95), inset 0 0 0 3px rgba(176,124,38,0.3), 0 8px 22px rgba(90,99,73,0.18)'
+        }}
+        onMouseLeave={(e) => {
+          if (!onClick) return
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.borderColor = 'rgba(176,124,38,0.6)'
+          e.currentTarget.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.9), inset 0 0 0 3px rgba(176,124,38,0.16)'
+        }}
+      >
+        {/* Decoration, so it is hidden from assistive tech rather than read
+            out four times on every tile. */}
+        {RETICLE.map((tick, i) => (
+          <span key={i} aria-hidden="true" style={{ ...RETICLE_BASE, ...tick }} />
+        ))}
         <div style={{
-          width: '44px', height: '44px', borderRadius: '50%',
+          width: isMobile ? '34px' : '40px', height: isMobile ? '34px' : '40px', borderRadius: '50%',
           backgroundColor: color || theme.accentBg,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          <Icon size={22} style={{ color: color ? '#fff' : theme.accent }} />
+          <Icon size={isMobile ? 18 : 21} style={{ color: color ? '#fff' : theme.accent }} />
         </div>
-        <span style={{ fontSize: '13px', color: theme.textMuted, fontWeight: '500' }}>{label}</span>
-      </div>
-      <div style={{ fontSize: isMobile ? '26px' : '32px', fontWeight: '700', color: theme.text }}>{value}</div>
-      {subtitle && (
-        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '4px', lineHeight: '1.4' }}>{subtitle}</div>
-      )}
-      {ytdValue !== undefined && (
-        // Last month sits beside YTD rather than under it: the big number above
-        // is a PARTIAL month, so the full month just gone is what it wants
-        // comparing against. minmax(0,1fr) — plain 1fr lets a long currency
-        // string push the card wider than its grid track, and the page clips it
-        // without a scrollbar at 375px.
+        <span style={{ fontSize: '12.5px', color: theme.textMuted, fontWeight: '500', lineHeight: 1.25 }}>{label}</span>
         <div style={{
-          marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${theme.border}`,
-          // Wrapping items, not fixed tracks. Three equal tracks gave each
-          // figure ~69px on a wide screen and 55px at 1024 — measured — while
-          // $2,298,743 needs 62px even at 12px. The old answer was to break the
-          // number; the right one is to let a long figure take a line of its
-          // own and keep every digit.
-          display: 'flex', flexWrap: 'wrap', gap: '10px 14px',
-        }}>
-          {lastValue !== undefined && (
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{lastLabel || 'Last Month'}</div>
-              <div style={{ fontSize: fitValue(lastValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{lastValue}</div>
-            </div>
+          fontSize: fitHeadline(value, isMobile), fontWeight: '700', color: theme.text,
+          lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', maxWidth: '100%',
+        }}>{value}</div>
+      </div>
+
+      {/* UNDER THE GLASS. The figures a circle has no room for, kept whole
+          rather than shrunk to fit — $2,298,743 needs 62px at 12px type, and
+          three of those inside a 208px lens is how digits go missing. */}
+      {(subtitle || ytdValue !== undefined) && (
+        <div style={{ width: '100%', maxWidth: LENS, textAlign: 'center', minWidth: 0 }}>
+          {subtitle && (
+            <div style={{ fontSize: '12px', color: theme.textMuted, lineHeight: '1.4' }}>{subtitle}</div>
           )}
-          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{ytdLabel || 'YTD'}</div>
-            <div style={{ fontSize: fitValue(ytdValue, isMobile), fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{ytdValue}</div>
-          </div>
-          {avgValue !== undefined && (
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <div style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500', marginBottom: '2px' }}>{avgLabel || '90-Day Avg'}</div>
-              <div style={{ fontSize: fitValue(avgValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{avgValue}</div>
+          {ytdValue !== undefined && (
+            // Last month sits beside YTD rather than under it: the big number
+            // above is a PARTIAL month, so the full month just gone is what it
+            // wants comparing against. Wrapping items, not fixed tracks — a
+            // long figure takes a line of its own and keeps every digit.
+            <div style={{
+              marginTop: subtitle ? '9px' : 0,
+              display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px 16px',
+            }}>
+              {lastValue !== undefined && (
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '11.5px', color: theme.textMuted, fontWeight: '500', marginBottom: '1px' }}>{lastLabel || 'Last Month'}</div>
+                  <div style={{ fontSize: fitValue(lastValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{lastValue}</div>
+                </div>
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '11.5px', color: theme.textMuted, fontWeight: '500', marginBottom: '1px' }}>{ytdLabel || 'YTD'}</div>
+                <div style={{ fontSize: fitValue(ytdValue, isMobile), fontWeight: '700', color: theme.text, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{ytdValue}</div>
+              </div>
+              {avgValue !== undefined && (
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '11.5px', color: theme.textMuted, fontWeight: '500', marginBottom: '1px' }}>{avgLabel || '90-Day Avg'}</div>
+                  <div style={{ fontSize: fitValue(avgValue, isMobile), fontWeight: '700', color: theme.textSecondary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', lineHeight: 1.25 }}>{avgValue}</div>
+                </div>
+              )}
             </div>
           )}
         </div>
