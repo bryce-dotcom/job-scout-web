@@ -291,7 +291,12 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
   // is that the call sits beside the work.
   const place = isMobile
     ? (expanded
-        ? { left: 0, right: 0, top: 0, bottom: 0, width: 'auto', height: 'auto', borderRadius: 0 }
+        // paddingTop for the notch. An installed PWA on an iPhone is truly
+        // full screen, so the status bar sits ON TOP of the first thing we
+        // draw — which is the header carrying Minimise and Leave. Bryce,
+        // 2026-10-23: "can't see the minimize button on the iPhone so they
+        // can keep working." Trapped in a call is not a small bug.
+        ? { left: 0, right: 0, top: 0, bottom: 0, width: 'auto', height: 'auto', borderRadius: 0, paddingTop: 'env(safe-area-inset-top, 0px)' }
         : { left: 0, right: 0, bottom: 'var(--jobscout-tabbar-space, 0px)', width: 'auto', height: 'auto', borderRadius: '14px 14px 0 0' })
     : (expanded
         ? { left: 16, right: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'auto', height: 'min(72vh, 620px)', borderRadius: 14 }
@@ -326,13 +331,20 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             {status === 'live' ? 'Connected' : status === 'joining' ? 'Walking in…' : status === 'unconfigured' ? 'Video not connected' : 'Trouble'}
           </div>
         </div>
-        <button onClick={() => setExpanded(!expanded)} title={expanded ? 'Shrink' : 'Expand'}
-          style={iconBtn(theme)}>
-          {expanded ? <Minus size={14} /> : <Maximize2 size={14} />}
+        {/* Full screen on a phone is where somebody gets stuck, so that is
+            where the way out is biggest and labelled. An icon alone is a
+            guess; "Minimise" is not. */}
+        <button onClick={() => setExpanded(!expanded)} title={expanded ? 'Minimise and keep working' : 'Expand'}
+          aria-label={expanded ? 'Minimise' : 'Expand'}
+          style={isMobile && expanded
+            ? { ...iconBtn(theme, true), width: 'auto', padding: '0 12px', gap: 6, fontSize: 13, fontWeight: 700, color: theme.text }
+            : iconBtn(theme)}>
+          {expanded ? <Minus size={isMobile ? 18 : 14} /> : <Maximize2 size={14} />}
+          {isMobile && expanded && <span>Minimise</span>}
         </button>
-        <button onClick={onLeave} title="Leave the room"
-          style={{ ...iconBtn(theme), color: '#dc2626', borderColor: '#fecaca' }}>
-          <PhoneOff size={14} />
+        <button onClick={onLeave} title="Leave the room" aria-label="Leave"
+          style={{ ...iconBtn(theme, isMobile && expanded), color: '#dc2626', borderColor: '#fecaca' }}>
+          <PhoneOff size={isMobile && expanded ? 18 : 14} />
         </button>
       </div>
 
@@ -670,8 +682,11 @@ function Note({ theme, children, tone, icon }) {
   )
 }
 
-const iconBtn = (theme) => ({
+// 26px is a fine target for a mouse and a poor one for a thumb. The way out
+// of a call is the one control that must never be fiddly.
+const iconBtn = (theme, big = false) => ({
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 26, height: 26, borderRadius: 7, cursor: 'pointer', flexShrink: 0,
+  width: big ? 38 : 26, height: big ? 38 : 26,
+  borderRadius: big ? 10 : 7, cursor: 'pointer', flexShrink: 0,
   border: `1px solid ${theme.border}`, background: 'transparent', color: theme.textMuted,
 })
