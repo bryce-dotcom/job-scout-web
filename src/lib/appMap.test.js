@@ -62,13 +62,19 @@ describe('one rule: the sidebar reads the map', () => {
     expect(layout).toMatch(/const devSection = pageVisible\('\/admin\/data-console', navWho\)/)
   })
   it('every menu item in Layout is a page in the map, with the same label', () => {
-    const items = [...layout.matchAll(/\{ to: '(\/[^']*)', icon: \w+, label: '([^']+)'/g)]
+    const items = [...layout.matchAll(/\{ to: '(\/[^']*)', icon: \w+, label: '([^']+)'(?:, title: '([^']+)')?/g)]
     expect(items.length).toBeGreaterThan(35)
     const map = new Map(MENU_PAGES.map((p) => [p.route, p]))
-    for (const [, route, label] of items) {
+    for (const [, route, label, title] of items) {
       expect(map.has(route), route).toBe(true)
-      // The map may add a word ("Estimates (Quotes)") but never rename.
-      if (route !== '/company-calendar' && route !== '/company-map') expect(map.get(route).label).toContain(label)
+      // Compare what a PERSON reads, which is `title` wherever an item has
+      // one. `label` is the key placed agents are parented by, so it never
+      // changes; checking the map against it would have forced the map to go
+      // on saying "Dashboard" for a screen that now says The Lookout — and
+      // the map is what Arnie reads to tell somebody where to go.
+      // The map may still add a word ("Estimates (Quotes)") but never rename.
+      const shown = title || label
+      if (route !== '/company-calendar' && route !== '/company-map') expect(map.get(route).label, route).toContain(shown)
     }
   })
 })

@@ -75,7 +75,7 @@ export const FEATURE_CATALOG = [
         walkthrough: 'lead-setter',
       },
       {
-        name: 'Sales Pipeline',
+        name: 'Pipeline Trail',
         icon: 'GitBranch',
         summary: 'A Kanban pipeline (Appointment Set → Qualified → Quoted → Won) that lives on the lead itself — no separate deals table, no double entry.',
         replaces: ['Salesforce', 'HubSpot Deals', 'Pipedrive'],
@@ -477,7 +477,7 @@ export const FEATURE_CATALOG = [
         route: '/products',
       },
       {
-        name: 'Inventory',
+        name: 'The Cache',
         icon: 'Warehouse',
         summary: 'Track stock-on-hand, locations, and consumption per job — assign materials to a job line and watch inventory tick down.',
         replaces: ['Fishbowl', 'QuickBooks Inventory', 'Sortly'],
@@ -1272,7 +1272,7 @@ export const FEATURE_CATALOG = [
     summary: 'Owner-grade dashboards on top of your operational data — no BI tool required.',
     features: [
       {
-        name: 'Dashboard',
+        name: 'The Lookout',
         icon: 'LayoutDashboard',
         summary: 'The home page — leads, jobs, AR, this-week metrics, and per-employee activity in one glance.',
         replaces: ['custom Looker dashboards', 'QuickBooks home'],
@@ -1281,7 +1281,7 @@ export const FEATURE_CATALOG = [
         walkthrough: 'dashboard',
       },
       {
-        name: 'Reports',
+        name: 'Field Notes',
         icon: 'BarChart3',
         summary: 'Pre-built reports — sales pipeline, AR aging, job profitability, commission summary, payroll summary, fleet costs — with per-report deep links.',
         replaces: ['QuickBooks Reports', 'Tableau'],

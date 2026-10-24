@@ -68,7 +68,7 @@ export function ruleAllows(rule: Rule, who: Who): boolean {
 
 // In menu order. `section` is the heading the person sees in the sidebar.
 export const MENU_PAGES: Page[] = [
-  { route: '/', label: 'Dashboard', section: 'Top of the menu', rule: 'all', does: 'The day at a glance: numbers, what is due, what needs attention.' },
+  { route: '/', label: 'The Lookout', section: 'Top of the menu', rule: 'all', does: 'The key landmarks: numbers, what is due, what needs attention.' },
   { route: '/company-calendar', label: 'Company Calendar', section: 'Top of the menu', rule: 'all', does: 'Sales appointments, scheduled work and time off in one month view.' },
   { route: '/company-map', label: 'Company Map', section: 'Top of the menu', rule: 'all', does: 'Live map of everyone on the clock and every tracked vehicle.' },
   { route: '/customers', label: 'Customers', section: 'Top of the menu', rule: 'office', does: 'Look up any customer: their jobs, estimates, invoices and contact details.' },
@@ -78,7 +78,7 @@ export const MENU_PAGES: Page[] = [
   { route: '/leads', label: 'Leads', section: 'Sales Flow (step 2)', rule: 'office', does: 'Every potential customer starts here.' },
   { route: '/lead-setter', label: 'Lead Setter', section: 'Sales Flow (step 3)', rule: 'office', does: 'Call leads and book appointments.' },
   { route: '/appointments', label: 'Appointments', section: 'Sales Flow (under Lead Setter)', rule: 'office', does: 'Book and reschedule sales visits; they also show on the Company Calendar.' },
-  { route: '/pipeline', label: 'Pipeline', section: 'Sales Flow (step 4)', rule: 'office', does: 'Track leads through the sales stages; follow-ups due show as a badge.' },
+  { route: '/pipeline', label: 'Pipeline Trail', section: 'Sales Flow (step 4)', rule: 'office', does: 'Track leads through the sales stages; follow-ups due show as a badge.' },
   { route: '/estimates', label: 'Estimates (Quotes)', section: 'Sales Flow (step 5)', rule: 'office', does: 'Create, send and track estimates/quotes; an approved one becomes a job.' },
 
   { route: '/jobs', label: 'Jobs', section: 'Work / Operations', rule: 'office', does: 'Every job: won estimates become jobs here.' },
@@ -88,7 +88,7 @@ export const MENU_PAGES: Page[] = [
   { route: '/field-scout', label: 'Field Scout (Clock)', section: 'Work / Operations (also a shortcut at the top)', rule: 'all', does: "Clock in and out, and today's jobs for the field." },
 
   { route: '/products', label: 'Products & Services', section: 'Supply', rule: 'office', does: 'The product and service catalog with prices.' },
-  { route: '/inventory', label: 'Inventory', section: 'Supply', rule: 'office', does: 'Materials, tools and consumables on hand.' },
+  { route: '/inventory', label: 'The Cache', section: 'Supply', rule: 'office', does: 'Materials, tools and consumables on hand.' },
   { route: '/vendors', label: 'Vendors', section: 'Supply', rule: 'office', does: 'Suppliers you order parts and materials from.' },
   { route: '/procurement', label: 'Procurement Queue', section: 'Supply', rule: 'office', does: 'Jobs that need parts, batched into vendor purchase orders.' },
   { route: '/purchase-orders', label: 'Purchase Orders', section: 'Supply', rule: 'office', does: 'Orders sent to vendors.' },
@@ -113,7 +113,7 @@ export const MENU_PAGES: Page[] = [
   { route: '/document-rules', label: 'Document Rules', section: 'Admin', rule: 'admin', does: 'Form templates and document packages.' },
 
   { route: '/pricing', label: 'Sign Up a Customer', section: 'Management', rule: 'manager', does: 'Walk a prospect through the JobScout plans and start their account.' },
-  { route: '/reports', label: 'Reports', section: 'Management', rule: 'manager', does: 'Business reports and analytics.' },
+  { route: '/reports', label: 'Field Notes', section: 'Management', rule: 'manager', does: 'Business reports and analytics.' },
   { route: '/sales-performance', label: 'Sales Performance', section: 'Management', rule: 'manager', does: 'Per-rep funnel: meetings set, estimates written, deals closed.' },
   { route: '/admin/eos', label: 'EOS', section: 'Management', rule: 'manager', does: 'Vision, traction, rocks, scorecard and L10 meetings.' },
 

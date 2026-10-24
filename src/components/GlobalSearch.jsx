@@ -26,10 +26,10 @@ const CATEGORIES = {
 
 // All navigable pages for "go to" search
 const PAGES = [
-  { id: 'p-dashboard', name: 'Dashboard', keywords: 'home overview metrics', to: '/' },
+  { id: 'p-dashboard', name: 'The Lookout', keywords: 'dashboard home overview metrics', to: '/' },
   { id: 'p-leads', name: 'Leads', keywords: 'prospects potential', to: '/leads' },
   { id: 'p-lead-setter', name: 'Lead Setter', keywords: 'call phone dialer', to: '/lead-setter' },
-  { id: 'p-pipeline', name: 'Sales Pipeline', keywords: 'funnel stages deals', to: '/pipeline' },
+  { id: 'p-pipeline', name: 'Pipeline Trail', keywords: 'pipeline sales funnel stages deals', to: '/pipeline' },
   { id: 'p-estimates', name: 'Estimates', keywords: 'quotes proposals pricing', to: '/estimates' },
   { id: 'p-jobs', name: 'Jobs', keywords: 'projects work orders', to: '/jobs' },
   { id: 'p-customers', name: 'Customers', keywords: 'clients accounts contacts', to: '/customers' },
@@ -37,7 +37,7 @@ const PAGES = [
   { id: 'p-field-scout', name: 'Field Scout', keywords: 'technician daily', to: '/field-scout' },
   { id: 'p-job-board', name: 'Job Board', keywords: 'pm scheduler sections', to: '/job-board' },
   { id: 'p-products', name: 'Products & Services', keywords: 'catalog pricing items', to: '/products' },
-  { id: 'p-inventory', name: 'Inventory', keywords: 'materials stock warehouse', to: '/inventory' },
+  { id: 'p-inventory', name: 'The Cache', keywords: 'inventory materials stock warehouse', to: '/inventory' },
   { id: 'p-invoices', name: 'Invoices', keywords: 'billing payments ar', to: '/invoices' },
   { id: 'p-deposits', name: 'Deposits', keywords: 'lead payments prepay', to: '/lead-payments' },
   { id: 'p-expenses', name: 'Expenses', keywords: 'costs spending receipts', to: '/expenses' },
@@ -47,7 +47,7 @@ const PAGES = [
   { id: 'p-fleet', name: 'Fleet', keywords: 'vehicles trucks vans', to: '/fleet' },
   { id: 'p-audits', name: 'Lighting Audits', keywords: 'energy audit survey', to: '/lighting-audits' },
   { id: 'p-settings', name: 'Settings', keywords: 'configuration company profile', to: '/settings' },
-  { id: 'p-reports', name: 'Reports', keywords: 'analytics data charts', to: '/reports' },
+  { id: 'p-reports', name: 'Field Notes', keywords: 'reports analytics data charts', to: '/reports' },
   { id: 'p-routes', name: 'Routes', keywords: 'routing driving map', to: '/routes' },
   // Was '/job-calendar' — no such route, so this result opened "page not
   // found". Found 2026-10-14 by the app-map route check.

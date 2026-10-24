@@ -3,7 +3,7 @@
 
 export default {
   id: 'reports',
-  title: 'Reports',
+  title: 'Field Notes',
   category: 'Operations',
   icon: 'BarChart3',
   route: '/reports',

@@ -3,7 +3,7 @@
 
 export default {
   id: 'inventory',
-  title: 'Inventory',
+  title: 'The Cache',
   category: 'Operations',
   icon: 'Boxes',
   route: '/inventory',

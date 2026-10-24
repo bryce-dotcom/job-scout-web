@@ -3,10 +3,11 @@
 
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  LayoutDashboard, TrendingUp, TrendingDown, Briefcase, DollarSign,
+  TrendingUp, TrendingDown, Briefcase, DollarSign,
   AlertTriangle, ArrowRight, Clock, CheckCircle, ChevronRight,
   BarChart2, Users, FileText,
 } from 'lucide-react'
+import { LookoutMark } from '../icons/ScoutIcons'
 import { useWalkthroughRunner } from './useWalkthroughRunner'
 import VoiceToggle from './VoiceToggle'
 import SetupChecklist from './SetupChecklist'
@@ -160,8 +161,8 @@ function Stage({ scene }) {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', fontSize: '11px', fontFamily: 'system-ui, sans-serif', color: T.text, padding: '12px 14px', gap: '8px', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-        <LayoutDashboard size={15} style={{ color: T.accent }} />
-        <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>Dashboard</span>
+        <LookoutMark size={16} />
+        <span style={{ fontSize: '15px', fontWeight: '700', color: T.text }}>The Lookout</span>
         <span style={{ fontSize: '10px', color: T.textMuted, marginLeft: '4px' }}>June 2026</span>
       </div>
 

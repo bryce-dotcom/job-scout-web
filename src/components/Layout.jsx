@@ -20,12 +20,9 @@ import TrialBanner from './TrialBanner'
 import AgentNavIcon from './AgentNavIcon'
 import { useLocationTracking } from '../hooks/useLocationTracking'
 import {
-  LayoutDashboard,
   UserPlus,
   GitBranch,
-  CalendarDays,
 
-  Map as MapIcon,
   Users,
   FileText,
   Briefcase,
@@ -68,13 +65,24 @@ import {
   Settings as SettingsIcon,
   X as XIcon,
   Database,
-  Compass,
   RefreshCw,
   HelpCircle,
   Eye,
   Inbox,
   PlayCircle as Play,
   Target, SlidersHorizontal, Megaphone } from 'lucide-react'
+
+// The drawn menu. Every nav item that is a PLACE or a THING is now a mark
+// made of a material rather than a grey outline — see icons/scoutPalette.
+import {
+  LookoutMark, TrailMark, CacheMark, FieldNotesMark, CompassMark, MapMark, CalendarMark,
+  BaseCampMark, CustomersMark, MyCrewMark, MarketingMark, LeadsMark, LeadSetterMark,
+  AppointmentsMark, EstimatesMark, JobsMark, JobBoardMark, RecurringMark, ServiceVisitsMark,
+  ProductsMark, VendorsMark, ProcurementMark, PurchaseOrdersMark, InvoicesMark, DepositsMark,
+  ExpensesMark, BillsMark, BooksMark, EmployeesMark, TimeClockMark, MyPayMark, PayrollMark,
+  PayrollInboxMark, PayrollSetupMark, SettingsMark, DocumentRulesMark, SignUpCustomerMark,
+  SalesPerformanceMark, EosMark, HelpMark, VideoLibraryMark, AdvancedToolsMark, DataConsoleMark,
+} from './icons/ScoutIcons'
 
 // The theme, the context and useTheme now live in ./ThemeContext, which
 // imports nothing but React. They were here, and that made every component
@@ -331,16 +339,16 @@ export default function Layout() {
   // 1-4 win the work; 5 delivers it. Same colour as before so the badge people
   // already recognise did not change meaning, only scope.
   const WORK_STEP = { number: 6, color: '#22c55e' }
-  const dashboardItem = { to: '/', icon: LayoutDashboard, label: 'Dashboard' }
+  const dashboardItem = { to: '/', icon: LookoutMark, label: 'Dashboard', title: 'The Lookout', subtitle: 'key landmarks' }
 
   // Sales Flow - Numbered steps with tooltips (per design standards)
   const salesFlowItems = [
     // Marketing is step 1 because it is where leads come FROM. Being found
     // precedes being called. Its setup walkthrough lives on the page itself.
-    { to: '/marketing', icon: Megaphone, label: 'Marketing', step: 1, hint: 'Be found: posts, brand, channels — field photos become social posts', color: '#e11d48' },
-    { to: '/leads', icon: UserPlus, label: 'Leads', step: 2, hint: 'All potential customers start here', color: '#6b7280' },
+    { to: '/marketing', icon: MarketingMark, label: 'Marketing', step: 1, hint: 'Be found: posts, brand, channels — field photos become social posts', color: '#e11d48' },
+    { to: '/leads', icon: LeadsMark, label: 'Leads', step: 2, hint: 'All potential customers start here', color: '#6b7280' },
     {
-      to: '/lead-setter', icon: Headphones, label: 'Lead Setter', step: 3,
+      to: '/lead-setter', icon: LeadSetterMark, label: 'Lead Setter', step: 3,
       hint: 'Call leads and schedule appointments', color: '#8b5cf6',
       // Appointments nests here because Lead Setter PRODUCES them — its own
       // description is "call leads and schedule appointments". It used to sit
@@ -349,14 +357,14 @@ export default function Layout() {
       // same indent the AI agents already use under Estimates, so the nesting
       // reads as "part of this step" rather than as a new idea.
       children: [
-        { to: '/appointments', icon: CalendarCheck, label: 'Appointments', hint: 'Book and reschedule sales visits — everything booked here also shows on the Company Calendar' },
+        { to: '/appointments', icon: AppointmentsMark, label: 'Appointments', hint: 'Book and reschedule sales visits — everything booked here also shows on the Company Calendar' },
       ],
     },
-    { to: '/pipeline', icon: GitBranch, label: 'Pipeline', step: 4, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
+    { to: '/pipeline', icon: TrailMark, label: 'Pipeline', title: 'Pipeline Trail', subtitle: 'walk it with them', step: 4, hint: 'Track leads through sales process', color: '#f59e0b', badgeCount: dueFollowUps },
     // `label` stays 'Estimates': it is the KEY agents are parented under
     // ("Under Estimates" in the placement picker) and must not move with the
     // company's vocabulary. `title` and `subtitle` are what the eye sees.
-    { to: '/estimates', icon: FileText, label: 'Estimates', title: docNav.primary, subtitle: docNav.secondary, step: 5, hint: `Create and send ${docNav.primary.toLowerCase()}`, color: '#3b82f6' }
+    { to: '/estimates', icon: EstimatesMark, label: 'Estimates', title: docNav.primary, subtitle: docNav.secondary, step: 5, hint: `Create and send ${docNav.primary.toLowerCase()}`, color: '#3b82f6' }
     // Jobs used to be step 5 here. It is the first step of DELIVERY, not the
     // last step of sales, and the three other screens that mean the same thing
     // (Job Board, Recurring Jobs, Service Visits) sat four items away in
@@ -380,15 +388,15 @@ export default function Layout() {
       description: 'Deliver the work you sold',
       sectionIcon: Briefcase,
       baseItems: [
-        { to: '/jobs', icon: Briefcase, label: 'Jobs', hint: 'Won estimates become jobs' },
-        { to: '/job-board', icon: ClipboardList, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
-        { to: '/recurring', icon: Repeat, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
+        { to: '/jobs', icon: JobsMark, label: 'Jobs', hint: 'Won estimates become jobs' },
+        { to: '/job-board', icon: JobBoardMark, label: 'Job Board', hint: 'Active & scheduled work — schedule and dispatch your crews across the kanban' },
+        { to: '/recurring', icon: RecurringMark, label: 'Recurring Jobs', hint: 'Repeat rhythms & membership plans — set a job to repeat weekly, monthly, quarterly or yearly and it spawns the next one automatically' },
         // Renamed from "Services", which sat directly above "Products &
         // Services" meaning something entirely different. Two controls calling
         // themselves the same thing is why people look straight at a menu and
         // do not find what they want.
-        { to: '/services/upcoming', icon: Wrench, label: 'Service Visits', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
-        { to: '/field-scout', icon: Compass, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' }
+        { to: '/services/upcoming', icon: ServiceVisitsMark, label: 'Service Visits', hint: 'Upcoming visits due (warranty, annual, tune-ups) — schedule them and remind the customer' },
+        { to: '/field-scout', icon: CompassMark, label: 'Field Scout (Clock)', hint: 'Daily dashboard + clock in/out for field techs' }
       ]
     },
     // The CUSTOMERS section is gone. Neither of its two items was really a
@@ -405,11 +413,11 @@ export default function Layout() {
       description: 'What you sell, and what you buy',
       sectionIcon: Package,
       baseItems: [
-        { to: '/products', icon: Package, label: 'Products & Services', hint: 'Your product catalog and pricing' },
-        { to: '/inventory', icon: Warehouse, label: 'Inventory', hint: 'Track materials tools and consumables' },
-        { to: '/vendors', icon: Building2, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },
-        { to: '/procurement', icon: ShoppingCart, label: 'Procurement Queue', hint: 'Jobs needing parts — batch them into vendor POs' },
-        { to: '/purchase-orders', icon: FileText, label: 'Purchase Orders', hint: 'Orders sent to vendors for parts and materials' }
+        { to: '/products', icon: ProductsMark, label: 'Products & Services', hint: 'Your product catalog and pricing' },
+        { to: '/inventory', icon: CacheMark, label: 'Inventory', title: 'The Cache', subtitle: "what's on the shelf", hint: 'Track materials tools and consumables' },
+        { to: '/vendors', icon: VendorsMark, label: 'Vendors', hint: 'Suppliers you order parts and materials from' },
+        { to: '/procurement', icon: ProcurementMark, label: 'Procurement Queue', hint: 'Jobs needing parts — batch them into vendor POs' },
+        { to: '/purchase-orders', icon: PurchaseOrdersMark, label: 'Purchase Orders', hint: 'Orders sent to vendors for parts and materials' }
       ]
     },
     {
@@ -418,11 +426,11 @@ export default function Layout() {
       description: 'Invoices, expenses & accounting',
       sectionIcon: DollarSign,
       baseItems: [
-        { to: '/invoices', icon: Receipt, label: 'Invoices', hint: 'Customer invoices and utility incentives' },
-        { to: '/lead-payments', icon: CreditCard, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
-        { to: '/expenses', icon: DollarSign, label: 'Expenses', hint: 'Track business expenses and receipts' },
-        { to: '/bills', icon: FileText, label: 'Bills', hint: 'Accounts Payable — bills you owe vendors' },
-        { to: '/books', icon: BookOpen, label: 'Books', hint: 'Accounting and financial overview' }
+        { to: '/invoices', icon: InvoicesMark, label: 'Invoices', hint: 'Customer invoices and utility incentives' },
+        { to: '/lead-payments', icon: DepositsMark, label: 'Deposits', hint: 'Lead deposits and pre-job payments' },
+        { to: '/expenses', icon: ExpensesMark, label: 'Expenses', hint: 'Track business expenses and receipts' },
+        { to: '/bills', icon: BillsMark, label: 'Bills', hint: 'Accounts Payable — bills you owe vendors' },
+        { to: '/books', icon: BooksMark, label: 'Books', hint: 'Accounting and financial overview' }
       ]
     },
     {
@@ -431,12 +439,12 @@ export default function Layout() {
       description: 'Employees, time tracking & payroll',
       sectionIcon: Users,
       baseItems: [
-        { to: '/employees', icon: UserCog, label: 'Employees', hint: 'Manage team members and roles' },
-        { to: '/time-clock', icon: Clock, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
-        { to: '/my-pay', icon: DollarSign, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
-        { to: '/payroll', icon: DollarSign, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' },
-        { to: '/payroll/inbox', icon: Inbox, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' },
-        { to: '/payroll/setup', icon: SettingsIcon, label: 'Payroll setup', hint: 'Tax accounts, people, bank, and the checks your old provider paid — the walk off Gusto' }
+        { to: '/employees', icon: EmployeesMark, label: 'Employees', hint: 'Manage team members and roles' },
+        { to: '/time-clock', icon: TimeClockMark, label: 'Time Clock', hint: 'Clock in and out track hours worked' },
+        { to: '/my-pay', icon: MyPayMark, label: 'My Pay', hint: 'Your commissions, pending payouts, and hours' },
+        { to: '/payroll', icon: PayrollMark, label: 'Payroll', hint: 'Commissions, hours, bonuses, and pay runs' },
+        { to: '/payroll/inbox', icon: PayrollInboxMark, label: 'Payroll Inbox', hint: 'Tax deposits, new-hire reports, and filings — what to do today' },
+        { to: '/payroll/setup', icon: PayrollSetupMark, label: 'Payroll setup', hint: 'Tax accounts, people, bank, and the checks your old provider paid — the walk off Gusto' }
       ]
     }
   ]
@@ -558,11 +566,11 @@ export default function Layout() {
     const byRoute = new Map()
     const put = (item) => { if (item?.to && !byRoute.has(item.to)) byRoute.set(item.to, item) }
     put(dashboardItem)
-    put({ to: '/company-calendar', icon: CalendarDays, label: 'Calendar' })
-    put({ to: '/company-map', icon: MapIcon, label: 'Map' })
+    put({ to: '/company-calendar', icon: CalendarMark, label: 'Calendar' })
+    put({ to: '/company-map', icon: MapMark, label: 'Map' })
     if (!userIsFieldTech) {
-      put({ to: '/field-scout', icon: Compass, label: 'Field Scout' })
-      put({ to: '/customers', icon: Users, label: 'Customers' })
+      put({ to: '/field-scout', icon: CompassMark, label: 'Field Scout' })
+      put({ to: '/customers', icon: CustomersMark, label: 'Customers' })
       // Sales Flow is rendered inline rather than through navSections, so it
       // has to be added by hand or no sales route could ever be a tab — and
       // the sales default is the whole Leads → Setter → Pipeline → Estimates
@@ -622,8 +630,8 @@ export default function Layout() {
     sectionIcon: Settings,
     isAdmin: true,
     items: [
-      { to: '/settings', icon: Settings, label: 'Settings', hint: 'Company and app settings' },
-      { to: '/document-rules', icon: FileText, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
+      { to: '/settings', icon: SettingsMark, label: 'Settings', hint: 'Company and app settings' },
+      { to: '/document-rules', icon: DocumentRulesMark, label: 'Document Rules', hint: 'Manage form templates and doc packages' },
     ]
   } : null
 
@@ -633,10 +641,10 @@ export default function Layout() {
     description: 'Reports, EOS & analytics',
     sectionIcon: BarChart3,
     items: [
-      { to: '/pricing', icon: UserPlus, label: 'Sign Up a Customer', hint: 'Walk a prospect through the plans and start their account — or send them the link' },
-      { to: '/reports', icon: BarChart3, label: 'Reports', hint: 'Business reports and analytics' },
-      { to: '/sales-performance', icon: Target, label: 'Sales Performance', hint: 'Per-rep funnel: meetings set, estimates written, deals closed' },
-      { to: '/admin/eos', icon: Eye, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
+      { to: '/pricing', icon: SignUpCustomerMark, label: 'Sign Up a Customer', hint: 'Walk a prospect through the plans and start their account — or send them the link' },
+      { to: '/reports', icon: FieldNotesMark, label: 'Reports', title: 'Field Notes', subtitle: 'how it went', hint: 'Business reports and analytics' },
+      { to: '/sales-performance', icon: SalesPerformanceMark, label: 'Sales Performance', hint: 'Per-rep funnel: meetings set, estimates written, deals closed' },
+      { to: '/admin/eos', icon: EosMark, label: 'EOS', hint: 'Vision, traction, rocks, scorecard, and meetings' },
     ]
   } : null
 
@@ -646,8 +654,8 @@ export default function Layout() {
     description: 'Guides & walkthroughs',
     sectionIcon: HelpCircle,
     items: [
-      { to: '/admin/help', icon: HelpCircle, label: 'Help', hint: 'How the app works — guides and diagrams' },
-      { to: '/admin/videos', icon: Play, label: 'Video Library', hint: 'Feature videos + what Job Scout replaces' }
+      { to: '/admin/help', icon: HelpMark, label: 'Help', hint: 'How the app works — guides and diagrams' },
+      { to: '/admin/videos', icon: VideoLibraryMark, label: 'Video Library', hint: 'Feature videos + what Job Scout replaces' }
     ]
   }
 
@@ -657,8 +665,8 @@ export default function Layout() {
     description: 'Database, tools & diagnostics',
     sectionIcon: Wrench,
     items: [
-      { to: '/advanced-tools', icon: Wrench, label: 'Advanced Tools', hint: 'Advanced system tools and configuration' },
-      { to: '/admin/data-console', icon: Database, label: 'Data Console', hint: 'Database management and developer tools' }
+      { to: '/advanced-tools', icon: AdvancedToolsMark, label: 'Advanced Tools', hint: 'Advanced system tools and configuration' },
+      { to: '/admin/data-console', icon: DataConsoleMark, label: 'Data Console', hint: 'Database management and developer tools' }
     ],
     isDev: true
   } : null
@@ -688,7 +696,20 @@ export default function Layout() {
       })}
     >
       <item.icon size={item.isChildAgent ? 12 : 18} style={{ color: item.isAgent ? '#a855f7' : undefined }} />
-      {item.label}
+      {/* `title` beats `label`, and `label` is never renamed.
+          `label` is a KEY: getAgentsForSection() and getSalesFlowChildAgents()
+          parent every placed agent by it, and ai_modules rows hold those
+          strings per tenant. Renaming Pipeline to Pipeline Trail here would
+          orphan whatever is parented under "Pipeline" in every company that
+          placed one. The sales-flow rows have read `item.title || item.label`
+          since Estimates needed a per-company word for its documents; this is
+          the same rule, finally applied to the rest of the menu. */}
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block' }}>{item.title || item.label}</span>
+        {item.subtitle && (
+          <span style={{ display: 'block', fontSize: '10px', lineHeight: 1.2, opacity: 0.75, marginTop: '1px' }}>{item.subtitle}</span>
+        )}
+      </span>
       {/* Follow-ups due. Visible from ANY page, so a rep does not have to be
           sitting on the pipeline to know a callback came round. Same count as
           the board header — lib/followUpDue is the one definition. */}
@@ -994,8 +1015,8 @@ export default function Layout() {
                   transition: 'all 0.15s ease'
                 })}
               >
-                <LayoutDashboard size={20} />
-                Dashboard
+                <LookoutMark size={20} />
+                The Lookout
               </NavLink>
               {/* Directly under Dashboard. It was up in the logo block, which
                   reads as branding rather than somewhere you can go. A hover
@@ -1020,7 +1041,7 @@ export default function Layout() {
                   transition: 'all 0.15s ease'
                 })}
               >
-                <CalendarDays size={20} />
+                <CalendarMark size={20} />
                 Company Calendar
               </NavLink>
               {/* Paired with Company Calendar on purpose: the calendar is
@@ -1038,7 +1059,7 @@ export default function Layout() {
                   transition: 'all 0.15s ease'
                 })}
               >
-                <MapIcon size={20} />
+                <MapMark size={20} />
                 Company Map
               </NavLink>
               {/* No "Rooms" item here. Bryce, 2026-10-22: "rooms and campfire
@@ -1065,7 +1086,7 @@ export default function Layout() {
                   transition: 'all 0.15s ease'
                 })}
               >
-                <Compass size={20} />
+                <CompassMark size={20} />
                 Field Scout
               </NavLink>}
               {/* A lookup, not a stage. You jump to a customer mid-task from
@@ -1083,7 +1104,7 @@ export default function Layout() {
                   transition: 'all 0.15s ease'
                 })}
               >
-                <Users size={20} />
+                <CustomersMark size={20} />
                 Customers
               </NavLink>}
             </div>
@@ -1277,8 +1298,8 @@ export default function Layout() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                    <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} />
-                    <NavItem item={{ to: '/my-crew', icon: Users, label: 'My Crew', hint: 'Manage your recruited AI agents' }} />
+                    <NavItem item={{ to: '/base-camp', icon: BaseCampMark, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} />
+                    <NavItem item={{ to: '/my-crew', icon: MyCrewMark, label: 'My Crew', hint: 'Manage your recruited AI agents' }} />
                     {unplacedAgents.map((agent) => (
                       <NavLink
                         key={agent.id}
@@ -1645,8 +1666,8 @@ export default function Layout() {
                       minHeight: '44px'
                     })}
                   >
-                    <LayoutDashboard size={20} />
-                    Dashboard
+                    <LookoutMark size={20} />
+                    The Lookout
                   </NavLink>
                   <NavLink
                     to="/company-calendar"
@@ -1660,7 +1681,7 @@ export default function Layout() {
                       transition: 'all 0.15s ease', minHeight: '44px'
                     })}
                   >
-                    <CalendarDays size={20} />
+                    <CalendarMark size={20} />
                     Company Calendar
                   </NavLink>
                   <NavLink
@@ -1675,7 +1696,7 @@ export default function Layout() {
                       transition: 'all 0.15s ease', minHeight: '44px'
                     })}
                   >
-                    <MapIcon size={20} />
+                    <MapMark size={20} />
                     Company Map
                   </NavLink>
                   {/* See the desktop copy — the clock, one tap from the top. */}
@@ -1691,7 +1712,7 @@ export default function Layout() {
                       transition: 'all 0.15s ease', minHeight: '44px'
                     })}
                   >
-                    <Compass size={20} />
+                    <CompassMark size={20} />
                     Field Scout
                   </NavLink>}
                   {/* See the desktop copy — a lookup, not a stage. */}
@@ -1707,7 +1728,7 @@ export default function Layout() {
                       transition: 'all 0.15s ease', minHeight: '44px'
                     })}
                   >
-                    <Users size={20} />
+                    <CustomersMark size={20} />
                     Customers
                   </NavLink>}
                 </div>
@@ -1900,8 +1921,8 @@ export default function Layout() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                        <NavItem item={{ to: '/base-camp', icon: Tent, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} mobile />
-                        <NavItem item={{ to: '/my-crew', icon: Users, label: 'My Crew', hint: 'Manage your recruited AI agents' }} mobile />
+                        <NavItem item={{ to: '/base-camp', icon: BaseCampMark, label: 'Base Camp', hint: 'Browse and recruit AI experts' }} mobile />
+                        <NavItem item={{ to: '/my-crew', icon: MyCrewMark, label: 'My Crew', hint: 'Manage your recruited AI agents' }} mobile />
                         {unplacedAgents.map((agent) => (
                           <NavLink
                             key={agent.id}

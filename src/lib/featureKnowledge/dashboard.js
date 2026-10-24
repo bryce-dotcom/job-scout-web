@@ -1,6 +1,6 @@
 export default {
   id: 'dashboard',
-  title: 'Dashboard',
+  title: 'The Lookout',
   category: 'Reports & Insights',
   icon: 'LayoutDashboard',
   route: '/dashboard',
