@@ -87,7 +87,11 @@ serve(async (req) => {
       { feature: 'walter-analyze', companyId: null, req },
       {
         model: 'claude-sonnet-5-5',
-        max_tokens: 4096,
+        // 4096 was not enough and the failure was ugly: the model reasons
+        // before it answers — which is the whole point of step 1, looking
+        // before naming — and an elevation with a dozen runs then truncated
+        // the JSON mid-string, so a complete count came back as "malformed".
+        max_tokens: 8192,
         messages: [{
           role: 'user',
           content: [
@@ -132,8 +136,11 @@ serve(async (req) => {
     } catch {
       return json({
         success: false,
-        error: 'Walter looked at the photo but his answer came back malformed.',
+        error: ai.data?.stop_reason === 'max_tokens'
+          ? 'Walter ran out of room before he finished counting. Try one elevation at a time rather than the whole building.'
+          : 'Walter looked at the photo but his answer came back malformed.',
         raw: content.slice(0, 500),
+        stop_reason: ai.data?.stop_reason ?? null,
       });
     }
 

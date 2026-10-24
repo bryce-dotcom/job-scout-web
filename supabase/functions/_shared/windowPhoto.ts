@@ -180,10 +180,10 @@ One run = one type of window, on one storey, that the crew treats the same way. 
 Set confidence per run: high if you can see it plainly, medium if you are inferring from partial view or resolution, low if you are largely guessing. A low-confidence run is useful; a run dressed up as high is not.
 
 STEP 9 — RETURN ONLY THIS JSON, AND NOTHING ELSE
-No preamble, no markdown fence, no commentary after it.
+No preamble, no markdown fence, no commentary after it. Keep every string SHORT — a dozen words, not a paragraph. A rep reads this on a phone in a driveway, and a long answer is also one that runs out of room before the last run is counted.
 
 {
-  "surface": "one line on what this photograph is, e.g. front elevation of a two-storey brick house",
+  "surface": "under 15 words on what this photograph is, e.g. front elevation of a two-storey brick house",
   "storeys": 2,
   "wall_material": "brick",
   "segment_looks_like": "residential" | "commercial",
