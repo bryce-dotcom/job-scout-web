@@ -865,12 +865,22 @@ function EstimateDetailInner() {
     if (files.length === 0) return
     e.target.value = '' // let the same file be re-picked if needed
 
-    // These render via getPublicUrl, so they MUST live in a public bucket.
-    // They used to go to project-documents (private) — getPublicUrl there
-    // returns a URL that 400s, so the photo uploaded but never displayed and
-    // looked like it "didn't take" (reported on mobile). audit-photos is the
-    // public bucket meant for exactly these fixture/site photos.
-    const newUrls = []
+    // getPublicUrl here mints an ADDRESS, not a working link.
+    //
+    // audit-photos went PRIVATE on 2026-10-20, so fetching one of these
+    // raw answers 400. That is fine and intended: a /object/public/ URL is
+    // how every photo column in this app records which file it means —
+    // quote_lines.photos, job_lines.photos and audit_areas.photos all do
+    // it — and every reader signs it before showing it (SignedImg and
+    // signedUrlFor, lib/storageUrl). handleLinePhotoDelete also parses the
+    // bucket and path back out of this exact shape.
+    //
+    // So do NOT "fix" this by moving the photos to a public bucket. And do
+    // not store a bare path instead: storageRef() cannot tell which bucket
+    // a bare path belongs to, so it would render unsigned and broken unless
+    // every reader were also passed bucket="audit-photos". The URL shape
+    // carries the bucket with it, which is why it is the one stored.
+    const newAddresses = []
     for (const file of files) {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
       const path = `estimates/${id}/lines/${lineId}/${Date.now()}_${Math.round(Math.random() * 1e6)}.${ext}`
@@ -884,17 +894,17 @@ function EstimateDetailInner() {
         continue
       }
       const { data: urlData } = supabase.storage.from('audit-photos').getPublicUrl(path)
-      newUrls.push(urlData.publicUrl)
+      newAddresses.push(urlData.publicUrl)
     }
-    if (newUrls.length === 0) return
+    if (newAddresses.length === 0) return
 
     const line = lineItems.find(l => l.id === lineId)
-    const updatedPhotos = [...(line?.photos || []), ...newUrls]
+    const updatedPhotos = [...(line?.photos || []), ...newAddresses]
 
     setLineItems(prev => prev.map(l => l.id === lineId ? { ...l, photos: updatedPhotos } : l))
     const { error: saveErr } = await supabase.from('quote_lines').update({ photos: updatedPhotos }).eq('id', lineId)
     if (saveErr) toast.error('Photo saved to storage but not linked: ' + saveErr.message)
-    else toast.success(newUrls.length === 1 ? 'Photo added' : `${newUrls.length} photos added`)
+    else toast.success(newAddresses.length === 1 ? 'Photo added' : `${newAddresses.length} photos added`)
   }
 
   const handleLinePhotoDelete = async (lineId, photoUrl) => {

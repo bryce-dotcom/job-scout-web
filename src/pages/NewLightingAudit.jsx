@@ -764,6 +764,10 @@ export default function NewLightingAudit() {
       if (upErr) {
         console.warn('[audit photo] upload failed:', upErr.message)
       } else {
+        // An ADDRESS, not a working link — audit-photos is private, so this
+        // URL answers 400 if fetched raw. It is the shape every photo column
+        // stores, and whatever ends up showing audit_areas.photos has to sign
+        // it (SignedImg from lib/storageUrl), the way EstimateDetail does.
         const { data: pub } = supabase.storage.from('audit-photos').getPublicUrl(path)
         if (pub?.publicUrl) setAreaForm(prev => ({ ...prev, photos: [...(prev.photos || []), pub.publicUrl] }))
       }

@@ -75,6 +75,26 @@ describe('every reader opens a signed link', () => {
     expect(s).not.toMatch(/from\('audit-photos'\)\.getPublicUrl/)
     expect((s.match(/await fetch\(\(await signedUrlFor\(item\.url\)\) \|\| item\.url\)/g) || []).length).toBe(3)
   })
+  // The write side mints an ADDRESS. This is deliberate, and was nearly
+  // "fixed" on 2026-10-24 as a dead-link bug: a /object/public/ URL to this
+  // bucket does answer 400 when fetched raw, but nothing fetches one raw.
+  // It is how every photo column records WHICH FILE it means, it carries
+  // the bucket with it (a bare path does not, so storageRef cannot sign
+  // one), and handleLinePhotoDelete parses it back apart. Checked against
+  // the live DB that day: quote_lines 12098 answers 400 stored-as-is and
+  // 200 image/jpeg signed, and EstimateDetail renders it through SignedImg.
+  it.each([
+    ['src/pages/EstimateDetail.jsx'],
+    ['src/pages/NewLightingAudit.jsx'],
+  ])('%s mints the stored address with getPublicUrl, on purpose', (file) => {
+    const s = read(file)
+    expect(s).toMatch(/from\('audit-photos'\)\.getPublicUrl/)
+    // If you remove the call, remove this with it and say why. Do NOT add
+    // JobDetail's not.toMatch(getPublicUrl) guard to these two — JobDetail
+    // only READS stored photos, and these two are what write them.
+    expect(s).toMatch(/ADDRESS, not a working link/)
+  })
+
   it('the document generator signs the legacy signature', () => {
     expect(read('src/lib/documentGenerator.js')).toMatch(/from\('audit-photos'\)\.createSignedUrl\(audit\.customer_signature, 600\)/)
   })
