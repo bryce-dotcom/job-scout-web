@@ -69,3 +69,50 @@ describe('the wiring', () => {
     expect(fn).toMatch(/if \(body\.dry\) \{ lessons\.push\(lesson\); continue \}/)
   })
 })
+
+// Part 3: every rule a company taught, tested every night on its own data.
+import { TEST_WRITER, TEST_GRADER, parseTest, parseGrade } from '../../supabase/functions/_shared/arnieLessons.ts'
+
+describe('a nightly test for every rule', () => {
+  it('the question is one a teammate would ask, answerable by looking things up', () => {
+    expect(TEST_WRITER).toMatch(/LOOKING THINGS UP/)
+    expect(TEST_WRITER).toMatch(/never by drafting, sending, scheduling or changing anything/)
+    expect(TEST_WRITER).toMatch(/Do not name the rule/)
+    expect(parseTest('{"question":"Who is off on the sales team today?","must":"Say who is out of the office, from the calendar."}')).toEqual({ question: 'Who is off on the sales team today?', must: 'Say who is out of the office, from the calendar.' })
+    expect(parseTest('{"question":"hi","must":""}')).toBe(null)
+  })
+  it('graded on the rule alone, and an unreadable grade is not a pass', () => {
+    expect(TEST_GRADER).toMatch(/Do not grade anything the rule does not cover/)
+    expect(parseGrade('{"pass": false, "why": "It did not say who was out."}')).toEqual({ pass: false, why: 'It did not say who was out.' })
+    expect(parseGrade('{"pass": "yes"}')).toBe(null)
+    expect(parseGrade('nothing')).toBe(null)
+  })
+})
+
+describe('a lesson test may only look', () => {
+  const chat = read('supabase/functions/arnie-chat/index.ts')
+  it('only our own server can ask for it, never a person in the app', () => {
+    expect(chat).toMatch(/if \(caller && body\?\.lesson_test === true && !inTheApp\) lookupOnly\.add/)
+  })
+  it('offered only query_ tools, and anything else is refused if asked', () => {
+    expect(chat).toMatch(/const isLookup = \(name: unknown\) => \/\^query_\[a-z_\]\+\$\/\.test/)
+    expect(chat).toMatch(/tools: onlyLook \? all\.filter\(\(t: any\) => isLookup\(t\?\.name\)\) : all/)
+    expect(chat).toMatch(/exec: \(name: string, input: any\) => onlyLook && !isLookup\(name\)\s*\? Promise\.resolve\(\{ refused:/)
+  })
+  it('its caught claims are kept with the test, not put in front of the owners', () => {
+    expect(chat).toMatch(/if \(lookupOnly\.has\(caller as unknown as object\)\) return\n?\r?\n?/)
+  })
+  it('the runner asks with no cards and the flag on, as whoever taught the rule', () => {
+    const fn = read('supabase/functions/arnie-lesson-tests/index.ts')
+    expect(fn).toMatch(/isCronCaller/)
+    expect(fn).toMatch(/cards: \[\], lessonTest: true/)
+    expect(fn).toMatch(/rule\.active=eq\.true/)
+    expect(read('supabase/functions/_shared/arnieHeadless.ts')).toMatch(/\.\.\.\(o\.lessonTest \? \{ lesson_test: true \} : \{\}\)/)
+  })
+  it('Monday shows a rule he broke', () => {
+    const r = buildReview({ companyName: 'HHH', since: '2026-10-19T14:00:00Z', broken: [{ rule: 'Say who is out before reporting on the sales team.', question: 'How did sales do yesterday?', why: 'It never said who was out.', fails_in_a_row: 2 }] })
+    expect(r.counts.broken).toBe(1)
+    expect(r.html).toMatch(/Rules he broke in his nightly test/)
+    expect(r.html).toMatch(/failed 2 nights running/)
+  })
+})

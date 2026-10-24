@@ -57,3 +57,40 @@ export function parseVerdicts(text: string, count: number): LessonVerdict[] {
 }
 
 const clip = (s: string, n: number) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t }
+
+// ── Part 3: every rule becomes a nightly test ──────────────────────────────
+
+/** Writing one test for one rule: a question a teammate would really ask. */
+export const TEST_WRITER = `You write ONE test for a rule a company taught its AI assistant.
+
+Give a question an employee of this company would really type, where the rule decides what a right answer must do. The question must be answerable by LOOKING THINGS UP or from the rule itself — never by drafting, sending, scheduling or changing anything. Do not name the rule or hint at it in the question.
+
+Then say, in one or two sentences, what a right answer MUST do or say because of the rule — the check a grader will hold the answer to. Only what the rule requires; not style, not length.
+
+Answer ONLY with JSON: {"question": "...", "must": "..."}`
+
+export function parseTest(text: string): { question: string; must: string } | null {
+  const m = String(text || '').match(/\{[\s\S]*\}/)
+  try {
+    const j = m ? JSON.parse(m[0]) : null
+    const question = String(j?.question || '').replace(/\s+/g, ' ').trim().slice(0, 400)
+    const must = String(j?.must || '').replace(/\s+/g, ' ').trim().slice(0, 600)
+    return question.length >= 8 && must.length >= 8 ? { question, must } : null
+  } catch { return null }
+}
+
+/** Grading one answer against one rule. */
+export const TEST_GRADER = `You grade whether a company's AI assistant followed a rule it was taught. You are given the rule, the question it was asked, what a right answer must do, and the answer it gave.
+
+Pass it if the answer does what the rule requires. Fail it only when the answer goes against the rule or leaves out what the rule requires. Do not grade anything the rule does not cover — wording, length, or facts the rule says nothing about.
+
+Answer ONLY with JSON: {"pass": true|false, "why": "<one short sentence>"}`
+
+export function parseGrade(text: string): { pass: boolean; why: string } | null {
+  const m = String(text || '').match(/\{[\s\S]*\}/)
+  try {
+    const j = m ? JSON.parse(m[0]) : null
+    if (typeof j?.pass !== 'boolean') return null
+    return { pass: j.pass, why: String(j.why || '').replace(/\s+/g, ' ').trim().slice(0, 300) }
+  } catch { return null }
+}

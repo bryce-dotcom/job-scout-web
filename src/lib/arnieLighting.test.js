@@ -84,7 +84,8 @@ describe('the photo comes off the conversation, not the tool call', () => {
     // for globally — not the exact parameter list, which has grown since
     // (bearer, then coords) and will again.
     expect(chat).toMatch(/async function execTool\(name: string, input: any, caller: Caller, messages: any\[\] = \[\],/)
-    expect(chat).toMatch(/exec: \(name: string, input: any\) => execTool\(name, input, caller, messages, bearer/)
+    // A lesson test's look-up-only guard may stand in front (2026-10-23).
+    expect(chat).toMatch(/exec: \(name: string, input: any\) => (onlyLook && !isLookup\(name\)\s*\? Promise\.resolve\(\{[^}]*\}\)\s*: )?execTool\(name, input, caller, messages, bearer/)
     expect(chat).toMatch(/function agentSetup\(agent: Agent, caller: Caller, cards: string\[\], messages: any\[\] = \[\], bearer = ''/)
   })
 

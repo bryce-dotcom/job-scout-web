@@ -2332,6 +2332,10 @@ Deno.serve(async (req) => {
     // The model this request answers on: the live one the weekly model watch
     // keeps current (arnie_model_state), ARNIE_MODEL if that cannot be read.
     activeModel = await liveArnieModel()
+    // A lesson test (arnie-lesson-tests, the learning loop part 3) runs a real
+    // turn on a real company's data every night — so it may only LOOK. Our own
+    // server's path only; a person in the app can never set it.
+    if (caller && body?.lesson_test === true && !inTheApp) lookupOnly.add(caller as unknown as object)
     // Test-only model choice: the demo company, or our own server's test path.
     if (caller && evalModelId(body?.eval_model) && (caller.companyId === 25 || !inTheApp)) {
       evalChoice.set(caller as unknown as object, {
@@ -2506,6 +2510,11 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 // accepts no identity but a real session — no service key, no named employee.
 // Passing it explicitly keeps it visible at every hop instead of riding along
 // inside an identity object that gets logged and copied.
+/** Callers whose turn is a lesson test — see lesson_test in the handler. */
+const lookupOnly = new WeakSet<object>()
+/** A tool that only reads: the query_ family. */
+const isLookup = (name: unknown) => /^query_[a-z_]+$/.test(String(name || ''))
+
 function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any[] = [], bearer = '', coords: Coords = null) {
   const rest = { url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }
   if (agent === 'frankie') {
@@ -2520,6 +2529,10 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
   }
   const chosen = evalChoice.get(caller as unknown as object)
   const model = chosen?.model || activeModel
+  // A lesson test may only look things up: no card, email, text, routine or
+  // computer step — offered nothing else, and refused if it asks anyway.
+  const onlyLook = lookupOnly.has(caller as unknown as object)
+  const all = toolsFor(caller.role, cards, { ownSession: !!bearer })
   return {
     model,
     effort: chosen?.effort,
@@ -2527,8 +2540,10 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     // a reply off after a long think.
     maxTokens: isNewModel(model) ? 16000 : 4096,
     feature: 'arnie-chat',
-    tools: toolsFor(caller.role, cards, { ownSession: !!bearer }),
-    exec: (name: string, input: any) => execTool(name, input, caller, messages, bearer, coords),
+    tools: onlyLook ? all.filter((t: any) => isLookup(t?.name)) : all,
+    exec: (name: string, input: any) => onlyLook && !isLookup(name)
+      ? Promise.resolve({ refused: 'This is a lesson test: it may only look things up.' })
+      : execTool(name, input, caller, messages, bearer, coords),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -3148,6 +3163,9 @@ function guessedAmountsOf(text: string, convo: any[]): string[] {
 
 function logFabrication(kind: Fabrication, caller: Caller, said = '', reply = '', shown = false) {
   console.warn(`[arnie-truth] caught a ${kind} claim with no tool call — company ${caller.companyId}, ${caller.email}`)
+  // A lesson test is not a person: its result is kept with the test, not
+  // put in front of the owners as something a teammate was told.
+  if (lookupOnly.has(caller as unknown as object)) return
   // Kept for the weekly review (api/cron/arnie-review.js). Never blocks the reply.
   fetch(`${SUPABASE_URL}/rest/v1/arnie_review_events`, {
     method: 'POST',

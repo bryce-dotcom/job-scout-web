@@ -77,7 +77,7 @@ function pushbacksOf(messages = []) {
  * turns kept together (session_id). lessons: what arnie-lessons drafted from
  * this week's corrections, each waiting for an admin.
  */
-function buildReview({ companyName, tz = 'America/Denver', since, events = [], messages = [], failures = [], usage = {}, lessons = [] }) {
+function buildReview({ companyName, tz = 'America/Denver', since, events = [], messages = [], failures = [], usage = {}, lessons = [], broken = [] }) {
   const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return iso } }
   const who = (email) => String(email || 'someone').split('@')[0].replace(/^./, (c) => c.toUpperCase())
 
@@ -98,7 +98,7 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
 
   const failed = failures.reduce((acc, f) => { const k = f.error_kind || 'other'; acc[k] = (acc[k] || 0) + 1; return acc }, {})
   const failedTotal = Object.values(failed).reduce((a, b) => a + b, 0)
-  const toLook = caught.length + unverified.length + pushback.length + gaveUp.length + failedTotal
+  const toLook = caught.length + unverified.length + pushback.length + gaveUp.length + failedTotal + broken.length
 
   const people = new Set(messages.filter((m) => m.role === 'user').map((m) => m.email))
   const replies = messages.filter((m) => m.role === 'assistant').length
@@ -123,6 +123,10 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
   const html = `<div style="font:14px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#2c3530;max-width:680px">`
     + `<p>Arnie at ${esc(companyName)}, the week since ${esc(when(since))}: <b>${people.size}</b> ${people.size === 1 ? 'person' : 'people'}, <b>${replies}</b> replies${usage.cost != null ? `, about <b>$${Number(usage.cost).toFixed(2)}</b> of AI` : ''}.</p>`
     + lessonsHtml
+    // The learning loop, part 3: a rule the company taught him that he did not
+    // follow in his nightly test (arnie-lesson-tests). He was taught it once;
+    // this is where a later change that undid it shows up.
+    + section('Rules he broke in his nightly test', broken, (r) => `<b>${esc(clip(r.rule, 220))}</b><br><span style="color:#7d8a7f">Asked ${quote(r.question, 160)}${r.fails_in_a_row > 1 ? ` — failed ${r.fails_in_a_row} nights running` : ''}. ${esc(clip(r.why, 200))}</span>`)
     + (toLook ? `<p><b>${toLook} thing${toLook === 1 ? '' : 's'} worth a look.</b> Each one is a place someone may have been told something that was not true, or got nothing back.</p>` : '<p><b>Nothing to look at this week.</b> No caught claims, no unchecked figures, no pushback, no blank replies.</p>')
     + section('Caught by the fact-check', caught, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — he ${esc(KIND_WORDS[r.kind] || r.kind)}${r.shown ? ' <b>and they saw it before he took it back</b>' : ' (caught before they saw it)'}: ${quote(r.reply, 200)}`)
     + section('Figures he never looked up', unverified, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — his answer had figures and the receipt says no lookups: ${quote(r.text, 220)}`)
@@ -133,7 +137,7 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
 
   return {
     toLook, people: people.size, replies,
-    counts: { caught: caught.length, unverified: unverified.length, pushback: pushback.length, gaveUp: gaveUp.length, failed: failedTotal, lessons: lessons.length },
+    counts: { caught: caught.length, unverified: unverified.length, pushback: pushback.length, gaveUp: gaveUp.length, failed: failedTotal, lessons: lessons.length, broken: broken.length },
     subject: (toLook ? `Arnie this week at ${companyName}: ${toLook} to look at` : `Arnie this week at ${companyName}: all clear`)
       + (lessons.length ? `, ${lessons.length} lesson${lessons.length === 1 ? '' : 's'} to approve` : ''),
     html,
@@ -195,7 +199,11 @@ async function handler(req, res) {
         } catch (e) { console.warn('arnie-review: lessons failed', e.message) }
       }
 
-      const review = buildReview({ companyName: co?.company_name || 'your company', tz: co?.timezone || 'America/Denver', since, events, messages, failures, usage: { cost }, lessons })
+      // Rules he did not follow in his latest nightly test, run this week.
+      const tests = await get(`arnie_lesson_tests?select=question,last_why,fails_in_a_row,rule:company_rules!inner(rule,active)&company_id=eq.${companyId}&last_passed=eq.false&last_run_at=gte.${since}&rule.active=eq.true&limit=50`)
+      const broken = (Array.isArray(tests) ? tests : []).map((t) => ({ rule: t.rule?.rule, question: t.question, why: t.last_why, fails_in_a_row: t.fails_in_a_row }))
+
+      const review = buildReview({ companyName: co?.company_name || 'your company', tz: co?.timezone || 'America/Denver', since, events, messages, failures, usage: { cost }, lessons, broken })
       if (!review.replies && !review.toLook) { out.push({ companyId, skipped: 'no Arnie this week' }); continue }
 
       const owners = await get(`employees?select=email&company_id=eq.${companyId}&active=eq.true&or=(user_role.in.(Owner,%22Super%20Admin%22),role.eq.Owner)`)

@@ -59,7 +59,7 @@ export function plainText(md: string): string {
  */
 export async function runArnieTurn(
   r: { url: string; key: string; internalKey?: string },
-  o: { employee: Any; company?: Any; messages: { role: string; content: string }[]; mode?: 'field' | 'office'; cards?: string[] },
+  o: { employee: Any; company?: Any; messages: { role: string; content: string }[]; mode?: 'field' | 'office'; cards?: string[]; lessonTest?: boolean },
 ): Promise<TurnResult> {
   const emp = o.employee
   const companyId = emp?.company_id
@@ -124,6 +124,9 @@ export async function runArnieTurn(
         stream: true,
         as_employee_id: emp?.id,
         supports: o.cards ?? ['config', 'record', 'bulk', 'create'],
+        // A nightly lesson test: look-ups only (arnie-chat honours it for
+        // this server path alone).
+        ...(o.lessonTest ? { lesson_test: true } : {}),
       }),
     })
   } catch (e) {
