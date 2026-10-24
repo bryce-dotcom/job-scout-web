@@ -11,7 +11,7 @@
 // and carry on working, and the dock follows you around the app.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, X, Loader, Check } from 'lucide-react'
+import { Plus, X, Loader, Check, Link2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/ThemeContext'
@@ -107,6 +107,36 @@ export default function Rooms() {
       session?.join(data.slug)
     } finally {
       setOpening(false)
+    }
+  }
+
+  // One link, one FireSide, 24 hours, revocable on its own.
+  //
+  // A fresh row every time rather than one reusable link per room: killing
+  // the link you gave a client should not also kill the one you gave the
+  // inspector, and a single shared token means nobody ever revokes anything.
+  const shareRoom = async (room) => {
+    const { data, error } = await supabase
+      .from('room_invites')
+      .insert({
+        company_id: companyId,
+        room_id: room.id,
+        slug: room.slug,
+        created_by: me?.id || null,
+        created_by_name: myName,
+      })
+      .select('token')
+      .single()
+    if (error) { toast.error('Could not make a link: ' + error.message); return }
+
+    const link = `${window.location.origin}/join/${data.token}`
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success(`Guest link copied — ${room.name}, good for 24 hours`)
+    } catch {
+      // Clipboard is blocked in plenty of places. Showing the link beats
+      // telling someone it was copied when it was not.
+      toast.info(link)
     }
   }
 
@@ -333,16 +363,31 @@ export default function Rooms() {
                       {youAreHere ? 'you are here' : (sitting.length ? sitting.join(', ') : 'empty')}
                     </span>
                   </button>
-                  <button
-                    onClick={() => closeRoom(node)}
-                    title={'Close ' + node.name}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: theme.textMuted, opacity: 0.5, padding: 0, lineHeight: 1,
-                    }}
-                  >
-                    <X size={11} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* The guest link lives on the FireSide and nowhere else:
+                        a client should land in the room made for them, not
+                        where the team is talking. */}
+                    <button
+                      onClick={() => shareRoom(node)}
+                      title={'Copy a guest link to ' + node.name}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: theme.textMuted, opacity: 0.65, padding: 0, lineHeight: 1,
+                      }}
+                    >
+                      <Link2 size={12} />
+                    </button>
+                    <button
+                      onClick={() => closeRoom(node)}
+                      title={'Close ' + node.name}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: theme.textMuted, opacity: 0.5, padding: 0, lineHeight: 1,
+                      }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
                 </div>
               )
             })}

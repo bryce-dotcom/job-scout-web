@@ -140,6 +140,7 @@ import FrankieInsights from './pages/agents/frankie/FrankieInsights'
 import FrankieReports from './pages/agents/frankie/FrankieReports'
 import FrankieSettings from './pages/agents/frankie/FrankieSettings'
 import CustomerPortal from './pages/CustomerPortal'
+import GuestRoom from './pages/GuestRoom'
 import LenardAZSRP from './pages/agents/LenardAZSRP'
 import LenardUTRMP from './pages/agents/LenardUTRMP'
 import ZachInstantQuote from './pages/agents/ZachInstantQuote'
@@ -392,6 +393,8 @@ function App() {
 
         {/* Customer Portal - public, no auth */}
         <Route path="/portal/:token" element={<CustomerPortal />} />
+        {/* A client joining one FireSide. No account, no app around it. */}
+        <Route path="/join/:token" element={<GuestRoom />} />
         <Route path="/onboarding/:token" element={<OnboardingPortal />} />
 
         {/* Public routes */}

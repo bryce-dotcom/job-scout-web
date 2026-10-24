@@ -565,3 +565,12 @@ verify_jwt = false
 # Twilio auth token and the signature is verified before anything is written.
 [functions.sms-status]
 verify_jwt = false
+
+# The guest door into one FireSide. A client has no Supabase session at all —
+# the invite token IS the credential — so this cannot require a JWT. It is
+# deliberately a SEPARATE function from room-token: that one refuses anyone
+# without a session, and that refusal is what keeps one company out of
+# another's call. Loosening it to let guests in would weaken the thing it
+# exists for.
+[functions.guest-room-token]
+verify_jwt = false
