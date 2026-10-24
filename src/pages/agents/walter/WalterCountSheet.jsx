@@ -77,19 +77,38 @@ const ACCESS_WORDS = {
   rope: 'needs rope access',
 }
 
+const BLANK = {
+  area_name: '', type_code: 'double_hung', units: 1, face: 'both',
+  segment: 'residential', floor: '1', condition: 'maintenance',
+  width_in: '', height_in: '', reach_in: '', count_lites: null,
+  screens: '', tracks: '', notes: '',
+}
+
+// A saved row, or one the photo proposed, as something the form can hold. The
+// columns come back null where the form wants an empty string, and a null in a
+// NumInput is an uncontrolled-input warning and a field that will not type.
+const asDraft = (row) => {
+  const d = { ...BLANK, ...row }
+  for (const k of ['area_name', 'width_in', 'height_in', 'reach_in', 'screens', 'tracks', 'notes']) {
+    if (d[k] === null || d[k] === undefined) d[k] = ''
+  }
+  d.floor = String(row.floor ?? 1)
+  d.units = row.units ?? row.pane_count ?? 1
+  // type_code is deliberately NOT defaulted: a run the photo could not name
+  // arrives with none, and the rep picking one is the whole point.
+  if ('type_code' in row) d.type_code = row.type_code
+  return d
+}
+
 export default function WalterCountSheet({
-  onClose, onSaved, companyId, assessmentId, editing, isMobile,
+  onClose, onSaved, companyId, assessmentId, editing, prefill, isMobile,
   types = [], products = [], groups = [], recurring = false,
 }) {
   const { theme } = useTheme()
-  const [draft, setDraft] = useState(() => editing
-    ? { ...editing, floor: String(editing.floor ?? 1), units: editing.units ?? editing.pane_count ?? 1 }
-    : {
-        area_name: '', type_code: 'double_hung', units: 1, face: 'both',
-        segment: 'residential', floor: '1', condition: 'maintenance',
-        width_in: '', height_in: '', reach_in: '', count_lites: null,
-        screens: '', tracks: '', notes: '',
-      })
+  const [draft, setDraft] = useState(() => {
+    const from = editing || prefill
+    return from ? asDraft(from) : BLANK
+  })
   const [saveError, setSaveError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState(false)

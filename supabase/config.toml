@@ -574,3 +574,14 @@ verify_jwt = false
 # exists for.
 [functions.guest-room-token]
 verify_jwt = false
+
+# walter-analyze reads a photo of a building with a vision model and charges
+# the call to the caller's company, so it must never answer an unsigned
+# request — same reasoning as read-sui-notice. Pinned rather than left to the
+# default: the setting only ever follows this file, and the gateway check is
+# not the whole protection anyway. The anon key is a JWT too, and a call made
+# with it carries no email, so resolveCompanyId() finds no company and the
+# vision charge is metered to nobody. WalterPhotoSheet therefore sends the
+# rep's session token and refuses to fall back to anon.
+[functions.walter-analyze]
+verify_jwt = true

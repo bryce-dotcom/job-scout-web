@@ -13,7 +13,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, AlertTriangle, Copy, Sparkles, Info, Scale, Pencil, Plus,
+  ArrowLeft, AlertTriangle, Copy, Sparkles, Info, Scale, Pencil, Plus, Camera,
 } from 'lucide-react'
 import { useStore } from '../../../lib/store'
 import { useTheme } from '../../../components/ThemeContext'
@@ -29,6 +29,7 @@ import { rowPanes } from '../../../lib/windowTypes'
 import WalterMarkSheet from './WalterMarkSheet'
 import WalterDetailsSheet from './WalterDetailsSheet'
 import WalterCountSheet from './WalterCountSheet'
+import WalterPhotoSheet from './WalterPhotoSheet'
 import { Card, SectionLabel, Field, MiniStat, Note, Btn, Tag } from './WalterUI'
 import { money, money2, pct } from '../../../lib/walterFormat'
 
@@ -82,7 +83,8 @@ export default function WalterAssessmentDetail() {
   const [areas, setAreas] = useState([])
   const [types, setTypes] = useState([])
   const [groups, setGroups] = useState([])
-  const [countSheet, setCountSheet] = useState({ open: false, editing: null })
+  const [countSheet, setCountSheet] = useState({ open: false, editing: null, prefill: null })
+  const [photoSheet, setPhotoSheet] = useState(false)
   const products = useStore((s) => s.products)
 
   const load = useCallback(async () => {
@@ -407,9 +409,14 @@ export default function WalterAssessmentDetail() {
         <>
           <SectionLabel
             right={
-              <Btn onClick={() => setCountSheet({ open: true, editing: null })}>
-                <Plus size={15} /> Count windows
-              </Btn>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn variant="secondary" onClick={() => setPhotoSheet(true)}>
+                  <Camera size={15} /> From a photo
+                </Btn>
+                <Btn onClick={() => setCountSheet({ open: true, editing: null, prefill: null })}>
+                  <Plus size={15} /> Count windows
+                </Btn>
+              </div>
             }
           >
             The windows counted
@@ -424,9 +431,14 @@ export default function WalterAssessmentDetail() {
                 window and the pane count comes from the catalogue: six double-hungs is
                 twelve panes, six casements is six.
               </p>
-              <Btn onClick={() => setCountSheet({ open: true, editing: null })}>
-                <Plus size={15} /> Count windows
-              </Btn>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Btn onClick={() => setPhotoSheet(true)}>
+                  <Camera size={15} /> Count from a photo
+                </Btn>
+                <Btn variant="secondary" onClick={() => setCountSheet({ open: true, editing: null, prefill: null })}>
+                  <Plus size={15} /> Count by hand
+                </Btn>
+              </div>
             </Card>
           ) : (
             <>
@@ -753,8 +765,9 @@ export default function WalterAssessmentDetail() {
         onSaved={load}
       />}
       {countSheet.open && <WalterCountSheet
-        key={countSheet.editing?.id ?? 'new'}
+        key={countSheet.editing?.id ?? countSheet.prefill?.type_code ?? 'new'}
         editing={countSheet.editing}
+        prefill={countSheet.prefill}
         companyId={companyId}
         assessmentId={assessment.id}
         isMobile={isMobile}
@@ -762,8 +775,21 @@ export default function WalterAssessmentDetail() {
         products={products}
         groups={groups}
         recurring={!!assessment.recurring}
-        onClose={() => setCountSheet({ open: false, editing: null })}
+        onClose={() => setCountSheet({ open: false, editing: null, prefill: null })}
         onSaved={load}
+      />}
+      {photoSheet && <WalterPhotoSheet
+        companyId={companyId}
+        assessmentId={assessment.id}
+        isMobile={isMobile}
+        types={types}
+        products={products}
+        groups={groups}
+        recurring={!!assessment.recurring}
+        defaultSegment={assessment.vertical === 'commercial' ? 'commercial' : 'residential'}
+        onClose={() => setPhotoSheet(false)}
+        onSaved={load}
+        onEditRun={(row) => { setPhotoSheet(false); setCountSheet({ open: true, editing: null, prefill: row }) }}
       />}
       {detailsOpen && <WalterDetailsSheet
         assessment={assessment}
