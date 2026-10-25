@@ -4,7 +4,9 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck, CheckCircle2 } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck, CheckCircle2, Presentation, Plus, X, Trash2, RotateCcw } from 'lucide-react'
+import { getAccessLevel, ACCESS_LEVELS } from '../lib/accessControl'
+import { MEETING_SERIES, formatTime, cadenceSentence } from '../lib/companyMeetings'
 import {
   buildCalendarEvents,
   filterCalendarEvents,
@@ -22,7 +24,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, completed: CheckCircle2, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck }
+const KIND_ICON = { sales: Users, delivery: Briefcase, completed: CheckCircle2, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck, meeting: Presentation }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -46,6 +48,48 @@ export default function CompanyCalendar() {
   const [timeOff, setTimeOff] = useState([])
   const [kinds, setKinds] = useState({ sales: true, delivery: true, completed: true, timeoff: true, service: true, projected: true, route: true, fleet: true })
   const [units, setUnits] = useState({})
+
+  // MEETINGS.
+  //
+  // The cadence is an EOS setting and `settings` is already in the store
+  // app-wide, so the weekly L10 costs this page nothing to draw. Only the
+  // exceptions — a week moved, a week cancelled, a one-off all-hands —
+  // are a table, and it is a small one.
+  const settings = useStore((s) => s.settings)
+  const user = useStore((s) => s.user)
+  const currentEmployee = useMemo(
+    () => (employees || []).find((e) => e.email === user?.email) || null,
+    [employees, user],
+  )
+  // Everyone SEES the meetings; Manager+ changes them, matching the gate
+  // on /admin/eos. RLS enforces the same rule server-side — this only
+  // keeps the buttons from being offered to someone who would be refused.
+  const canEditMeetings = getAccessLevel(currentEmployee) >= ACCESS_LEVELS.MANAGER
+  const [meetingRows, setMeetingRows] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [adding, setAdding] = useState(false)
+
+  const cadence = useMemo(() => {
+    const row = (settings || []).find((x) => x.key === 'eos_meeting_cadences')
+    if (!row?.value) return null
+    try { return typeof row.value === 'string' ? JSON.parse(row.value) : row.value } catch { return null }
+  }, [settings])
+
+  const [meetingsVersion, setMeetingsVersion] = useState(0)
+  const reloadMeetings = () => setMeetingsVersion((v) => v + 1)
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('company_meetings')
+        .select('id, series_kind, series_date, meeting_date, start_time, duration_minutes, title, notes, cancelled')
+        .eq('company_id', companyId)
+      if (error) { console.warn('[CompanyCalendar] meetings fetch failed:', error.message); return }
+      if (!cancelled) setMeetingRows(data || [])
+    })()
+    return () => { cancelled = true }
+  }, [companyId, meetingsVersion])
 
   // Time off is a small table and isn't in the store — fetch it directly.
   useEffect(() => {
@@ -110,12 +154,23 @@ export default function CompanyCalendar() {
     [cursor],
   )
 
+  // The month on screen, which is the window the meeting series is drawn
+  // between. A rule has no end of its own, so without bounds there is
+  // nothing to say how far forward to draw it.
+  const meetingWindow = useMemo(() => {
+    const k = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return {
+      from: k(new Date(cursor.getFullYear(), cursor.getMonth(), 1)),
+      through: k(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)),
+    }
+  }, [cursor])
+
   const events = useMemo(
     () => buildCalendarEvents(
-      { appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals },
-      { projectRecurringThrough: projectThrough },
+      { appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, meetingCadence: cadence, meetingOverrides: meetingRows },
+      { projectRecurringThrough: projectThrough, meetingWindow },
     ),
-    [appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough],
+    [appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough, cadence, meetingRows, meetingWindow],
   )
 
   const visible = useMemo(() => filterCalendarEvents(events, { kinds, units }), [events, kinds, units])
@@ -174,6 +229,15 @@ export default function CompanyCalendar() {
       <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 12 }}>
         Shows {calendarSourcesSentence()}. Routes and Fleet still have their own screens for working in — this is the one view of everything.
       </p>
+      {/* Where the meetings come from, said out loud. If no cadence is set
+          this is the one place that will tell you the EOS page is where it
+          gets set — the calendar was previously silent about meetings
+          altogether, which is what Bryce reported. */}
+      <p style={{ margin: '0 0 16px', color: theme.textMuted, fontSize: 12 }}>
+        {cadenceSentence(cadence)
+          ? <>Meetings: {cadenceSentence(cadence)} — set in <button onClick={() => navigate('/admin/eos')} style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>EOS → Meeting Schedule</button>. Click a meeting to move or cancel just that one.</>
+          : <>No meeting cadence set yet — pick a day and time in <button onClick={() => navigate('/admin/eos')} style={{ background: 'none', border: 'none', padding: 0, color: theme.accent, cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>EOS → Meeting Schedule</button> and it appears here.</>}
+      </p>
 
       {/* Month nav */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -188,6 +252,15 @@ export default function CompanyCalendar() {
         >
           Today
         </button>
+        {canEditMeetings && (
+          <button
+            onClick={() => setAdding(true)}
+            style={{ padding: '8px 14px', minHeight: 38, borderRadius: 8, cursor: 'pointer', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard, color: theme.textSecondary, fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            title="Add a one-off meeting — an all-hands, a training day, anything outside the cadence"
+          >
+            <Plus size={14} /> Meeting
+          </button>
+        )}
         <span style={{ marginLeft: 'auto', fontSize: 12.5, color: theme.textMuted }}>
           {monthCount} {monthCount === 1 ? 'item' : 'items'} this month
         </span>
@@ -258,7 +331,7 @@ export default function CompanyCalendar() {
                     return (
                       <button
                         key={ev.id}
-                        onClick={() => ev.link && navigate(ev.link)}
+                        onClick={() => { if (ev.kind === 'meeting') setEditing(ev.meeting); else if (ev.link) navigate(ev.link) }}
                         title={`${ev.title}${ev.subtitle ? ' · ' + ev.subtitle : ''}${pending ? ' (pending approval)' : ''}`}
                         style={{
                           display: 'block', width: '100%', textAlign: 'left', minWidth: 0,
@@ -290,6 +363,207 @@ export default function CompanyCalendar() {
         A dashed outline means the time off is still <strong>pending approval</strong>.
         Business-unit filters apply to scheduled work; appointments and time off are controlled by their own toggle.
       </p>
+
+      {editing && (
+        <MeetingPanel
+          meeting={editing}
+          theme={theme}
+          isMobile={isMobile}
+          companyId={companyId}
+          canEdit={canEditMeetings}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); reloadMeetings() }}
+        />
+      )}
+      {adding && (
+        <MeetingPanel
+          adding
+          theme={theme}
+          isMobile={isMobile}
+          companyId={companyId}
+          canEdit={canEditMeetings}
+          onClose={() => setAdding(false)}
+          onSaved={() => { setAdding(false); reloadMeetings() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ONE MEETING
+//
+// The cadence is a rule and the calendar draws it. This is the escape
+// hatch Bryce asked for — "it needs to be maluble in the chace we need to
+// change something" — and it writes the smallest possible record: one row
+// naming the occurrence it replaces.
+//
+// Moving a meeting does NOT touch the cadence. Change the cadence in EOS and
+// every week nobody has touched follows it; the fortnight you shifted around
+// a holiday stays where you put it, because its row names the date it was
+// originally due rather than the date it ended up on.
+// ════════════════════════════════════════════════════════════════════
+function MeetingPanel({ meeting, adding = false, theme, isMobile, companyId, canEdit, onClose, onSaved }) {
+  const series = meeting ? (MEETING_SERIES[meeting.seriesKind] || MEETING_SERIES.custom) : MEETING_SERIES.custom
+  const [date, setDate] = useState(adding ? '' : (meeting?.date || ''))
+  const [time, setTime] = useState(adding ? '' : (meeting?.time || ''))
+  const [title, setTitle] = useState(adding ? '' : (meeting?.custom ? (meeting?.title || '') : ''))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const fail = (e) => { setErr(e?.message || String(e)); setBusy(false) }
+
+  // A series occurrence is keyed by the date it would NORMALLY fall on, so the
+  // row keeps pointing at the same occurrence however far it is moved.
+  const upsertOverride = async (patch) => {
+    const { error } = await supabase.from('company_meetings').upsert({
+      company_id: companyId,
+      series_kind: meeting.seriesKind,
+      series_date: meeting.seriesDate,
+      ...patch,
+    }, { onConflict: 'company_id,series_kind,series_date' })
+    return error
+  }
+
+  const save = async () => {
+    setErr(''); setBusy(true)
+    if (adding) {
+      if (!title.trim()) return fail(new Error('Give the meeting a name.'))
+      if (!date) return fail(new Error('Pick a day.'))
+      const { error } = await supabase.from('company_meetings').insert({
+        company_id: companyId,
+        series_kind: 'custom',
+        series_date: null,
+        meeting_date: date,
+        start_time: time || null,
+        title: title.trim(),
+        cancelled: false,
+      })
+      if (error) return fail(error)
+      return onSaved()
+    }
+    if (!date) return fail(new Error('Pick a day.'))
+    // A one-off edits itself in place; a series occurrence writes an override.
+    const error = meeting.custom
+      ? (await supabase.from('company_meetings')
+          .update({ meeting_date: date, start_time: time || null, title: title.trim() || meeting.title })
+          .eq('id', meeting.overrideId)).error
+      : await upsertOverride({ meeting_date: date, start_time: time || null, cancelled: false })
+    if (error) return fail(error)
+    onSaved()
+  }
+
+  const cancelMeeting = async () => {
+    setErr(''); setBusy(true)
+    // A one-off that is called off is simply removed — there is no rule behind
+    // it for a tombstone to suppress.
+    const error = meeting.custom
+      ? (await supabase.from('company_meetings').delete().eq('id', meeting.overrideId)).error
+      : await upsertOverride({ meeting_date: null, start_time: null, cancelled: true })
+    if (error) return fail(error)
+    onSaved()
+  }
+
+  // Drop the exception and let the rule draw this week again.
+  const resetToCadence = async () => {
+    setErr(''); setBusy(true)
+    const { error } = await supabase.from('company_meetings').delete().eq('id', meeting.overrideId)
+    if (error) return fail(error)
+    onSaved()
+  }
+
+  const label = { fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }
+  const field = { padding: '9px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 14, backgroundColor: theme.bg, color: theme.text, width: '100%', minHeight: 40 }
+  const btn = (bg, fg, bd) => ({ padding: '10px 16px', minHeight: 42, borderRadius: 8, cursor: busy ? 'wait' : 'pointer', border: `1px solid ${bd || bg}`, backgroundColor: bg, color: fg, fontSize: 13.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 })
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(20,24,20,0.45)', display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 1000, padding: isMobile ? 0 : 20 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: isMobile ? '14px 14px 0 0' : 14, width: '100%', maxWidth: 420, padding: 20, boxShadow: '0 18px 50px rgba(20,24,20,0.28)' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
+          <Presentation size={20} color="#8b5cf6" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16.5, fontWeight: 800, color: theme.text }}>
+              {adding ? 'Add a meeting' : (meeting.title || series.label)}
+            </div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginTop: 2 }}>
+              {adding
+                ? 'A one-off — it sits outside the cadence and repeats nothing.'
+                : meeting.custom
+                  ? 'A one-off meeting.'
+                  : meeting.moved
+                    ? `${series.label} — moved from ${meeting.seriesDate}`
+                    : `${series.label} — from the EOS cadence`}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 4 }} title="Close"><X size={18} /></button>
+        </div>
+
+        {!canEdit ? (
+          <div style={{ marginTop: 14, fontSize: 13.5, color: theme.textSecondary, lineHeight: 1.5 }}>
+            {meeting?.date} {formatTime(meeting?.time) || ''}
+            <div style={{ marginTop: 8, color: theme.textMuted, fontSize: 12.5 }}>
+              The meeting schedule is changed by a manager.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gap: 12, marginTop: 16 }}>
+              {(adding || meeting.custom) && (
+                <div>
+                  <label style={label}>Name</label>
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="All-Hands" style={field} />
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={label}>Day</label>
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={field} />
+                </div>
+                <div>
+                  <label style={label}>Time</label>
+                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={field} />
+                </div>
+              </div>
+            </div>
+
+            {err && (
+              <div style={{ marginTop: 12, fontSize: 12.5, color: '#b91c1c', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px' }}>
+                {err}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
+              <button disabled={busy} onClick={save} style={btn('#8b5cf6', '#fff')}>
+                {adding ? 'Add meeting' : 'Save'}
+              </button>
+              {!adding && (
+                <button disabled={busy} onClick={cancelMeeting} style={btn('transparent', '#b91c1c', '#fecaca')}>
+                  <Trash2 size={14} /> {meeting.custom ? 'Delete' : 'Cancel this one'}
+                </button>
+              )}
+              {/* Only an occurrence that HAS an exception can be put back. */}
+              {!adding && !meeting.custom && meeting.overrideId && (
+                <button disabled={busy} onClick={resetToCadence} style={btn('transparent', theme.textSecondary, theme.border)} title="Drop the change and let the EOS cadence draw this week again">
+                  <RotateCcw size={14} /> Back to cadence
+                </button>
+              )}
+            </div>
+
+            {!adding && !meeting.custom && (
+              <p style={{ marginTop: 14, marginBottom: 0, fontSize: 11.5, color: theme.textMuted, lineHeight: 1.5 }}>
+                This changes <strong>this one meeting</strong>. The weekly pattern lives in EOS → Meeting Schedule;
+                change it there and every week nobody has moved follows along.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

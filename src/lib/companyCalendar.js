@@ -1,5 +1,6 @@
 import { localDateStr } from './localDate'
 import { futureOccurrences, REPEATS } from './recurrenceDates'
+import { deriveMeetings, MEETING_SERIES, formatTime } from './companyMeetings'
 // Company Calendar — one month view combining what the business actually has
 // on the books: Sales (appointments), Delivery (scheduled jobs), and Employee
 // time off. Alayda: "seeing events on the calendar would be super helpful —
@@ -110,6 +111,22 @@ export const KINDS = {
     color: '#64748b',
     writes: { source: 'Fleet', bookedIn: 'Fleet', appearsWhen: 'maintenance is due or an asset is out on rental' },
   },
+  // The company itself. Bryce, 2026-10-25: "On the company calendar there
+  // is no place for company meetings. And the EOS should establish a
+  // cadence of meeting on the calendar."
+  //
+  // The cadence was already set — HHH has had Monday 08:30 in
+  // settings.eos_meeting_cadences the whole time — and nothing carried it
+  // here. These are DERIVED from that rule rather than stored week by
+  // week, the same way a recurring job draws its future without creating
+  // it; company_meetings holds only the weeks that were moved or
+  // cancelled, and the one-offs.
+  meeting: {
+    id: 'meeting',
+    label: 'Meetings',
+    color: '#8b5cf6',
+    writes: { source: 'EOS', bookedIn: 'EOS → Meeting Schedule', appearsWhen: 'a meeting cadence is set — move or cancel one from the calendar' },
+  },
 }
 
 // A visit that has been scheduled already appears as Delivery on the day it
@@ -176,7 +193,7 @@ export function expandDateRange(start, end) {
  * Normalize the three sources into one event list.
  * Each event: { id, kind, dayKeys[], title, subtitle, businessUnit, link, status }
  */
-export function buildCalendarEvents({ appointments = [], jobs = [], completedJobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null } = {}) {
+export function buildCalendarEvents({ appointments = [], jobs = [], completedJobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [], meetingCadence = null, meetingOverrides = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null, meetingWindow = null } = {}) {
   const empName = new Map((employees || []).map((e) => [String(e.id), e.name]))
   const events = []
 
@@ -376,6 +393,37 @@ export function buildCalendarEvents({ appointments = [], jobs = [], completedJob
     })
   }
 
+  // ── Company meetings ───────────────────────────────────────────────
+  //
+  // Derived from the EOS cadence for the month being looked at, with the
+  // exceptions folded in by deriveMeetings. Nothing here creates a row: a
+  // meeting only becomes a record when somebody moves it, cancels it, or
+  // adds a one-off.
+  //
+  // meetingWindow is the month on screen. Without it the series has no
+  // bounds to be drawn between, so no meetings are drawn at all rather than
+  // a guess at how far forward to go.
+  if (meetingWindow && meetingWindow.from && meetingWindow.through) {
+    for (const m of deriveMeetings(meetingCadence, meetingOverrides, meetingWindow)) {
+      const when = formatTime(m.time)
+      events.push({
+        id: m.key,
+        kind: 'meeting',
+        dayKeys: [m.date],
+        title: m.title,
+        subtitle: [when, m.moved ? 'moved' : ''].filter(Boolean).join(' · '),
+        businessUnit: null,
+        status: m.moved ? 'Moved' : 'Scheduled',
+        // The EOS page owns the cadence, so that is where a click goes to
+        // change the pattern. Moving a single week happens on the calendar
+        // itself, from the meeting’s own panel.
+        link: '/admin/eos',
+        time: m.time || null,
+        meeting: m,
+      })
+    }
+  }
+
   return events
 }
 
@@ -419,7 +467,11 @@ export function filterCalendarEvents(events, { kinds = {}, units = {}, includeUn
 // events before collapsing to "+N more", and on a busy delivery day that
 // buried the very thing this calendar was asked for — knowing who's off
 // (Alayda b387ab3f). Everything else keeps its natural order.
-const KIND_PRIORITY = { timeoff: 0, sales: 1, delivery: 2 }
+// Meetings sort above the work but below time off: a fixed commitment the
+// whole company shares, which on a busy delivery day would otherwise fall
+// into "+N more" and be the one thing nobody saw. A fractional rank so no
+// existing value has to move.
+const KIND_PRIORITY = { timeoff: 0, meeting: 0.5, sales: 1, delivery: 2 }
 
 export function groupEventsByDay(events) {
   const map = {}
