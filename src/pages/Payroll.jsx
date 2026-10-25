@@ -6,6 +6,7 @@ import ScoutLoader from '../components/ScoutLoader'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { isAdmin as checkAdmin, isManager as checkManager, canViewHR } from '../lib/accessControl'
+import { usHolidayList, parseCompanyHolidays, serializeHolidayPlan, holidayTitle } from '../../supabase/functions/_shared/holidays.ts'
 import {
   DollarSign, Calendar, Clock, Users, Settings, Play, Check, X,
   ChevronRight, ChevronDown, ChevronLeft, AlertTriangle, TrendingUp, Zap,
@@ -4795,7 +4796,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               position: 'sticky', top: 0, backgroundColor: theme.bgCard, zIndex: 1
             }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>Payroll Settings</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: theme.text }}>HR &amp; Payroll Settings</div>
               <button onClick={() => setShowSettingsModal(false)} style={{
                 padding: '8px', backgroundColor: theme.border, border: 'none', borderRadius: '8px',
                 cursor: 'pointer', color: theme.textMuted
@@ -5266,6 +5267,17 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                   </div>
                 </div>
               )}
+
+              {/* Company holidays. Its own setting and its own save, kept well
+                  away from payrollConfig: nothing here should be able to move a
+                  pay rate or a bonus split. */}
+              <CompanyHolidaysSection
+                companyId={companyId}
+                theme={theme}
+                isMobile={isMobile}
+                labelStyle={labelStyle}
+                inputStyle={inputStyle}
+              />
 
               <button
                 onClick={() => savePayrollConfig(payrollConfig)}
@@ -6124,6 +6136,192 @@ function CheckStubModal({ show, onClose, employeePayData, payrollConfig, periodS
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════
+// COMPANY HOLIDAYS
+//
+// Bryce, 2026-10-25: "what about holidays.... where do we set the company
+// holidays should be in the payroll set up... maybe rename HR/Payroll
+// Settings...and the company holidays should show on the calendar"
+//
+// There was nowhere. offDayReason() in _shared/repGoals.ts has read a
+// `company_holidays` setting since Cole's rep goals shipped, and a survey of
+// every company on 2026-10-25 found the setting written for nobody, because
+// no screen could write it. This is the writer that reader was waiting for.
+//
+// It saves on each change rather than waiting for Save Settings, which is why
+// it sits outside payrollConfig entirely: a holiday list has no business
+// sharing a save button with pay rates and bonus splits.
+// ════════════════════════════════════════════════════════════════════
+function CompanyHolidaysSection({ companyId, theme, isMobile, labelStyle, inputStyle }) {
+  const thisYear = new Date().getFullYear()
+  const [plan, setPlan] = useState(null)
+  const [year, setYear] = useState(thisYear)
+  const [newDate, setNewDate] = useState('')
+  const [newName, setNewName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (!companyId) return
+    let dead = false
+    ;(async () => {
+      const { data } = await supabase
+        .from('settings').select('value')
+        .eq('company_id', companyId).eq('key', 'company_holidays').maybeSingle()
+      if (!dead) setPlan(parseCompanyHolidays(data?.value ?? null))
+    })()
+    return () => { dead = true }
+  }, [companyId])
+
+  // One write path. The plan is rebuilt whole every time rather than patched,
+  // so the stored list cannot drift from what is on screen.
+  const persist = async (next) => {
+    setErr(''); setBusy(true); setSaved(false)
+    const { error } = await supabase.from('settings').upsert({
+      company_id: companyId,
+      key: 'company_holidays',
+      value: serializeHolidayPlan(next),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,key' })
+    setBusy(false)
+    if (error) { setErr(error.message); return false }
+    setPlan(next)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+    return true
+  }
+
+  const toggleFederal = (key) => {
+    const skip = new Set(plan.skip)
+    if (skip.has(key)) skip.delete(key); else skip.add(key)
+    persist({ added: plan.added, skip })
+  }
+
+  const addDay = () => {
+    if (!newDate) { setErr('Pick a date.'); return }
+    if (plan.added.some((a) => a.date === newDate)) { setErr('That day is already on the list.'); return }
+    const added = [...plan.added, { date: newDate, name: newName.trim() || 'a company holiday' }]
+      .sort((a, b) => a.date.localeCompare(b.date))
+    persist({ added, skip: plan.skip }).then((ok) => { if (ok) { setNewDate(''); setNewName('') } })
+  }
+
+  const removeDay = (date) => persist({ added: plan.added.filter((a) => a.date !== date), skip: plan.skip })
+
+  const federal = usHolidayList(year).filter((h) => !h.carry)
+  const dayLabel = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  const mine = (plan?.added || []).filter((a) => a.date.slice(0, 4) === String(year))
+
+  return (
+    <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: `1px solid ${theme.border}` }}>
+      <h4 style={{ fontSize: '14px', fontWeight: '600', color: theme.text, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Calendar size={16} style={{ color: theme.accent }} />
+        Company Holidays
+      </h4>
+      <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '14px', lineHeight: '1.5' }}>
+        The days the company is closed. These show on the company calendar, and a
+        rep&rsquo;s daily routine skips them instead of asking for numbers nobody is in to give.
+      </div>
+
+      {plan === null ? (
+        <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading&hellip;</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>Year</label>
+            <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ ...inputStyle, width: 'auto' }}>
+              {[thisYear, thisYear + 1].map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            {busy && <span style={{ fontSize: '12px', color: theme.textMuted }}>Saving&hellip;</span>}
+            {saved && <span style={{ fontSize: '12px', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Check size={13} /> Saved</span>}
+          </div>
+
+          {err && (
+            <div style={{ marginBottom: '12px', fontSize: '12.5px', color: '#b91c1c', backgroundColor: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.2)', borderRadius: '8px', padding: '8px 10px' }}>
+              {err}
+            </div>
+          )}
+
+          {/* The federal days. Unchecking one is how a company says it works
+              that day -- plenty of field companies work the day after
+              Thanksgiving, and before this they had no way to say so. */}
+          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '8px' }}>Standard holidays</div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: '6px', marginBottom: '18px' }}>
+            {federal.map((h) => {
+              const observedDay = !plan.skip.has(h.key)
+              return (
+                <label
+                  key={h.key}
+                  style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 11px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: observedDay ? theme.bgCard : 'transparent', cursor: busy ? 'wait' : 'pointer', minHeight: '42px' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={observedDay}
+                    disabled={busy}
+                    onChange={() => toggleFederal(h.key)}
+                    style={{ width: '16px', height: '16px', cursor: busy ? 'wait' : 'pointer', flexShrink: 0 }}
+                  />
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: '13px', color: observedDay ? theme.text : theme.textMuted, fontWeight: observedDay ? '500' : '400' }}>
+                      {holidayTitle(h.name)}
+                    </span>
+                    <span style={{ display: 'block', fontSize: '11.5px', color: theme.textMuted }}>
+                      {dayLabel(h.date)}{observedDay ? '' : ' \u00b7 working'}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+
+          {/* The company's own days. */}
+          <div style={{ fontSize: '12px', fontWeight: '600', color: theme.textSecondary, marginBottom: '8px' }}>Your own days off in {year}</div>
+          {mine.length === 0 ? (
+            <div style={{ fontSize: '12.5px', color: theme.textMuted, marginBottom: '10px' }}>None yet.</div>
+          ) : (
+            <div style={{ display: 'grid', gap: '6px', marginBottom: '10px' }}>
+              {mine.map((a) => (
+                <div key={a.date} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 11px', borderRadius: '8px', border: `1px solid ${theme.border}`, backgroundColor: theme.bgCard }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', color: theme.text, fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{holidayTitle(a.name)}</div>
+                    <div style={{ fontSize: '11.5px', color: theme.textMuted }}>{dayLabel(a.date)}</div>
+                  </div>
+                  <button
+                    onClick={() => removeDay(a.date)}
+                    disabled={busy}
+                    title="Remove this day"
+                    style={{ padding: '7px', minHeight: '34px', minWidth: '34px', backgroundColor: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '7px', cursor: busy ? 'wait' : 'pointer', color: theme.textMuted, flexShrink: 0 }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 150px) minmax(0, 1fr) auto', gap: '8px', alignItems: 'end' }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Name</label>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Christmas Eve" style={inputStyle} />
+            </div>
+            <button
+              onClick={addDay}
+              disabled={busy}
+              style={{ padding: '11px 16px', minHeight: '42px', backgroundColor: theme.bg, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.textSecondary, fontSize: '13px', fontWeight: '600', cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
+            >
+              <Plus size={14} /> Add
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

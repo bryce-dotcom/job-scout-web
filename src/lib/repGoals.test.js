@@ -7,12 +7,18 @@ import { transformSync } from 'esbuild'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(resolve(here, p), 'utf8').replace(/\r\n/g, '\n')
-const load = (src) => {
+const stub = { closeDateOf: (q, j) => j?.created_at || q?.approved_date || q?.created_at || null }
+const load = (src, mods = {}) => {
   const m = { exports: {} }
-  new Function('module', 'exports', 'require', transformSync(src, { loader: 'ts', format: 'cjs' }).code)(m, m.exports, () => ({ closeDateOf: (q, j) => j?.created_at || q?.approved_date || q?.created_at || null }))
+  new Function('module', 'exports', 'require', transformSync(src, { loader: 'ts', format: 'cjs' }).code)(
+    m, m.exports, (id) => (id in mods ? mods[id] : stub),
+  )
   return m.exports
 }
-const G = load(read('../../supabase/functions/_shared/repGoals.ts'))
+// holidays.ts is loaded for real rather than stubbed: what offDayReason says
+// about a holiday IS the holiday rule, so a stub would test nothing.
+const HOL = load(read('../../supabase/functions/_shared/holidays.ts'))
+const G = load(read('../../supabase/functions/_shared/repGoals.ts'), { './holidays.ts': HOL })
 const chat = read('../../supabase/functions/arnie-chat/index.ts')
 const routines = read('../../supabase/functions/_shared/arnieRoutines.ts')
 

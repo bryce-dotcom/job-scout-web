@@ -19,6 +19,13 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { closeDateOf } from './arnieClosed.ts'
+import { emptyHolidayPlan, holidayOn, parseCompanyHolidays } from './holidays.ts'
+
+// The holiday rule moved to _shared/holidays.ts so the company calendar could
+// import the same copy instead of the browser growing a twin of it. Still
+// re-exported here because callers and tests have always asked repGoals for
+// usHolidays, and a move is not a reason to break them.
+export { usHolidays, usHolidayList, holidaysBetween, serializeHolidayPlan, US_HOLIDAY_KEYS } from './holidays.ts'
 
 type R = { url: string; key: string }
 const H = (r: R) => ({ apikey: r.key, Authorization: `Bearer ${r.key}`, 'Content-Type': 'application/json' })
@@ -65,57 +72,30 @@ export function dayStartUtc(day: string, tz: string): Date {
   return new Date(t)
 }
 
-const ymd = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-const nthWeekday = (y: number, m: number, wd: number, n: number) => {
-  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay()
-  return 1 + ((wd - first + 7) % 7) + (n - 1) * 7
-}
-const lastWeekday = (y: number, m: number, wd: number) => {
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const last = new Date(Date.UTC(y, m - 1, days)).getUTCDay()
-  return days - ((last - wd + 7) % 7)
-}
-/** A fixed-date holiday moved off a weekend, as offices observe it. */
-const observed = (y: number, m: number, d: number) => {
-  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
-  const t = Date.UTC(y, m - 1, d) + (wd === 6 ? -86400000 : wd === 0 ? 86400000 : 0)
-  return new Date(t).toISOString().slice(0, 10)
-}
 
-/** US office holidays for a year (observed dates), name by day. */
-export function usHolidays(y: number): Record<string, string> {
-  const thanks = nthWeekday(y, 11, 4, 4)
-  return {
-    [observed(y, 1, 1)]: "New Year's Day",
-    [ymd(y, 5, lastWeekday(y, 5, 1))]: 'Memorial Day',
-    [observed(y, 7, 4)]: 'Independence Day',
-    [ymd(y, 9, nthWeekday(y, 9, 1, 1))]: 'Labor Day',
-    [ymd(y, 11, thanks)]: 'Thanksgiving',
-    [ymd(y, 11, thanks + 1)]: 'the day after Thanksgiving',
-    [observed(y, 12, 25)]: 'Christmas',
-    // New Year's of NEXT year can be observed on Dec 31 of this one.
-    [observed(y + 1, 1, 1)]: "New Year's Day",
-  }
-}
 
 /**
  * Why this person is not working this day — or null if it is a workday.
- * The company can add its own days: setting `company_holidays` = a JSON list
- * of "YYYY-MM-DD" (or {"date","name"}).
+ *
+ * The company shapes this through the `company_holidays` setting, edited in
+ * HR & Payroll Settings: a JSON list of "YYYY-MM-DD" or {"date","name"} for
+ * its own days off, plus {"skip":"<key>"} for a federal day it works.
+ * _shared/holidays.ts holds the rule and the key names.
  */
 export async function offDayReason(r: R, companyId: number, employeeId: number | null, day: string): Promise<string | null> {
   const wd = new Date(`${day}T12:00:00Z`).getUTCDay()
   if (wd === 0 || wd === 6) return 'the weekend'
-  const us = usHolidays(Number(day.slice(0, 4)))
-  if (us[day]) return us[day]
+  // The company list is read BEFORE the federal days are judged, because it
+  // is what says which federal days this company actually keeps. A failed or
+  // malformed read leaves the plan empty, which is exactly the behaviour that
+  // was live before the setting could be edited: all eight days observed.
+  let plan = emptyHolidayPlan()
   try {
     const s = await rows(r, `settings?select=value&company_id=eq.${companyId}&key=eq.company_holidays&limit=1`)
-    const list = s[0]?.value ? JSON.parse(s[0].value) : []
-    for (const h of Array.isArray(list) ? list : []) {
-      const d = typeof h === 'string' ? h : h?.date
-      if (d === day) return (typeof h === 'object' && h?.name) || 'a company holiday'
-    }
+    plan = parseCompanyHolidays(s[0]?.value)
   } catch { /* a malformed setting is not a reason to skip a workday */ }
+  const holiday = holidayOn(day, plan)
+  if (holiday) return holiday.name
   if (employeeId != null) {
     try {
       const off = await rows(r, `time_off_requests?select=id&company_id=eq.${companyId}&employee_id=eq.${employeeId}&status=eq.approved&start_date=lte.${day}&end_date=gte.${day}&limit=1`)

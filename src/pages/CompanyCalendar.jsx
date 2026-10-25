@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck, CheckCircle2, Presentation, Plus, X, Trash2, RotateCcw } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Briefcase, Users, Umbrella, Wrench, Repeat, Route, Truck, CheckCircle2, Presentation, Plus, X, Trash2, RotateCcw, CalendarOff } from 'lucide-react'
 import { getAccessLevel, ACCESS_LEVELS } from '../lib/accessControl'
 import { MEETING_SERIES, formatTime, cadenceSentence } from '../lib/companyMeetings'
 import {
@@ -24,7 +24,7 @@ const defaultTheme = {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-const KIND_ICON = { sales: Users, delivery: Briefcase, completed: CheckCircle2, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck, meeting: Presentation }
+const KIND_ICON = { sales: Users, delivery: Briefcase, completed: CheckCircle2, timeoff: Umbrella, service: Wrench, projected: Repeat, route: Route, fleet: Truck, meeting: Presentation, holiday: CalendarOff }
 
 export default function CompanyCalendar() {
   const navigate = useNavigate()
@@ -74,6 +74,15 @@ export default function CompanyCalendar() {
     if (!row?.value) return null
     try { return typeof row.value === 'string' ? JSON.parse(row.value) : row.value } catch { return null }
   }, [settings])
+
+  // Handed over raw: parseCompanyHolidays in _shared/holidays.ts is the one
+  // place that decides what a malformed list means, and it is the same
+  // place the rep routines ask. Null when nothing is set, which draws the
+  // eight federal days and nothing else.
+  const companyHolidays = useMemo(
+    () => (settings || []).find((x) => x.key === 'company_holidays')?.value ?? null,
+    [settings],
+  )
 
   const [meetingsVersion, setMeetingsVersion] = useState(0)
   const reloadMeetings = () => setMeetingsVersion((v) => v + 1)
@@ -167,10 +176,10 @@ export default function CompanyCalendar() {
 
   const events = useMemo(
     () => buildCalendarEvents(
-      { appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, meetingCadence: cadence, meetingOverrides: meetingRows },
+      { appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, meetingCadence: cadence, meetingOverrides: meetingRows, companyHolidays },
       { projectRecurringThrough: projectThrough, meetingWindow },
     ),
-    [appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough, cadence, meetingRows, meetingWindow],
+    [appointments, jobs, completedJobs, timeOff, employees, routes, fleet, fleetRentals, projectThrough, cadence, meetingRows, meetingWindow, companyHolidays],
   )
 
   const visible = useMemo(() => filterCalendarEvents(events, { kinds, units }), [events, kinds, units])

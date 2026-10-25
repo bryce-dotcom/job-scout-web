@@ -1,6 +1,7 @@
 import { localDateStr } from './localDate'
 import { futureOccurrences, REPEATS } from './recurrenceDates'
 import { deriveMeetings, MEETING_SERIES, formatTime } from './companyMeetings'
+import { holidaysBetween, parseCompanyHolidays, holidayTitle } from '../../supabase/functions/_shared/holidays.ts'
 // Company Calendar — one month view combining what the business actually has
 // on the books: Sales (appointments), Delivery (scheduled jobs), and Employee
 // time off. Alayda: "seeing events on the calendar would be super helpful —
@@ -127,6 +128,21 @@ export const KINDS = {
     color: '#8b5cf6',
     writes: { source: 'EOS', bookedIn: 'EOS → Meeting Schedule', appearsWhen: 'a meeting cadence is set — move or cancel one from the calendar' },
   },
+  // The days the company is closed. Bryce, 2026-10-25: "where do we set
+  // the company holidays... and the company holidays should show on the
+  // calendar."
+  //
+  // The eight federal days were already in force — a rep routine has always
+  // skipped Thanksgiving — but only an edge function could see them, so a
+  // scheduler looking at this calendar had no way to know the office was
+  // shut. Drawn from _shared/holidays.ts, the same copy offDayReason uses,
+  // so the calendar cannot disagree with the routines about a closed day.
+  holiday: {
+    id: 'holiday',
+    label: 'Holidays',
+    color: '#be123c',
+    writes: { source: 'HR & Payroll Settings', bookedIn: 'Payroll → HR & Payroll Settings → Company Holidays', appearsWhen: 'a federal holiday falls, or the company adds its own day' },
+  },
 }
 
 // A visit that has been scheduled already appears as Delivery on the day it
@@ -193,7 +209,7 @@ export function expandDateRange(start, end) {
  * Normalize the three sources into one event list.
  * Each event: { id, kind, dayKeys[], title, subtitle, businessUnit, link, status }
  */
-export function buildCalendarEvents({ appointments = [], jobs = [], completedJobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [], meetingCadence = null, meetingOverrides = [] } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null, meetingWindow = null } = {}) {
+export function buildCalendarEvents({ appointments = [], jobs = [], completedJobs = [], timeOff = [], employees = [], routes = [], fleet = [], fleetRentals = [], meetingCadence = null, meetingOverrides = [], companyHolidays = null } = {}, { tz = DEFAULT_TZ, projectRecurringThrough = null, meetingWindow = null, holidayWindow = meetingWindow } = {}) {
   const empName = new Map((employees || []).map((e) => [String(e.id), e.name]))
   const events = []
 
@@ -424,6 +440,34 @@ export function buildCalendarEvents({ appointments = [], jobs = [], completedJob
     }
   }
 
+  // ── Company holidays ───────────────────────────────────────────────
+  //
+  // Derived, never stored: the federal days are a rule and the only thing
+  // the company keeps is its own list — the days it adds and the federal
+  // days it works. Same window as the meetings, because both are a rule
+  // drawn across the month on screen rather than rows to fetch.
+  if (holidayWindow && holidayWindow.from && holidayWindow.through) {
+    const plan = parseCompanyHolidays(companyHolidays)
+    for (const h of holidaysBetween(holidayWindow.from, holidayWindow.through, plan)) {
+      events.push({
+        id: `holiday-${h.date}`,
+        kind: 'holiday',
+        dayKeys: [h.date],
+        title: holidayTitle(h.name),
+        subtitle: h.custom ? 'Company holiday' : 'Holiday — office closed',
+        businessUnit: null,
+        status: 'Closed',
+        // Deliberately not clickable. The only thing to do about a holiday is
+        // edit the list, and that lives behind Payroll, which most of the
+        // roster cannot open — sending a field tech there would be a dead end.
+        // The filter chip's hover carries the location for whoever can use it.
+        link: null,
+        time: null,
+        holiday: h,
+      })
+    }
+  }
+
   return events
 }
 
@@ -471,7 +515,9 @@ export function filterCalendarEvents(events, { kinds = {}, units = {}, includeUn
 // whole company shares, which on a busy delivery day would otherwise fall
 // into "+N more" and be the one thing nobody saw. A fractional rank so no
 // existing value has to move.
-const KIND_PRIORITY = { timeoff: 0, meeting: 0.5, sales: 1, delivery: 2 }
+// A holiday outranks everything: it is the reason none of the rest of the
+// day is happening. Negative so, again, no existing value has to move.
+const KIND_PRIORITY = { holiday: -1, timeoff: 0, meeting: 0.5, sales: 1, delivery: 2 }
 
 export function groupEventsByDay(events) {
   const map = {}
