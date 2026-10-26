@@ -15,6 +15,7 @@ import ArnieDetailToggle from './ArnieDetailToggle'
 import ArnieAtWork from './ArnieAtWork'
 import ArnieRules from './ArnieRules'
 import ArniePersona from './ArniePersona'
+import ArnieVoiceShortcut from './ArnieVoiceShortcut'
 import { useAssistant } from '../../../components/AssistantAvatar'
 import { handOffLabel, assistantShortName } from '../../../lib/arniePersonaClient'
 
@@ -109,6 +110,7 @@ export default function ArnieSetup() {
         {/* Everyone gets the morning brief — the gate below is for the change log. */}
         <ArniePersona onChanged={refreshPersona} />
         <ArnieDetailToggle name={who} />
+        <ArnieVoiceShortcut name={who} />
         <MorningBriefSettings />
         <ArnieRules isAdmin={false} />
         <ArnieTeamRules isAdmin={false} name={who} />
@@ -141,6 +143,7 @@ export default function ArnieSetup() {
       {isAdmin && <ArnieAtWork />}
       <ArniePersona onChanged={refreshPersona} />
       <ArnieDetailToggle name={who} />
+      <ArnieVoiceShortcut name={who} />
       <MorningBriefSettings />
       <ArnieRules isAdmin={isAdmin} />
       <ArnieTeamRules isAdmin={isAdmin} name={who} />

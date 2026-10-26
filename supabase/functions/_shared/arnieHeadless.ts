@@ -59,7 +59,7 @@ export function plainText(md: string): string {
  */
 export async function runArnieTurn(
   r: { url: string; key: string; internalKey?: string },
-  o: { employee: Any; company?: Any; messages: { role: string; content: string }[]; mode?: 'field' | 'office'; cards?: string[]; lessonTest?: boolean },
+  o: { employee: Any; company?: Any; messages: { role: string; content: string }[]; mode?: 'field' | 'office'; cards?: string[]; lessonTest?: boolean; voice?: boolean },
 ): Promise<TurnResult> {
   const emp = o.employee
   const companyId = emp?.company_id
@@ -127,6 +127,10 @@ export async function runArnieTurn(
         // A nightly lesson test: look-ups only (arnie-chat honours it for
         // this server path alone).
         ...(o.lessonTest ? { lesson_test: true } : {}),
+        // "Hey Jenny" on a phone (arnie-voice): the answer will be heard, not
+        // read — and the question was SPOKEN, so names and numbers are read back
+        // before anything is drafted (arnieServerPrompt's spoken rule).
+        ...(o.voice ? { voice_reply: true, spoken: true } : {}),
       }),
     })
   } catch (e) {

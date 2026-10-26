@@ -585,3 +585,8 @@ verify_jwt = false
 # rep's session token and refuses to fall back to anon.
 [functions.walter-analyze]
 verify_jwt = true
+
+# "Hey Jenny" on an iPhone: a Shortcut has no Supabase login. arnie-voice
+# checks the person's voice key (or, for the key actions, their login) itself.
+[functions.arnie-voice]
+verify_jwt = false

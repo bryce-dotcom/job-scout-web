@@ -11,6 +11,7 @@ import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOO
 import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
 import { findRepeat, repeatNote } from '../_shared/arnieRepeats.ts'
 import { loadCrewSheet } from '../_shared/crewSheetData.ts'
+import { VOICE_NOTE } from '../_shared/arnieVoice.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
@@ -2486,6 +2487,11 @@ Deno.serve(async (req) => {
     if (agent === 'arnie' && inTheApp && caller.employeeId != null && caller.companyId != null && cards.includes('create')) {
       const note = await repeatNoteFor(caller, lastUserText(cleaned))
       if (note) turnNote.set(caller as unknown as object, note)
+    }
+    // "Hey Jenny" (arnie-voice): the answer is read aloud on a phone. Our own
+    // server path only.
+    if (body?.voice_reply === true && !inTheApp) {
+      turnNote.set(caller as unknown as object, notes(turnNote.get(caller as unknown as object) || '', VOICE_NOTE))
     }
 
     // === STREAMING + TOOL USE LOOP ===
