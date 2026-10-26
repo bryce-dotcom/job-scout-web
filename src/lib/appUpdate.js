@@ -126,9 +126,88 @@ async function servedBuild() {
   }
 }
 
+/**
+ * Reload onto `build` — at most ONCE per build, per tab.
+ *
+ * THE BUG THIS CLOSES. London, 26 Oct, eight minutes after the last of nine
+ * deploys between 07:26 and 08:46: "I click on the three lines to open up the
+ * side menu to get to Field Scout, I have to repeat that process about four
+ * times before I can get into field Scout or honestly anything — the tab kind
+ * of just reload itself multiple times."
+ *
+ * The once-per-build stamp already existed and updateDecision already honoured
+ * it. But the navigation door called this function DIRECTLY, so it never met
+ * that rule — it asked only "is there a pending build?", which stays true. The
+ * worker answers each reload out of its own precache (the same thing that made
+ * the banner's old plain reload useless, see applyUpdate), so the page comes
+ * back on the SAME build with the server still ahead, `pending` is set again,
+ * and her next tap reloads again. Nothing decayed, so nothing stopped it.
+ *
+ * Reloading twice for one build is pointless by definition: the first reload
+ * already proved it does not land. The stamp therefore lives HERE, in the one
+ * function that performs the reload, rather than in each caller — a caller
+ * cannot forget a rule it does not have to remember. Returns false when it
+ * refuses, so the caller can offer the banner instead; that Refresh goes
+ * through applyUpdate(), which drops the worker and the caches and so is the
+ * only thing that actually escapes the precache.
+ */
 function reloadFor(build) {
+  let already = null
+  try { already = sessionStorage.getItem(RELOADED_KEY) } catch { /* private mode */ }
+  if (already && already === build) return false
   try { sessionStorage.setItem(RELOADED_KEY, build) } catch { /* private mode */ }
   window.location.reload()
+  return true
+}
+
+/** The build a controllerchange reload left behind. */
+const SW_RELOAD_FROM_KEY = 'sw_reload_from_build'
+
+/**
+ * A new service worker has taken control — should this tab reload onto it?
+ *
+ * The old rule in main.jsx was a 30-SECOND THROTTLE, which permitted every
+ * reload spaced further apart than that. On a morning like 26 Oct — nine
+ * deploys in eighty minutes — a tab could legitimately be reloaded again and
+ * again, each one a new worker taking over. Time was never the right question.
+ *
+ * The build is. A reload is only worth doing if it CHANGES the build this page
+ * runs, so stamp the build we reload away FROM: if we come back still running
+ * it, the reload did not land — the worker served the old precache — and doing
+ * it again cannot help. Once a reload really does land a new build the stamp
+ * stops matching, which re-arms this for the next genuine update.
+ *
+ * Pure, so it is tested.
+ * @param {object} a
+ * @param {string} a.running  build id this page was compiled with
+ * @param {string|null} a.reloadedFrom  build a controllerchange reload already left
+ * @param {boolean} a.held  a page has unsaved work (holdAppUpdate)
+ * @returns {'reload'|'banner'}
+ */
+export function swReloadDecision({ running, reloadedFrom = null, held = false }) {
+  if (held) return 'banner'
+  // No build id to key on (an unstamped build) still gets ONE reload per tab
+  // rather than one every 30 seconds.
+  return reloadedFrom === (running || 'unknown') ? 'banner' : 'reload'
+}
+
+/**
+ * Wire-up for the controllerchange listener in main.jsx. The thinking is in
+ * swReloadDecision; this is the storage and the reload.
+ */
+export function swTookControl({ running } = {}) {
+  let reloadedFrom = null
+  try { reloadedFrom = sessionStorage.getItem(SW_RELOAD_FROM_KEY) } catch { /* private mode */ }
+  const d = swReloadDecision({ running, reloadedFrom, held: appUpdateHeld() })
+  if (d === 'banner') {
+    // The new worker is already in control, so Refresh later loads the new
+    // build. A held page gets told regardless; a refusal respects a "Later".
+    if (appUpdateHeld() || Date.now() >= snoozedUntil()) showBanner(null)
+    return false
+  }
+  try { sessionStorage.setItem(SW_RELOAD_FROM_KEY, running || 'unknown') } catch { /* private mode */ }
+  window.location.reload()
+  return true
 }
 
 /**
@@ -278,7 +357,12 @@ export function installAppUpdateCheck({ running } = {}) {
   // reloading over one would lose exactly what holdAppUpdate exists to protect.
   const onNavigate = () => {
     if (!pending || appUpdateHeld()) return
-    reloadFor(pending)
+    // reloadFor refuses a build this tab has already reloaded for, and a
+    // refusal is the whole point of the door now: `pending` stays set while
+    // the worker keeps serving the old precache, so without this every tap
+    // reloaded again and the menu never held (London, 26 Oct). Offer the
+    // banner instead — its Refresh drops the worker and really does land it.
+    if (!reloadFor(pending) && Date.now() >= snoozedUntil()) showBanner(pending)
   }
   // React Router moves with pushState, which fires no event of its own.
   const wrap = (name) => {

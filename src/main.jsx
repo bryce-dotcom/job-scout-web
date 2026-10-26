@@ -5,7 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import { reportCrash, installGlobalCrashHandlers, installBreadcrumbs, addCrumb, chunkReloadPending, chunkReloadDecision } from './lib/crashReport'
 import { installOverflowWatch } from './lib/overflowWatch'
-import { installAppUpdateCheck, appUpdateHeld, showBanner } from './lib/appUpdate'
+import { installAppUpdateCheck, swTookControl } from './lib/appUpdate'
 import { useStore } from './lib/store'
 
 // Initialize Sentry
@@ -108,17 +108,14 @@ if ('serviceWorker' in navigator) {
       }
     })
   }).catch(() => {})
-  // Listen for new SW and reload when it takes over (guarded to prevent loops)
+  // Listen for new SW and reload when it takes over — at most once per build.
+  //
+  // This used to be a 30-SECOND THROTTLE, which permitted every reload spaced
+  // further apart than that; nine deploys in eighty minutes could therefore
+  // reload one tab again and again. swReloadDecision keys on the build instead,
+  // and holds the banner for a page with unsaved work.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    // A page with unsaved work (holdAppUpdate) gets the banner instead — the
-    // new worker is already in control, so Refresh later loads the new build.
-    if (appUpdateHeld()) { showBanner(null); return }
-    const key = 'sw_reloaded_at'
-    const last = sessionStorage.getItem(key)
-    if (!last || Date.now() - Number(last) > 30000) {
-      sessionStorage.setItem(key, String(Date.now()))
-      window.location.reload()
-    }
+    swTookControl({ running: import.meta.env.VITE_APP_BUILD })
   })
 }
 
