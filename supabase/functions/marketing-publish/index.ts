@@ -337,6 +337,7 @@ serve(async (req) => {
       // of this brand whose numbers are missing or older than a day — one
       // request per post covers all its networks — bounded well under the
       // vendor's 100 live calls per 5 minutes.
+      const live: Record<string, unknown>[] = []
       try {
         const stale = new Date(Date.now() - 20 * 3600000).toISOString()
         let liveQ = sb.from('marketing_posts').select('id, ayrshare_id, metrics_at').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null)
@@ -345,6 +346,8 @@ serve(async (req) => {
         const { data: due } = await liveQ
         for (const p of due || []) {
           const r = await up('GET', `/uploadposts/post-analytics/${encodeURIComponent(p.ayrshare_id)}`)
+          // What came back, kept on the reply: the cache fills only from these reads, so a silent miss here is the whole bug.
+          live.push({ post_id: p.id, ok: r.ok, status: r.status, platforms: Object.keys(r.data?.post_metrics || r.data?.posts || {}).slice(0, 6), error: r.ok ? null : upError(r.data), sample: JSON.stringify(r.data || '').slice(0, 240) })
           if (!r.ok) console.warn('[marketing-publish] live analytics', p.id, upError(r.data))
         }
       } catch (e) { console.warn('[marketing-publish] live analytics pass failed (non-fatal):', (e as Error)?.message) }
@@ -383,7 +386,7 @@ serve(async (req) => {
           await sb.from('marketing_posts').update({ metrics: { ...m, score }, metrics_at: nowIso }).eq('id', p.id)
         }
       } catch (e) { console.warn('[marketing-publish] metrics keep failed (non-fatal):', (e as Error)?.message) }
-      return json({ ok: true, metrics, raw_count: rows.length })
+      return json({ ok: true, metrics, raw_count: rows.length, live })
     }
 
     // ── publish ───────────────────────────────────────────────────────
