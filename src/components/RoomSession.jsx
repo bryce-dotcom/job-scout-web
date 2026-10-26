@@ -424,15 +424,13 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
             video={cameraId ? true : false}
             audio
             // Audio loses to video on a thin connection, and that is what
-            // "I can't hear you very well" usually is. LiveKit captures at
-            // 720p by default with BOTH of these off, so a dock the size of a
-            // business card was being fed near-HD — upstream the office does
-            // not have, competing with the one stream that actually matters.
+            // "I can't hear you very well" usually is.
             //
-            // adaptiveStream asks only for the resolution the tile on screen
-            // needs; dynacast stops sending layers nobody is looking at.
-            // Expanding still gets full quality, because the layer is chosen
-            // from what is rendered rather than fixed at join.
+            // The answer here is SIMULCAST, which is on by default and was
+            // never the problem: every camera publishes h180 and h360 beside
+            // the capture resolution, and the server forwards whichever layer
+            // a receiver can actually take. That is the automatic adjustment
+            // to a weak connection, and it needs nothing from us.
             //
             // The capture settings are deliberately untouched: echo
             // cancellation, noise suppression, auto gain and voice isolation
@@ -452,19 +450,25 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               // construction instead: capture at 540p rather than 720p, so
               // there is simply less to send and nothing to renegotiate. A
               // dock-sized tile cannot tell the difference.
-              // Adjust to SIZE: ask for the layer the tile on screen actually
-              // needs, so a 340px dock pulls h180 and a maximised window
-              // pulls h720. Without it, 720p is fetched even for a thumbnail.
+              // OFF, now on evidence rather than on a hunch.
               //
-              // This is back on having been off since 10-23, and the honest
-              // reason it went off is that I changed TWO things at once when
-              // the audio went bad — this and the capture resolution — and
-              // then blamed this one. Picking a published layer is cheap;
-              // what is expensive is re-encoding, which is dynacast's job.
-              // So this returns and dynacast stays off, which separates the
-              // two for the first time. If the stutter comes back, this is
-              // the line to pull.
-              adaptiveStream: true,
+              // It went off on 10-23 alongside a resolution drop, so the two
+              // were never separated and I was guessing. This morning it came
+              // back ON with the resolution left at 720p, which isolated it,
+              // and Bryce's report hours later was "pretty glitchy" — the
+              // same word as last time, from the same change.
+              //
+              // That is a real result, so it goes off and stays off: twice
+              // asked for, twice glitchy. 720p stays, because that was the
+              // OTHER variable and it is what fixed the graininess.
+              //
+              // Nothing is lost for a weak connection. Simulcast is still on
+              // by default, so every camera publishes h180 and h360 beside
+              // the 720p, and the server forwards whichever layer a receiver
+              // can take. Adjusting to the CONNECTION never depended on this;
+              // only adjusting to the tile's SIZE did, and a slightly
+              // oversized stream beats a stuttering one.
+              adaptiveStream: false,
               dynacast: false,
               // Screen share ships at 1080p FIFTEEN frames a second by
               // default, which is why a scrolling spreadsheet judders.
@@ -644,11 +648,12 @@ function Stage({ expanded, setExpanded }) {
 
   // Open the dock the moment somebody shares.
   //
-  // Not a flourish — it is the difference between a readable screen and a
-  // blurred one. adaptiveStream asks for the resolution the ELEMENT needs,
-  // so a 1080p share rendered in a 340px dock is fetched at postcard size
-  // and stays there. Expanding is what tells the server to send the real
-  // thing. Only on the way IN, so collapsing it again is still your call.
+  // Nobody shares a screen so it can be looked at in a box the size of a
+  // business card — a spreadsheet at 340px wide is unreadable however good
+  // the stream is. (This was originally justified by adaptiveStream needing
+  // a big element to fetch a big layer; that is off now, and the UX reason
+  // is the one that was always doing the work.) Only on the way IN, so
+  // collapsing it again is still your call.
   const sharing = !!share
   useEffect(() => {
     if (sharing && !expanded) setExpanded?.(true)
