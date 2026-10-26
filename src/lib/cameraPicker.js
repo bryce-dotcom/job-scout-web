@@ -101,3 +101,33 @@ export function pickCameraInBrowser(preferredId = null) {
     getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
   })
 }
+
+/**
+ * Can we open a microphone at all?
+ *
+ * Christopher joined from a phone on 2026-10-26 and nobody could hear him —
+ * not him muted, not a network problem: his mic never opened, and NOTHING
+ * said so. He saw a normal call, and the other two sat wondering why he was
+ * silent.
+ *
+ * The camera already gets this treatment because a dead camera is obvious to
+ * its owner. A dead microphone is the opposite: it is invisible to you and
+ * only visible to everyone else, which is the worst way round.
+ *
+ * Deliberately a bare `{ audio: true }` — no device preference, no
+ * constraints. The question is only "will this machine give us a mic", and a
+ * failure here is worth saying out loud before anyone joins a meeting.
+ */
+export async function micWorksInBrowser() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+    return { ok: false, name: 'InsecureContext' }
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const label = stream.getAudioTracks()[0]?.label || ''
+    stream.getTracks().forEach(t => t.stop())
+    return { ok: true, label }
+  } catch (err) {
+    return { ok: false, name: err?.name || 'Unknown' }
+  }
+}

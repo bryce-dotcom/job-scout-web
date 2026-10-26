@@ -23,7 +23,7 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { roomMeta, MAIN_ROOM } from '../lib/conferenceRooms'
-import { pickCameraInBrowser } from '../lib/cameraPicker'
+import { pickCameraInBrowser, micWorksInBrowser } from '../lib/cameraPicker'
 import CampfireMark from './CampfireMark'
 
 const RoomSessionContext = createContext(null)
@@ -43,6 +43,7 @@ export function RoomSessionProvider({ theme, children }) {
   const [occupants, setOccupants] = useState({}) // slug -> their names, for the circle
   const [cameraId, setCameraId] = useState(null)   // the camera that actually opened
   const [cameraErrors, setCameraErrors] = useState(null)
+  const [micError, setMicError] = useState(null)
   const [message, setMessage] = useState(null)
   const [expanded, setExpanded] = useState(false)
 
@@ -80,6 +81,12 @@ export function RoomSessionProvider({ theme, children }) {
     // setup we do not control.
     let remembered = null
     try { remembered = localStorage.getItem(camKey) } catch { /* private window */ }
+    // The microphone matters more than the camera and was never checked.
+    // A dead camera is obvious to its owner; a dead mic is invisible to you
+    // and only visible to everyone else.
+    const mic = await micWorksInBrowser()
+    setMicError(mic.ok ? null : (mic.name || 'Unknown'))
+
     const cam = await pickCameraInBrowser(remembered)
     setCameraId(cam.deviceId)
     setCameraErrors(cam.deviceId ? null : (cam.errors || []))
@@ -150,12 +157,33 @@ export function RoomSessionProvider({ theme, children }) {
           isDeveloper={isDeveloper}
           cameraId={cameraId}
           cameraErrors={cameraErrors}
+          micError={micError}
           onRetry={() => join(slug)}
           blurKey={`campfire.blur.${me?.id || user?.email || "anon"}`}
         />
       )}
     </RoomSessionContext.Provider>
   )
+}
+
+// Why the microphone did not open, for the one person who cannot hear that
+// it has not. Phones are the common case — Christopher joined from one and
+// was silent to the room — so the advice names where the switch actually is
+// on a phone rather than describing a desktop padlock.
+function micMessage(name) {
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'Your browser is blocking the microphone. On a phone: Settings → the browser → Microphone. On a computer: the padlock in the address bar. Then rejoin.'
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'No microphone was found on this device.'
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'Another app is using the microphone — a phone call, Teams or Zoom. Close it and try again.'
+  }
+  if (name === 'InsecureContext') {
+    return 'This page is not on a secure (https) address, so it cannot use a microphone.'
+  }
+  return 'The microphone would not start. Check nothing else is using it, then try again.'
 }
 
 // Why joining failed, in words the person reading it can act on.
@@ -284,7 +312,7 @@ async function probeDevice(kind) {
   }
 }
 
-function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey, cameraId, cameraErrors, onRetry }) {
+function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded, onLeave, isDeveloper, blurKey, cameraId, cameraErrors, micError, onRetry }) {
   const isMobile = useIsMobile()
   const [deviceIssue, setDeviceIssue] = useState(null)
   const [deviceDetail, setDeviceDetail] = useState(null)
@@ -514,6 +542,30 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
                 cameraErrors means we tried every camera on the machine before
                 connecting and none started — LiveKit never got as far as
                 failing, so without this the dock would say nothing at all. */}
+            {/* The mic comes FIRST, above any camera complaint. Being unable
+                to see somebody is a nuisance; being unable to hear them ends
+                the meeting, and the person it is happening to is the only one
+                who cannot tell. */}
+            {micError && (
+              <div style={{
+                padding: '7px 10px', fontSize: 11.5, lineHeight: 1.4, flexShrink: 0,
+                background: '#fee2e2', color: '#991b1b', borderBottom: '1px solid #fecaca',
+                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              }}>
+                <span><strong>Nobody can hear you.</strong> {micMessage(micError)}</span>
+                {onRetry && (
+                  <button
+                    onClick={onRetry}
+                    style={{
+                      padding: '1px 8px', borderRadius: 999, border: '1px solid #991b1b',
+                      background: 'transparent', color: '#991b1b', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >
+                    Try again
+                  </button>
+                )}
+              </div>
+            )}
             {(cameraErrors?.length || deviceIssue) && (
               <div style={{
                 padding: '7px 10px', fontSize: 11.5, lineHeight: 1.4, flexShrink: 0,
