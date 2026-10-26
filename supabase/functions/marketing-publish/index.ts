@@ -330,6 +330,25 @@ serve(async (req) => {
         }
       } catch (e) { console.warn('[marketing-publish] link heal failed (non-fatal):', (e as Error)?.message) }
 
+      // The vendor's per-post cache is write-through: a post is in it only
+      // after a LIVE read, and nothing refreshes it on its own (docs, read
+      // 2026-10-26). For three weeks that meant one post with numbers. So
+      // before reading the cache, make the live call for every posted post
+      // of this brand whose numbers are missing or older than a day — one
+      // request per post covers all its networks — bounded well under the
+      // vendor's 100 live calls per 5 minutes.
+      try {
+        const stale = new Date(Date.now() - 20 * 3600000).toISOString()
+        let liveQ = sb.from('marketing_posts').select('id, ayrshare_id, metrics_at').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null)
+          .or(`metrics_at.is.null,metrics_at.lt.${stale}`).order('posted_at', { ascending: false }).limit(12)
+        liveQ = brandId ? liveQ.eq('brand', brandId) : liveQ.is('brand', null)
+        const { data: due } = await liveQ
+        for (const p of due || []) {
+          const r = await up('GET', `/uploadposts/post-analytics/${encodeURIComponent(p.ayrshare_id)}`)
+          if (!r.ok) console.warn('[marketing-publish] live analytics', p.id, upError(r.data))
+        }
+      } catch (e) { console.warn('[marketing-publish] live analytics pass failed (non-fatal):', (e as Error)?.message) }
+
       const q = new URLSearchParams({ user: username, limit: '200' })
       if (body.since) q.set('since', String(body.since))
       if (body.until) q.set('until', String(body.until))
