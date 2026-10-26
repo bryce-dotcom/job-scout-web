@@ -262,6 +262,34 @@ const CASES = [
       return r
     },
     expect: { proposal: 'create', proposal_label: 'company rule', text_match: [/relamp/i] } },
+  // Part 4: a question asked on two other days is answered, then offered once
+  // as a routine — no card until they say yes. Two earlier days are planted in
+  // the owner's own history and removed after.
+  { id: 'learning.owner.repeat.question.offered.as.routine', as: 'owner',
+    run: async (ctx) => {
+      const day = (n, h) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10) + `T${h}:05:00Z`
+      const planted = []
+      try {
+        for (const [n, h] of [[2, '14'], [5, '15']]) {
+          const sid = crypto.randomUUID()
+          await rest('ai_sessions', { method: 'POST', body: JSON.stringify({ company_id: DEMO.company, session_id: sid, user_email: DEMO.owner.email, current_module: 'arnie', status: 'active', started: day(n, h), last_activity: day(n, h), context_json: JSON.stringify({ title: 'EVAL repeat' }) }) })
+          planted.push(sid)
+          await rest('ai_messages', { method: 'POST', body: JSON.stringify([
+            { company_id: DEMO.company, session_id: sid, message_id: crypto.randomUUID(), role: 'user', content: 'How many open invoices do we have and what do they add up to?', timestamp: day(n, h), created_at: day(n, h) },
+            { company_id: DEMO.company, session_id: sid, message_id: crypto.randomUUID(), role: 'assistant', content: 'You have open invoices; here is the total.', timestamp: day(n, h), created_at: day(n, h) },
+          ]) })
+        }
+        const r = await chat(ctx.token, ctx.roleLabel, [{ role: 'user', content: 'how many open invoices do we have, and what is the total?' }])
+        if (r.proposal) throw new Error('she drafted a routine before they said yes')
+        return r
+      } finally {
+        for (const sid of planted) {
+          await rest(`ai_messages?session_id=eq.${sid}`, { method: 'DELETE' })
+          await rest(`ai_sessions?session_id=eq.${sid}`, { method: 'DELETE' })
+        }
+      }
+    },
+    expect: { tools_include: ['query_invoices'], text_match: [/\bevery (weekday|day|morning)\b|\bautomatically\b|\broutine\b/i] } },
   // A correction about one record is fixed, not turned into a rule.
   { id: 'learning.owner.one.off.correction.no.rule.offered', as: 'owner',
     run: async (ctx) => chat(ctx.token, ctx.roleLabel, [

@@ -37,9 +37,10 @@ describe('prompt caching', () => {
     expect(convo[2].content).toHaveLength(1)   // the conversation itself is untouched
     expect(withNote(convo, '')).toBe(convo)
     expect(withNote([{ role: 'user', content: 'fix that' }], 'N')[0].content).toEqual([{ type: 'text', text: 'fix that' }, { type: 'text', text: 'N' }])
-    // A correction's note rides first (the learning loop, 2026-10-23); the last-round note after it.
-    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
-    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, i === 4 && !used\.has\('use_my_computer'\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
+    // A correction's note and a repeated question's note ride first (the
+    // learning loop, 2026-10-23); the last-round note after them.
+    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
+    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, i === 4 && !used\.has\('use_my_computer'\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
   })
   it('the last lookup round must answer, and a reply is never blank (live test, 2026-10-21)', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))

@@ -57,7 +57,7 @@ describe('a step on their computer reports back, and he keeps going', () => {
   it('the last round of a computer task reports where it got to instead of stopping mid-sentence', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
     expect(s).toMatch(/const outOfSteps = \(round: number\) => used\.has\('use_my_computer'\) && round === 11/)
-    expect(s).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
+    expect(s).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
     expect(s).toMatch(/tools: cachedTools\(setup\.tools\), \.\.\.\(outOfSteps\(round\) \|\| lastLookup\(round\) \? \{ tool_choice: \{ type: 'none' \} \} : forceComputer && !isNewModel\(setup\.model\) \? \{ tool_choice: \{ type: 'tool', name: 'use_my_computer' \} \} : \{\}\)/)
     expect(chat).toMatch(/Never say the job is done unless a screenshot showed it done\./)
   })

@@ -9,6 +9,7 @@ import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
+import { findRepeat, repeatNote } from '../_shared/arnieRepeats.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
@@ -2426,6 +2427,14 @@ Deno.serve(async (req) => {
     const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim()
     const ownToken = bearer && bearer !== SUPABASE_SERVICE_ROLE_KEY ? bearer : ''
 
+    // THE SAME QUESTION, AGAIN (the learning loop, part 4). Asked on two other
+    // days already: answer it, then offer it once as a routine. Only for a
+    // person in the app, whose app can show the routine card.
+    if (agent === 'arnie' && inTheApp && caller.employeeId != null && caller.companyId != null && cards.includes('create')) {
+      const note = await repeatNoteFor(caller, lastUserText(cleaned))
+      if (note) turnNote.set(caller as unknown as object, note)
+    }
+
     // === STREAMING + TOOL USE LOOP ===
     if (stream) {
       return streamWithTools(cleaned, systemPromptFinal, caller, cards, agent, ownToken, coords)
@@ -2512,6 +2521,29 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 // inside an identity object that gets logged and copied.
 /** Callers whose turn is a lesson test — see lesson_test in the handler. */
 const lookupOnly = new WeakSet<object>()
+/** A note for this turn decided before it starts (a repeated question). */
+const turnNote = new WeakMap<object, string>()
+
+/**
+ * Has this person asked this on two other days in the last 30? Their own
+ * questions and her replies (ai_messages, by their sessions), and their own
+ * routines. '' when not, or when anything cannot be read.
+ */
+async function repeatNoteFor(caller: Caller, said: string): Promise<string> {
+  try {
+    if (!said || isCorrection(said)) return ''
+    const H = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+    const get = async (p: string) => { const r = await fetch(`${SUPABASE_URL}/rest/v1/${p}`, { headers: H }); return r.ok ? r.json() : [] }
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString()
+    const sessions = await get(`ai_sessions?select=session_id&company_id=eq.${caller.companyId}&user_email=ilike.${encodeURIComponent(caller.email)}&current_module=eq.arnie&last_activity=gte.${since}&limit=200`)
+    const ids = (Array.isArray(sessions) ? sessions : []).map((s: any) => s.session_id).filter(Boolean)
+    if (!ids.length) return ''
+    const msgs = await get(`ai_messages?select=session_id,role,content,created_at&session_id=in.(${ids.map((i: string) => `"${i}"`).join(',')})&created_at=gte.${since}&order=created_at.asc&limit=3000`)
+    const routines = await get(`arnie_routines?select=prompt&employee_id=eq.${caller.employeeId}&enabled=eq.true&limit=100`)
+    const rep = findRepeat(said, Array.isArray(msgs) ? msgs : [], (Array.isArray(routines) ? routines : []).map((r: any) => String(r.prompt || '')), await companyTz(caller.companyId as number))
+    return rep ? repeatNote(rep) : ''
+  } catch { return '' }
+}
 /** A tool that only reads: the query_ family. */
 const isLookup = (name: unknown) => /^query_[a-z_]+$/.test(String(name || ''))
 
@@ -3187,6 +3219,8 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
   let corrections = 0 // up to two a turn: a retraction can repeat the claim (Cole, 2026-10-20)
   // They just told him he was wrong: fix it, and offer a rule if it is one.
   const learnNote = agent === 'arnie' && isCorrection(lastUserText(messages)) ? correctionNote(cards.includes('create')) : ''
+  // Asked on two other days already: offer it once as a routine (decided before the turn).
+  const askedBefore = turnNote.get(caller as unknown as object) || ''
   // 5 tool rounds, or 12 once he is working on their computer: opening Gmail
   // alone is look, ctrl+l, type, enter, look — the old cap ran out mid-task.
   for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5); i++) {
@@ -3198,7 +3232,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
         system: cachedSystem(systemPrompt || '', rulesEnd.get(caller as unknown as object)),
         ...(includeTools ? { tools: cachedTools(setup.tools), ...(i === 4 && !used.has('use_my_computer') ? { tool_choice: { type: 'none' } } : {}) } : {}),
-        messages: cachedMessages(withNote(convo, notes(learnNote, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : ''))),
+        messages: cachedMessages(withNote(convo, notes(learnNote, askedBefore, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : ''))),
       },
     )
     if (!ai.ok) {
@@ -3250,6 +3284,8 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
   const setup = agentSetup(agent, caller, cards, messages, bearer, coords)
   // They just told him he was wrong: fix it, and offer a rule if it is one.
   const learnNote = agent === 'arnie' && isCorrection(lastUserText(messages)) ? correctionNote(cards.includes('create')) : ''
+  // Asked on two other days already: offer it once as a routine (decided before the turn).
+  const askedBefore = turnNote.get(caller as unknown as object) || ''
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: any) => {
@@ -3322,7 +3358,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // correction message itself is the instruction to call it.
               ...(includeTools ? { tools: cachedTools(setup.tools), ...(outOfSteps(round) || lastLookup(round) ? { tool_choice: { type: 'none' } } : forceComputer && !isNewModel(setup.model) ? { tool_choice: { type: 'tool', name: 'use_my_computer' } } : {}) } : {}),
               ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
-              messages: cachedMessages(withNote(convo, notes(learnNote, outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : ''))),
+              messages: cachedMessages(withNote(convo, notes(learnNote, askedBefore, outOfSteps(round) ? LAST_STEP_NOTE : lastLookup(round) ? LAST_LOOKUP_NOTE : ''))),
               stream: true,
             }),
           })
