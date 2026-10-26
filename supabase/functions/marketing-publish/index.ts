@@ -146,7 +146,7 @@ serve(async (req) => {
 
     // Which brand? A post knows its own; everything else says in the body.
     let brandId = ''
-    if (action === 'publish' || action === 'delete') {
+    if (action === 'publish' || action === 'delete' || action === 'sync_post') {
       const { data: pb } = await sb.from('marketing_posts').select('brand').eq('company_id', companyId).eq('id', Number(body.post_id)).maybeSingle()
       brandId = pb?.brand || ''
     } else {
@@ -310,6 +310,26 @@ serve(async (req) => {
 
     // ── analytics ─────────────────────────────────────────────────────
     if (action === 'analytics') {
+      // A post that went out as "processing" gets its links by a later sync.
+      // That sync never passed the post's brand until 2026-10-26, so every
+      // branded post sat with no links and, keyed by those links, no numbers.
+      // Heal the backlog here: any posted post of this brand with no links
+      // gets one status call before the numbers are read.
+      try {
+        let healQ = sb.from('marketing_posts').select('id, ayrshare_id, status').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null).eq('post_urls', '[]').limit(20)
+        healQ = brandId ? healQ.eq('brand', brandId) : healQ.is('brand', null)
+        const { data: bare } = await healQ
+        for (const p of bare || []) {
+          let r = await up('GET', `/uploadposts/status?job_id=${encodeURIComponent(p.ayrshare_id)}`)
+          if (!r.ok || r.data?.status === 'not_found') r = await up('GET', `/uploadposts/status?request_id=${encodeURIComponent(p.ayrshare_id)}`)
+          const results: any[] = r.ok && Array.isArray(r.data?.results) ? r.data.results : []
+          if (!results.length) continue
+          const postUrls = results.map((x: any) => ({ platform: x.platform, id: x.platform_post_id || null, postUrl: x.post_url || null, status: x.success ? 'success' : 'failed', error: x.error_message || x.error || null }))
+          const failed = postUrls.filter((x) => x.status === 'failed')
+          await sb.from('marketing_posts').update({ post_urls: postUrls, error: failed.length ? failed.map((x) => `${x.platform}: ${x.error || 'failed'}`).join('; ') : null }).eq('id', p.id)
+        }
+      } catch (e) { console.warn('[marketing-publish] link heal failed (non-fatal):', (e as Error)?.message) }
+
       const q = new URLSearchParams({ user: username, limit: '200' })
       if (body.since) q.set('since', String(body.since))
       if (body.until) q.set('until', String(body.until))
