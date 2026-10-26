@@ -11,7 +11,7 @@
 // unmount, so neither does the room. The lobby page only asks this provider
 // to join; it never owns the connection itself.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, useLocalParticipant, ControlBar,
@@ -644,23 +644,56 @@ function BlurToggle({ theme, storageKey }) {
   // Re-applied whenever the preference OR the track changes: turning the
   // camera off and on again produces a NEW track with no processor on it,
   // and without this the blur would silently fall off mid-call.
+  //
+  // Every change QUEUES behind the last one. setProcessor and stopProcessor
+  // are async, and the first version fired them straight from the effect —
+  // so toggling the camera while one was still in flight left livekit-client
+  // reading `this.processor.processedTrack` off a processor that was either
+  // half-built or already detached, and /rooms crashed for a real user on
+  // 2026-10-26 with exactly that message. One chain, one operation at a time.
+  const opRef = useRef(Promise.resolve())
+  const trackRef = useRef(null)
+  trackRef.current = track
+
   useEffect(() => {
     if (!lib || !track) return
     let cancelled = false
-    ;(async () => {
+    const want = on
+
+    opRef.current = opRef.current.then(async () => {
+      // Checked AFTER the queue, not before: by the time our turn comes the
+      // track may have been replaced or the call left. The old code set this
+      // flag and then never looked at it except in the catch.
+      if (cancelled) return
       try {
         const current = track.getProcessor?.()
-        if (on && !current) {
-          await track.setProcessor(lib.BackgroundProcessor({ mode: 'background-blur', blurRadius: 12 }))
-        } else if (!on && current) {
+        if (want && !current) {
+          const processor = lib.BackgroundProcessor({ mode: 'background-blur', blurRadius: 12 })
+          if (cancelled) return
+          await track.setProcessor(processor)
+        } else if (!want && current) {
           await track.stopProcessor()
         }
       } catch (err) {
-        if (!cancelled) console.warn('[campfire] blur:', err?.message)
+        console.warn('[campfire] blur:', err?.message)
       }
-    })()
+    })
+
     return () => { cancelled = true }
   }, [lib, track, on])
+
+  // Leaving the call must not leave a processor running on a track nobody
+  // owns any more — that is the same detached-processor state from the other
+  // direction, and it keeps a segmentation model churning after the dock has
+  // gone.
+  useEffect(() => () => {
+    const leaving = trackRef.current
+    opRef.current = opRef.current.then(async () => {
+      try {
+        if (leaving?.getProcessor?.()) await leaving.stopProcessor()
+      } catch { /* the track is already gone, which is the outcome we wanted */ }
+    })
+  }, [])
 
   if (!lib) return null
 
