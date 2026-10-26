@@ -24,7 +24,8 @@ describe('who sees which page — the menu as it always was', () => {
   it('a field tech gets the short menu', () => {
     expect(routes(fieldTech).sort()).toEqual([
       '/', '/admin/help', '/admin/videos', '/base-camp', '/company-calendar', '/company-map',
-      '/field-scout', '/job-board', '/my-crew', '/my-pay', '/rooms',
+      // The crew sheet (2026-10-26): a tech sees the jobs they are on.
+      '/crew-sheet', '/field-scout', '/job-board', '/my-crew', '/my-pay', '/rooms',
     ].sort())
   })
   it('a rep: sales, work, supply, team — no money, no admin', () => {

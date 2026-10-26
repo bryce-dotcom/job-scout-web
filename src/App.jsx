@@ -28,6 +28,7 @@ import Jobs from './pages/Jobs'
 import JobDetail from './pages/JobDetail'
 import JobCalendar from './pages/JobCalendar'
 import PMJobSetter from './pages/PMJobSetter'
+import CrewSheet from './pages/CrewSheet'
 import Invoices from './pages/Invoices'
 import InvoiceDetail from './pages/InvoiceDetail'
 import TimeLog from './pages/TimeLog'
@@ -450,6 +451,7 @@ function App() {
           <Route path="/jobs/calendar" element={<JobCalendar />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/job-board" element={<PMJobSetter />} />
+          <Route path="/crew-sheet" element={<CrewSheet />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/time-log" element={<TimeLog />} />

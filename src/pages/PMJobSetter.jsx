@@ -2523,6 +2523,15 @@ export default function PMJobSetter() {
           <HelpBadge text="Single-click a job: open quick details (status, customer, reschedule).  Double-click: full job page.  Chevron icon: expand sections.  Drag a job onto the calendar to schedule." />
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* The day's crew sheet: jobs, ladder or lift, how long, the pull list. */}
+          <a
+            href="/crew-sheet"
+            onClick={(e) => { e.preventDefault(); navigate('/crew-sheet') }}
+            data-crew-sheet-link
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', minHeight: '36px', backgroundColor: theme.bgCard, border: `1px solid ${theme.border}`, borderRadius: '8px', color: theme.accent, fontSize: '13px', fontWeight: '600', textDecoration: 'none' }}
+          >
+            Crew Sheet
+          </a>
           {/* View Toggle */}
           <div style={{
             display: 'flex',

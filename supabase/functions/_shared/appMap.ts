@@ -83,6 +83,7 @@ export const MENU_PAGES: Page[] = [
 
   { route: '/jobs', label: 'Jobs', section: 'Work / Operations', rule: 'office', does: 'Every job: won estimates become jobs here.' },
   { route: '/job-board', label: 'Job Board', section: 'Work / Operations', rule: 'all', does: 'Active and scheduled work on a kanban; schedule and dispatch crews.' },
+  { route: '/crew-sheet', label: 'Crew Sheet', section: 'Work / Operations', rule: 'all', does: 'The day or week a crew takes into the field: jobs, crew, contacts, every line with ladder or lift, how long from past clocked hours, what to confirm, and the pull list. Prints as a PDF. A Team Lead or above sees every crew; others their own jobs.' },
   { route: '/recurring', label: 'Recurring Jobs', section: 'Work / Operations', rule: 'office', does: 'Jobs that repeat weekly, monthly, quarterly or yearly, and membership plans.' },
   { route: '/services/upcoming', label: 'Service Visits', section: 'Work / Operations', rule: 'office', does: 'Upcoming warranty, annual and tune-up visits; schedule them and remind the customer.' },
   { route: '/field-scout', label: 'Field Scout (Clock)', section: 'Work / Operations (also a shortcut at the top)', rule: 'all', does: "Clock in and out, and today's jobs for the field." },

@@ -10,6 +10,7 @@ import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
 import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
 import { findRepeat, repeatNote } from '../_shared/arnieRepeats.ts'
+import { loadCrewSheet } from '../_shared/crewSheetData.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
 import { rulesEnd, serverArniePrompt } from '../_shared/arnieServerPrompt.ts'
@@ -150,6 +151,22 @@ const TOOLS = [
       properties: {
         date: { type: 'string', description: 'YYYY-MM-DD in the user\'s zone; defaults to today' },
         timezone: { type: 'string', description: 'IANA timezone from the Current User section' },
+      },
+    },
+  },
+  {
+    name: 'query_crew_sheet',
+    description:
+      'The CREW SHEET for a day or a week — what a crew lead takes into the field (London had an outside AI build this from exports; this is JobScout\'s own). For every scheduled job: crew, times, the on-site contact, every line with its area, ceiling height and old → new watts, LADDER or LIFT for it, the parts inside each bundle with order codes, the PO and whether it has arrived; ' +
+      'how long it should take from what crews actually CLOCKED on past jobs (a range, with how many jobs it rests on) beside the planned hours; flags (a product the estimate did not sell, parts not received, no crew); and the PULL LIST of everything to load. ' +
+      'Use it for "make me Monday\'s crew sheet", "what do I pull for tomorrow", "do we need a lift at Step Saver", "how many guys for that job", "how long will it take". Give the link so they can open and print it. ' +
+      'Say the labor estimate as the range it is, and say when the plan is far from it. Never add tools or materials that are not on the sheet.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'First day, YYYY-MM-DD in the user\'s zone; defaults to today' },
+        to: { type: 'string', description: 'Last day, YYYY-MM-DD; same as from for one day; a week is Mon–Fri' },
+        crew: { type: 'string', description: 'Only this person\'s jobs, by full name (e.g. "London Miller"); leave out for every crew' },
       },
     },
   },
@@ -1319,6 +1336,42 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
 
     if (name === 'query_crew') {
       return await crewDay({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
+    }
+
+    if (name === 'query_crew_sheet') {
+      // The same sheet as the Crew Sheet page (crew-sheet function), with the
+      // same scope: a Team Lead or above sees every crew, anyone else their own.
+      const tz = await companyTz(companyId)
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+      const DAY = /^\d{4}-\d{2}-\d{2}$/
+      const from = DAY.test(String(input?.from || '')) ? String(input.from) : today
+      const to = DAY.test(String(input?.to || '')) && String(input.to) >= from ? String(input.to) : from
+      if ((Date.parse(to) - Date.parse(from)) / 86_400_000 > 13) return { error: 'Two weeks at most on one crew sheet.' }
+      const H = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+      const get = async (p: string) => { const r = await fetch(`${SUPABASE_URL}/rest/v1/${p}`, { headers: H }); return r.ok ? r.json() : [] }
+      let me: { name: string } | null = null
+      if (caller.level < 1) {
+        const [e] = caller.employeeId != null ? await get(`employees?select=name&id=eq.${caller.employeeId}&limit=1`) : []
+        if (!e?.name) return { error: 'There is no employee record on this login, so there is no crew to show.' }
+        me = { name: e.name }
+      }
+      const s = await loadCrewSheet(get, companyId, { from, to, tz, onlyFor: me, crew: input?.crew ? String(input.crew).slice(0, 80) : null })
+      const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null
+      const q = new URLSearchParams({ from, to, ...(input?.crew ? { crew: String(input.crew) } : {}) })
+      return {
+        means: 'The crew sheet. No prices. Labor is from hours crews actually clocked on past jobs — say it as the range given. Reach: ladder up to 12 ft, scissor lift to 26 ft, boom above (or a lift when the bid has lift hours).',
+        range: from === to ? from : `${from} to ${to}`,
+        scope: me ? `only ${me.name}'s jobs` : 'every crew',
+        link: `https://jobscout.appsannex.com/crew-sheet?${q}`,
+        jobs: s.jobs.slice(0, 25).map((j: any) => ({
+          job: `${j.title} (${j.job_id})`, status: j.status, customer: j.customer, address: j.address,
+          from: when(j.start), until: when(j.end), crew: j.crew, lead: j.lead, contact: j.contact,
+          lines: j.lines.slice(0, 40).map((l: any) => ({ qty: l.qty, product: l.product, where: l.note || null, reach: l.reach, parts: l.parts.map((p: any) => p.order_code ? `${p.name} [${p.order_code}]` : p.name), po: l.on_po })),
+          reach: j.reach, parts_on: j.pos, labor: j.labor, flags: j.flags,
+        })),
+        more_jobs: Math.max(0, s.jobs.length - 25),
+        pull_list: s.pull_list,
+      }
     }
 
     if (name === 'query_jobscout_refresh') {

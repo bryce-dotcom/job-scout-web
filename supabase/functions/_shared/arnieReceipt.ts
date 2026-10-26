@@ -18,7 +18,7 @@ const WORDS: Record<string, string> = {
   query_payments: 'payments', query_revenue: 'revenue', query_quotes: 'estimates', query_closed: 'closed deals',
   query_products: 'price book', query_lighting_products: 'lighting products', query_lighting_swap: 'lighting playbook',
   query_inventory: 'inventory', query_expenses: 'expenses', query_appointments: 'appointments',
-  query_employees: 'employees', query_crew: 'crew', query_time_clock: 'time clock', query_payroll: 'payroll',
+  query_employees: 'employees', query_crew: 'crew', query_crew_sheet: 'crew sheet', query_time_clock: 'time clock', query_payroll: 'payroll',
   query_my_pay: 'your pay', query_purchase_orders: 'purchase orders', query_eos: 'EOS', query_account: 'account',
   query_daily_brief: 'daily brief', query_jobscout_refresh: 'JobScout refresh', query_rep_goals: 'rep goals',
   query_past_fixes: 'past fixes', where_i_am: 'your location', analyse_fixture_photo: 'the photo',
