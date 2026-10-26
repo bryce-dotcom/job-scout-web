@@ -299,7 +299,14 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
         ? { left: 0, right: 0, top: 0, bottom: 0, width: 'auto', height: 'auto', borderRadius: 0, paddingTop: 'env(safe-area-inset-top, 0px)' }
         : { left: 0, right: 0, bottom: 'var(--jobscout-tabbar-space, 0px)', width: 'auto', height: 'auto', borderRadius: '14px 14px 0 0' })
     : (expanded
-        ? { left: 16, right: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'auto', height: 'min(72vh, 620px)', borderRadius: 14 }
+        // Expanded on a desktop means MAXIMISED, not "a tall panel across the
+        // bottom". Bryce, 2026-10-26: "when I make the screen big it cuts the
+        // screen in half" — exactly what min(72vh, 620px) anchored to the
+        // bottom looks like on a large monitor: the call takes the lower
+        // portion and the app keeps showing above it, so the screen reads as
+        // split rather than as a call you opened up. Inset on all four sides
+        // instead, which is what maximising a window looks like.
+        ? { left: 16, right: 16, top: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'auto', height: 'auto', borderRadius: 14 }
         : { left: 'auto', right: 16, bottom: `calc(16px + var(--jobscout-tabbar-space, 0px))`, width: 'min(340px, calc(100vw - 32px))', height: 'auto', borderRadius: 14 })
 
   const shell = {
