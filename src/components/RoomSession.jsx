@@ -66,7 +66,7 @@ export function RoomSessionProvider({ theme, children }) {
     const { data, error } = await supabase.functions.invoke('room-token', {
       body: { slug: nextSlug, displayName },
     })
-    if (error) { setStatus('error'); setMessage(error.message || 'Could not get in.'); return }
+    if (error) { setStatus('error'); setMessage(joinErrorMessage(error)); return }
     if (data?.configured === false) { setStatus('unconfigured'); return }
     if (!data?.token || !data?.url) { setStatus('error'); setMessage('No ticket came back.'); return }
 
@@ -157,6 +157,35 @@ export function RoomSessionProvider({ theme, children }) {
       )}
     </RoomSessionContext.Provider>
   )
+}
+
+// Why joining failed, in words the person reading it can act on.
+//
+// Alayda, 2026-10-26, saw "Failed to send a request to the Edge Function".
+// That is supabase-js's wording for a request that never got a reply AT ALL
+// — not a refusal, not a server error, no response. It tells her nothing,
+// and it reads like the product is broken when the usual causes are on the
+// machine in front of her: an ad blocker or privacy extension swallowing
+// requests to supabase.co, a VPN or work network blocking it, or simply
+// being offline for a moment.
+//
+// Checked at the time: the function was healthy from outside — 401 without
+// a token, CORS preflight 200. So the honest message names the likely cause
+// rather than passing a library's internal phrasing to an office manager.
+function joinErrorMessage(error) {
+  const text = [error?.message, error?.name, error?.context?.statusText].filter(Boolean).join(' ')
+
+  // The network never reached us.
+  if (/failed to send|fetch|network|load failed/i.test(text)) {
+    return 'Could not reach the meeting service. Check your internet, and if you use an ad blocker or VPN, allow supabase.co — that is usually what stops it.'
+  }
+  if (/sign in|unauthor|401|jwt|token/i.test(text)) {
+    return 'Your session has expired. Sign out and back in, then try again.'
+  }
+  if (/5\d\d/.test(text)) {
+    return 'The meeting service had a problem. Try again in a moment.'
+  }
+  return error?.message || 'Could not get in.'
 }
 
 // What actually went wrong with the camera, in words a tech on a roof can
@@ -363,7 +392,26 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               : 'Video is not switched on yet. Nothing for you to do — it will just start working.'}
           </Note>
         )}
-        {status === 'error' && <Note theme={theme} tone="#dc2626">{message}</Note>}
+        {status === 'error' && (
+          <Note theme={theme} tone="#dc2626">
+            {message}
+            {/* Most causes of a failed join are momentary — a dropped
+                connection, a sleeping laptop. Making somebody close the dock
+                and hunt for the fire again to retry is a poor answer. */}
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                style={{
+                  display: 'block', margin: '10px auto 0', padding: '5px 14px',
+                  borderRadius: 999, border: '1px solid #dc2626', background: 'transparent',
+                  color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Try again
+              </button>
+            )}
+          </Note>
+        )}
         {status === 'joining' && <Note theme={theme}>Walking in…</Note>}
         {status === 'live' && ticket && (
           <LiveKitRoom
