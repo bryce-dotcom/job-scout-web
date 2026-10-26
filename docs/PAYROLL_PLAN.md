@@ -55,7 +55,7 @@ A copy of HHH's data in a staging tenant runs the period one day before HHH does
 Payroll code lands from one branch, after the goldens, after staging. Other sessions do not touch `Payroll.jsx`, `MyPay.jsx`, `payrollEngine.js`, `payrollTax.js`, `bonusCalc.js`, `bonusLedger.js`, `repCommissions.js` without the replay suite green. `npm run guard` enforces: a change to those files fails CI if a golden fixture's output changed and the fixture's expected file did not.
 
 ## Rules decided along the way
-- **2026-10-23, Bryce:** a commission earned in the pay period is paid in that period. "Add to payroll" is no longer a gate; the only thing that keeps an earned row off the cheque is a hold ("Hold back from payroll", `held_from_payroll`). A commission earned before the period and still unpaid is a warning on the next run, not a block, and belongs to the period it was earned in.
+- **2026-10-23, Bryce:** a commission earned in the pay period is paid in that period. "Add to payroll" is no longer a gate; the only thing that keeps an earned row off the cheque is a hold ("Hold back from payroll", `held_from_payroll`). A commission earned before the period and still unpaid rides on the next run (owed is owed) if it is within 45 days of the period start; the run says so beforehand and the stub says how much is older than the period. Anything older waits for somebody to put it in the payroll, and the run lists it, because HHH's first run under the rule would otherwise have paid $18k of rows going back months, most paid some other way. Nothing dated after the period end is paid early. If an old one was paid by hand, it is marked Paid outside payroll before the run, or it pays twice.
 
 ## Acceptance
 - Golden replays for all five payrolls pass, every commit.

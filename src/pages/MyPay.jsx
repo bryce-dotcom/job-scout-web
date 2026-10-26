@@ -926,6 +926,11 @@ export default function MyPay() {
                 {fmt(owedNotOnThisRun)} in bonuses owed, not on this run
               </div>
             )}
+            {(pay?.commissionCarried || 0) > 0.005 && (
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', lineHeight: 1.35 }}>
+                includes {fmt(pay.commissionCarried)} in commission earned before this period, never paid, paid on this run
+              </div>
+            )}
             {commissionNotOnRun > 0.005 && (
               <div style={{ fontSize: '11px', color: '#22c55e', marginTop: '2px', lineHeight: 1.35 }}>
                 {fmt(commissionNotOnRun)} in commission held back from this run by the office

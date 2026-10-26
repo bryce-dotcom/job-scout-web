@@ -12,6 +12,8 @@
 //
 // Pure. Takes what the Payroll page already has.
 
+import { commissionCarryFrom, COMMISSION_CARRY_DAYS } from './payrollEngine'
+
 export const MAX_PUNCH_HOURS = 16          // longer than this is a missed clock-out, not a shift
 export const SS_WAGE_BASE = 184500          // 2026 (payrollTax.js keeps the engine's copy)
 export const FUTA_WAGE_BASE = 7000
@@ -108,17 +110,29 @@ export function payrollRunGuards({
       }
     }
   }
-  // 9. Earned before this period and still unpaid: this run pays its own
-  //    period, so the row stays owed until somebody deals with it. Alayda,
-  //    Oct 2026: a September commission sat through two runs.
+  // 9. Earned before this period and still unpaid. Within the carry window
+  //    (lib/payrollEngine COMMISSION_CARRY_DAYS) it rides on this run, and is
+  //    said, because last month's commission on a cheque should not be a
+  //    surprise; if a cheque already went out for it, Paid outside payroll
+  //    first, or it pays twice. Older than that it does NOT ride on its own:
+  //    somebody puts it in the payroll, or records how it was paid.
   const paidIds = new Set(employees.map((e) => e.id))
+  const carryFrom = periodStart ? commissionCarryFrom(periodStart) : null
+  const stale = {}
   for (const r of repCommissions || []) {
     if (!r || r.payment_status !== 'earned' || r.held_from_payroll || !paidIds.has(r.employee_id)) continue
     const day = String(r.earned_at || '').slice(0, 10)
     if (!day || !periodStart) continue
-    if (day < periodStart) {
-      warnings.push({ key: `unpaid_before:${r.id}`, employeeId: r.employee_id, label: `${name(r.employee_id)}: a commission of ${money(r.amount)} earned ${day}, before this period, is still unpaid`, detail: 'This run pays its own period and will not pick it up. Mark it Paid outside payroll if a cheque went out, or run the period it belongs to.', fix: 'commission', commissionId: r.id })
+    if (day >= periodStart) continue
+    if (day >= carryFrom || r.queued_for_payroll) {
+      warnings.push({ key: `unpaid_before:${r.id}`, employeeId: r.employee_id, label: `${name(r.employee_id)}: a commission of ${money(r.amount)} earned ${day}, before this period, is on this run`, detail: 'It was never paid, so this run pays it. If a cheque already went out for it, mark it Paid outside payroll first, or hold it back.', fix: 'commission', commissionId: r.id })
+    } else {
+      const s = stale[r.employee_id] || (stale[r.employee_id] = { n: 0, amt: 0, oldest: day })
+      s.n++; s.amt += Number(r.amount) || 0; if (day < s.oldest) s.oldest = day
     }
+  }
+  for (const [id, s] of Object.entries(stale)) {
+    warnings.push({ key: `unpaid_old:${id}`, employeeId: Number(id), label: `${name(Number(id))}: ${s.n} commission${s.n === 1 ? '' : 's'} totalling ${money(s.amt)}, oldest ${s.oldest}, still unpaid and not on this run`, detail: `Older than ${COMMISSION_CARRY_DAYS} days, so it does not ride along on its own. On their card: Put in payroll to pay it on this run, or Paid outside payroll if it was paid another way.`, fix: 'commission' })
   }
   return { blocks, warnings }
 }

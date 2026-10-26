@@ -42,11 +42,15 @@ describe('postflightReport', () => {
     expect(r2.exceptions.some(x => /employee tax on stubs \$589\.50, in liabilities \$339\.50/.test(x))).toBe(true)
   })
 
-  it('catches a ledger row closed that was on no stub', () => {
-    const outside = [...repCommissions, { id: 10, employee_id: 2, amount: 150, payment_status: 'earned', queued_for_payroll: true, earned_at: '2026-09-02T12:00:00Z' }]
-    const r = postflightReport({ payload: { ...payload, paid_rep_ids: [9, 10] }, result: { ...result, counts: { ...result.counts, rep: 2 } }, ledgerBonuses, repCommissions: outside })
-    expect(r.exceptions).toContain('1 rep commission row(s) marked paid were earned outside the period and are on no stub ($150.00)')
+  it('catches a ledger row closed that was on no stub, and one paid before it was earned', () => {
+    const older = [...repCommissions, { id: 10, employee_id: 2, amount: 150, payment_status: 'earned', earned_at: '2026-09-02T12:00:00Z' }]
+    const r = postflightReport({ payload: { ...payload, paid_rep_ids: [9, 10] }, result: { ...result, counts: { ...result.counts, rep: 2 } }, ledgerBonuses, repCommissions: older })
+    // owed is owed: the older row rides on this run and is said, not flagged
+    expect(r.lines).toContain('1 commission row(s) earned before the period paid on this run ($150.00)')
     expect(r.exceptions).toContain('commission rows paid total $550.00, on stubs only $400.00')
+    const early = [...repCommissions, { id: 11, employee_id: 2, amount: 90, payment_status: 'earned', earned_at: '2026-11-02T12:00:00Z' }]
+    const r2 = postflightReport({ payload: { ...payload, paid_rep_ids: [9, 11] }, result: { ...result, counts: { ...result.counts, rep: 2 } }, ledgerBonuses, repCommissions: early })
+    expect(r2.exceptions).toContain('1 rep commission row(s) marked paid were earned after the period end ($90.00)')
   })
 
   it('catches marks that do not match what was payable', () => {

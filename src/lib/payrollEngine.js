@@ -24,6 +24,17 @@ import { localDateStr } from './localDate'
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100
 
 /**
+ * How far back an unpaid commission rides onto a run on its own: one missed
+ * period plus slack. Older rows need somebody to put them in the payroll.
+ */
+export const COMMISSION_CARRY_DAYS = 45
+export function commissionCarryFrom(periodStart) {
+  const d = new Date(periodStart)
+  d.setDate(d.getDate() - COMMISSION_CARRY_DAYS)
+  return localDateStr(d)
+}
+
+/**
  * Hours worked this period, from the time clock first and the time log
  * where the clock has nothing for that day. Never both for one day.
  * Weekly overtime by the employee's own mode: 'overtime' (1.5× over the
@@ -144,17 +155,31 @@ export function computeEmployeePay({
   const cfpS = localDateStr(cfpStart), cfpE = localDateStr(cfpEnd)
   const sumAmt = (rows) => rows.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0)
   const greaterOf = paysGreaterOf(employee)
+  // Owed is owed: a row earned before this period and still unpaid (Doug's
+  // September commission sat through two runs) is paid on this one, and the
+  // check says how much of it is older than the period. Two limits: nothing
+  // dated after the period end is paid early, and nothing older than the
+  // carry window rides along on its own — HHH had $18k of unpaid rows going
+  // back months, most of them paid some other way, and the first run under
+  // this rule would have paid them all. An older row is paid when somebody
+  // puts it in the payroll (queued_for_payroll), which is a decision.
+  const dayOf = (d) => String(d || '').slice(0, 10)
+  const carryFrom = commissionCarryFrom(cfpStart)
+  const carried = (d, queued) => queued || dayOf(d) >= carryFrom
   const earnedSetterRows = (leadComm.details || []).filter(c => c.id)
   const earnedRepRows = (repCommissions || [])
-    .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= cfpS && (r.earned_at || '').slice(0, 10) <= cfpE)
-  const payableSetterRows = earnedSetterRows.filter(c => !c.held_from_payroll)
-  const payableRepRows = earnedRepRows.filter(r => !r.held_from_payroll)
+    .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && dayOf(r.earned_at) >= cfpS && dayOf(r.earned_at) <= cfpE)
+  const owedRepRows = (repCommissions || [])
+    .filter(r => r.employee_id === employee.id && r.payment_status === 'earned' && dayOf(r.earned_at) <= cfpE && carried(r.earned_at, r.queued_for_payroll))
+  const payableSetterRows = earnedSetterRows.filter(c => !c.held_from_payroll && (!c.created_at || (dayOf(c.created_at) <= cfpE && carried(c.created_at, c.queued_for_payroll))))
+  const payableRepRows = owedRepRows.filter(r => !r.held_from_payroll)
   const earnedSetter = sumAmt(earnedSetterRows)
   const earnedRep = sumAmt(earnedRepRows)
   // Salary or commission, whichever is more (lib/payBasis): the comparison
   // weighs the period's WHOLE commission, held or not.
   const commissionEarnedThisPeriod = greaterOf ? earnedSetter + earnedRep : sumAmt(payableSetterRows) + sumAmt(payableRepRows)
-  const commissionHeld = greaterOf ? 0 : r2(earnedSetter + earnedRep - commissionEarnedThisPeriod)
+  const commissionHeld = greaterOf ? 0 : r2(sumAmt(owedRepRows.filter(r => r.held_from_payroll)) + sumAmt(earnedSetterRows.filter(c => c.held_from_payroll)))
+  const commissionCarried = greaterOf ? 0 : r2(sumAmt(payableRepRows.filter(r => dayOf(r.earned_at) < cfpS)) + sumAmt(payableSetterRows.filter(c => c.created_at && dayOf(c.created_at) < cfpS)))
 
   const payBasis = greaterOfPay({ salaryPay, commissionPay: commissionEarnedThisPeriod, enabled: greaterOf })
   salaryPay = payBasis.salaryPaid
@@ -214,6 +239,7 @@ export function computeEmployeePay({
     payBasis,
     commissionEarnedThisPeriod,
     commissionHeld,
+    commissionCarried,
     weighedCommissionRows: greaterOf ? { rep: earnedRepRows.map(r => r.id).filter(Boolean), lead: earnedSetterRows.map(c => c.id).filter(Boolean) } : null,
     // The rows this check pays, for the run to mark by id. Greater-of rows
     // are settled through weighedCommissionRows instead.

@@ -128,10 +128,11 @@ export async function loadPayrollPeriod(supabase, { companyId, period, employeeI
     timeLogEntries: () => allRows(() => own(supabase.from('time_log').select('*')
       .eq('company_id', companyId)
       .gte('created_at', w.startIso).lte('created_at', w.endIso)).order('id', { ascending: true })),
-    // Setter fees booked in the period, with the lead named.
+    // Setter fees booked in the period, with the lead named, plus any older
+    // fee still unpaid: owed is owed, and the run pays it.
     leadCommissions: () => allRows(() => own(supabase.from('lead_commissions').select('*, lead:leads!lead_id(id, customer_name)')
       .eq('company_id', companyId)
-      .gte('created_at', w.startIso).lte('created_at', w.endIso)).order('id', { ascending: true })),
+      .or(`and(created_at.gte.${w.startIso},created_at.lte.${w.endIso}),and(payment_status.neq.paid,created_at.lte.${w.endIso})`)).order('id', { ascending: true })),
     // The frozen rep ledger (lib/repCommissions owns the columns).
     repCommissions: () => fetchRepCommissions(supabase, companyId, employeeId),
     // The bonus ledger, whole, with the job named.

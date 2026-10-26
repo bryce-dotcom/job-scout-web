@@ -63,7 +63,9 @@ describe('loadPayrollPeriod', () => {
     expect(has('time_clock', 'gte', 'clock_in') && has('time_clock', 'lte', 'clock_in')).toBe(true)
     expect(q('time_clock').filters.some(f => f[0] === 'not' && f[1] === 'clock_out')).toBe(true)
     expect(has('time_log', 'gte', 'created_at')).toBe(true)
-    expect(has('lead_commissions', 'gte', 'created_at')).toBe(true)
+    const lead = q('lead_commissions').filters.find(f => f[0] === 'or')[1]
+    expect(lead).toContain('created_at.gte.')
+    expect(lead).toContain('payment_status.neq.paid')   // older fees still owed come too
     expect(has('time_off_requests', 'lte', 'start_date') && has('time_off_requests', 'gte', 'end_date')).toBe(true)
     expect(q('time_off_requests').filters.some(f => f[0] === 'eq' && f[1] === 'status' && f[2] === 'approved')).toBe(true)
     const adj = q('payroll_adjustments').filters.find(f => f[0] === 'or')[1]

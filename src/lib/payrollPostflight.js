@@ -56,8 +56,12 @@ export function postflightReport({ payload, result, employees = [], ledgerBonuse
   // not held); the function must have marked exactly those.
   const repIds = payload?.paid_rep_ids || [], leadIds = payload?.paid_lead_ids || []
   const repById = new Map((repCommissions || []).map(r => [r.id, r]))
-  const repOutside = repIds.map(id => repById.get(id)).filter(r => r && !inPeriod(r.earned_at))
-  if (repOutside.length) exceptions.push(`${repOutside.length} rep commission row(s) marked paid were earned outside the period and are on no stub (${money(sum(repOutside, 'amount'))})`)
+  // Older owed rows ride on this run by design; a row dated AFTER the period
+  // end was paid early, which is an error.
+  const repAfter = repIds.map(id => repById.get(id)).filter(r => r && pe && String(r.earned_at || '').slice(0, 10) > pe)
+  if (repAfter.length) exceptions.push(`${repAfter.length} rep commission row(s) marked paid were earned after the period end (${money(sum(repAfter, 'amount'))})`)
+  const repBefore = repIds.map(id => repById.get(id)).filter(r => r && !inPeriod(r.earned_at) && !(pe && String(r.earned_at || '').slice(0, 10) > pe))
+  if (repBefore.length) lines.push(`${repBefore.length} commission row(s) earned before the period paid on this run (${money(sum(repBefore, 'amount'))})`)
   const repPaidAmt = sum(repIds.map(id => repById.get(id)).filter(Boolean), 'amount')
   const commOnStubs = sum(stubs, 'commission_pay')
   if (counts.rep !== repIds.length) exceptions.push(`${repIds.length} rep commission rows were paid by the engine, ${counts.rep} marked paid`)

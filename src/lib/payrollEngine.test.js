@@ -56,12 +56,33 @@ describe('computeEmployeePay', () => {
       { id: 14, employee_id: 3, amount: 50, payment_status: 'paid', earned_at: '2026-10-08T12:00:00Z' },
     ]
     const p = computeEmployeePay(base(emp, { repCommissions: rows }))
-    expect(p.commissionPay).toBe(1200)          // 500 staged + 700 not staged; the held 300 and last period's 900 are not
+    // 500 staged + 700 not staged + last period's 900 that nobody ever paid;
+    // the held 300 stays off, and the paid 50 is not paid again
+    expect(p.commissionPay).toBe(2100)
     expect(p.commissionHeld).toBe(300)
-    expect(p.paidCommissionRows).toEqual({ rep: [10, 11], lead: [] })
-    expect(p.grossPay).toBe(1200)
+    expect(p.commissionCarried).toBe(900)
+    expect(p.paidCommissionRows).toEqual({ rep: [10, 11, 12], lead: [] })
+    expect(p.grossPay).toBe(2100)
     expect(p.tax).toBeNull()
-    expect(p.netPay).toBe(1200)
+    expect(p.netPay).toBe(2100)
+  })
+  it('carries an older unpaid commission only within the window, or when somebody put it in', () => {
+    const emp = { id: 3, is_commission: true, tax_classification: '1099' }
+    const rows = [
+      { id: 40, employee_id: 3, amount: 100, payment_status: 'earned', earned_at: '2026-08-20T12:00:00Z' },  // 42 days before Oct 1: rides
+      { id: 41, employee_id: 3, amount: 200, payment_status: 'earned', earned_at: '2026-08-10T12:00:00Z' },  // 52 days: too old on its own
+      { id: 42, employee_id: 3, amount: 300, payment_status: 'earned', earned_at: '2026-06-01T12:00:00Z', queued_for_payroll: true },  // old, but put in
+    ]
+    const p = computeEmployeePay(base(emp, { repCommissions: rows }))
+    expect(p.paidCommissionRows.rep).toEqual([40, 42])
+    expect(p.commissionPay).toBe(400)
+    expect(p.commissionCarried).toBe(400)
+  })
+  it('never pays a commission dated after the period end', () => {
+    const emp = { id: 3, is_commission: true, tax_classification: '1099' }
+    const p = computeEmployeePay(base(emp, { repCommissions: [{ id: 30, employee_id: 3, amount: 400, payment_status: 'earned', earned_at: '2026-10-16T12:00:00Z' }] }))
+    expect(p.commissionPay).toBe(0)
+    expect(p.paidCommissionRows).toEqual({ rep: [], lead: [] })
   })
   it('salary and commission add up on a contractor\'s check', () => {
     const emp = { id: 16, is_salary: true, annual_salary: 60000, is_commission: true, tax_classification: '1099' }

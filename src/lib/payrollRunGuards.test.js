@@ -66,7 +66,7 @@ describe('run guards', () => {
     const same = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data, priorStubsByEmployee: { 37: [{ regular_hours: 80, hourly_rate: 22.5, pay_date: '2026-10-20' }] } })
     expect(same.warnings).toEqual([])
   })
-  it('warns about a commission earned before the period that is still unpaid', () => {
+  it('says when a commission earned before the period is riding on this run', () => {
     const data = { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } }
     const { blocks, warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
       repCommissions: [
@@ -76,8 +76,21 @@ describe('run guards', () => {
         { id: 4, employee_id: 37, amount: 250, payment_status: 'earned', held_from_payroll: true, earned_at: '2026-04-02T12:00:00Z' },
       ] })
     expect(blocks).toEqual([])
+    // period starts 2026-06-16: the 20 June row is inside the period (nothing
+    // to say), the 2 May row is 45 days back, on the edge, and rides
     expect(warnings.map(w => w.key)).toEqual(['unpaid_before:1'])
-    expect(warnings[0].label).toMatch(/\$500\.00 earned 2026-05-02, before this period/)
+    expect(warnings[0].label).toMatch(/\$500\.00 earned 2026-05-02, before this period, is on this run/)
+  })
+  it('an unpaid commission older than the carry window is reported, not paid', () => {
+    const data = { 37: { grossPay: 1800, hourlyPay: 1800, regularHours: 80, overtimeHours: 0, netPay: 1500 } }
+    const { warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: data,
+      repCommissions: [
+        { id: 5, employee_id: 37, amount: 120, payment_status: 'earned', earned_at: '2026-03-01T12:00:00Z' },
+        { id: 6, employee_id: 37, amount: 80, payment_status: 'earned', earned_at: '2026-02-01T12:00:00Z' },
+        { id: 7, employee_id: 37, amount: 60, payment_status: 'earned', earned_at: '2026-01-10T12:00:00Z', queued_for_payroll: true },
+      ] })
+    expect(warnings.map(w => w.key)).toEqual(['unpaid_before:7', 'unpaid_old:37'])
+    expect(warnings[1].label).toMatch(/2 commissions totalling \$200\.00, oldest 2026-02-01, still unpaid and not on this run/)
   })
   it('warns when a check crosses a wage cap', () => {
     const { warnings } = payrollRunGuards({ ...period, employees: [cameron], employeePayData: { 37: { grossPay: 3000, regularHours: 80, overtimeHours: 0, netPay: 2400 } },

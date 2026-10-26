@@ -34,7 +34,7 @@ import { deliverPaystubs, deliverySummary } from '../lib/paystubDelivery'
 import { fetchIdentity, mergeIdentityOne } from '../lib/employeeIdentity'
 import { isUsableOverrideReason, hrRecipients, overrideEmail } from '../lib/bonusOverride'
 import { benefitDeductionsForPeriod } from '../lib/benefitDeductions'
-import { employeeHours, computeEmployeePay } from '../lib/payrollEngine'
+import { employeeHours, computeEmployeePay, commissionCarryFrom, COMMISSION_CARRY_DAYS } from '../lib/payrollEngine'
 import { loadPayrollPeriod, periodTimeOffRows } from '../lib/payrollLoader'
 import { buildRunPayload } from '../lib/payrollRun'
 import { postflightReport } from '../lib/payrollPostflight'
@@ -2534,11 +2534,15 @@ export default function Payroll() {
           const setterRows = data.leadCommissions.details || []
           // Commissions: in this payroll unless held (20261023230000); the
           // "ready" side is what the office held back.
-          const setterReadyRows = setterRows.filter(c => c.held_from_payroll)
-          const setterQueuedRows = setterRows.filter(c => !c.held_from_payroll)
-          const repElig = repCommissions.filter(r => r.employee_id === emp.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= psStr && (r.earned_at || '').slice(0, 10) <= peStr)
-          const repReadyRows = repElig.filter(r => r.held_from_payroll)
-          const repQueuedRows = repElig.filter(r => !r.held_from_payroll)
+          const setterInRun = (c) => !c.held_from_payroll && (c.queued_for_payroll || !c.created_at || (c.created_at || '').slice(0, 10) >= commissionCarryFrom(getCurrentPeriod().periodStart))
+          const setterReadyRows = setterRows.filter(c => !setterInRun(c))
+          const setterQueuedRows = setterRows.filter(setterInRun)
+          // Everything earned up to the period end and still unpaid: owed is owed.
+          const repElig = repCommissions.filter(r => r.employee_id === emp.id && r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) <= peStr)
+          const carryFrom = commissionCarryFrom(getCurrentPeriod().periodStart)
+          const repInRun = (r) => !r.held_from_payroll && (r.queued_for_payroll || (r.earned_at || '').slice(0, 10) >= carryFrom)
+          const repReadyRows = repElig.filter(r => !repInRun(r))
+          const repQueuedRows = repElig.filter(repInRun)
           const readyToAdd = sumAmt(bonusReadyRows) + sumAmt(setterReadyRows) + sumAmt(repReadyRows)
           const inPayroll = sumAmt(bonusQueuedRows) + sumAmt(setterQueuedRows) + sumAmt(repQueuedRows)
           const bonusHeld = sumAmt(bonuses.filter(b => b.status === 'accrued' && b.needs_verification))
@@ -2774,9 +2778,12 @@ export default function Payroll() {
             )}
             {(() => {
               const details = data.leadCommissions.details || []
-              // Payable in the period is in this payroll unless held (20261023230000).
-              const readyRows = details.filter(c => c.held_from_payroll)
-              const queuedRows = details.filter(c => !c.held_from_payroll)
+              // Payable is in this payroll unless held (20261023230000), or
+              // older than the carry window and not put in.
+              const setterCarryFrom = commissionCarryFrom(getCurrentPeriod().periodStart)
+              const setterInRun = (c) => !c.held_from_payroll && (c.queued_for_payroll || !c.created_at || (c.created_at || '').slice(0, 10) >= setterCarryFrom)
+              const readyRows = details.filter(c => !setterInRun(c))
+              const queuedRows = details.filter(setterInRun)
               const readyTot = readyRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
               const queuedTot = queuedRows.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0)
               return (
@@ -2834,7 +2841,8 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) markCommiss
           const { periodStart: rps, periodEnd: rpe } = getCurrentPeriod()
           const psStr = rps.toISOString().split('T')[0], peStr = rpe.toISOString().split('T')[0]
           const mine = repCommissions.filter(r => r.employee_id === emp.id)
-          const ready = mine.filter(r => r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) >= psStr && (r.earned_at || '').slice(0, 10) <= peStr)
+          // Everything earned up to the period end and still unpaid: owed is owed.
+          const ready = mine.filter(r => r.payment_status === 'earned' && (r.earned_at || '').slice(0, 10) <= peStr)
           const paid = mine.filter(r => r.payment_status === 'paid')
           const readyTotal = ready.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
           const paidTotal = paid.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
@@ -2849,20 +2857,29 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) markCommiss
                 {ready.length} payment{ready.length === 1 ? '' : 's'} this period · frozen when earned, so the amount never changes under a later invoice edit.
               </p>
               {(() => {
-                // Earned in the period is in this payroll unless held (20261023230000).
+                // Earned up to the period end is in this payroll unless held
+                // (20261023230000); older than the carry window it waits for
+                // somebody to put it in, so a forgotten row from months ago
+                // does not ride along unannounced.
+                const carryFrom = commissionCarryFrom(rps)
+                const inRun = (r) => !r.held_from_payroll && (r.queued_for_payroll || (r.earned_at || '').slice(0, 10) >= carryFrom)
                 const readyRows = ready.filter(r => r.held_from_payroll)
-                const queuedRows = ready.filter(r => !r.held_from_payroll)
+                const staleRows = ready.filter(r => !r.held_from_payroll && !inRun(r))
+                const queuedRows = ready.filter(inRun)
                 const readyTot = readyRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                const staleTot = staleRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
                 const queuedTot = queuedRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 16, fontWeight: 600, color: '#16a34a' }}>In this payroll: {fmt(queuedTot)}</span>
                       {readyTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#f59e0b' }}>Held back: {fmt(readyTot)}</span>}
+                      {staleTot > 0 && <span style={{ fontSize: 16, fontWeight: 600, color: '#b45309' }}>Older than {COMMISSION_CARRY_DAYS} days, not on this run: {fmt(staleTot)}</span>}
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         {readyRows.length > 0 && <button onClick={() => queueRep(readyRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: theme.accent, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Put {fmt(readyTot)} back in payroll</button>}
+                        {staleRows.length > 0 && <button onClick={() => queueRep(staleRows, true)} style={{ padding: '6px 14px', borderRadius: 8, border: 'none', backgroundColor: '#b45309', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Put the older {fmt(staleTot)} in this payroll</button>}
                         {queuedRows.length > 0 && <button onClick={() => queueRep(queuedRows, false)} style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${theme.border}`, background: 'none', color: theme.textMuted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Hold back from payroll</button>}
                         {ready.length > 0 && <button onClick={() => { if (confirm(`Record ${fmt(readyTot + queuedTot)} of ${emp.name}'s commissions as ALREADY PAID outside JobScout?
 
