@@ -14,7 +14,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
-  FocusLayout, FocusLayoutContainer, CarouselLayout,
   useTracks, useLocalParticipant, ControlBar,
 } from '@livekit/components-react'
 import { Track, ScreenSharePresets, VideoPresets } from 'livekit-client'
@@ -660,16 +659,52 @@ function Stage({ expanded, setExpanded }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sharing])
 
-  // Somebody sharing their screen is the reason everyone is looking: it takes
-  // the room, and the faces go into a strip beside it.
+  // A shared screen takes the whole stage, for everybody including whoever
+  // is sharing it.
+  //
+  // Bryce, 2026-10-26: "sharing screen doesn't work real well, it's a small
+  // guy for the other user that she can't click on, and I can't see what I'm
+  // sharing."
+  //
+  // Both were FocusLayoutContainer. It is a CSS grid that divides its space
+  // between a focused tile and a carousel of the rest, so the share arrived
+  // as ONE CELL rather than as the thing everyone turned to look at — small,
+  // with nothing to click to make it bigger. Hand-rolled here instead, so
+  // the share fills the stage and the faces sit over it as thumbnails.
+  //
+  // object-fit: contain, not cover. A screen is the wrong shape for the box
+  // it lands in, and cover CROPS — you would lose the edges of the very
+  // spreadsheet you are being shown. Letterboxing is correct for a screen
+  // even though it is wrong for a face.
   if (share) {
+    const faces = cams.slice(0, 4)
     return (
-      <FocusLayoutContainer style={{ height: '100%' }}>
-        <FocusLayout trackRef={share} />
-        {expanded && cams.length > 0 && (
-          <CarouselLayout tracks={cams}><ParticipantTile /></CarouselLayout>
+      <div className="cf-share-stage" style={{ position: 'relative', height: '100%', background: '#000', display: 'flex' }}>
+        <ParticipantTile trackRef={share} style={{ flex: 1, minWidth: 0 }} />
+        {faces.length > 0 && (
+          <div style={{
+            position: 'absolute', right: 8, top: 8, zIndex: 2,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            {faces.map((t, i) => (
+              <span
+                key={(t.participant?.identity || 'p') + i}
+                style={{
+                  width: expanded ? 112 : 70, height: expanded ? 84 : 52,
+                  borderRadius: 7, overflow: 'hidden', display: 'flex',
+                  border: '1px solid rgba(255,255,255,0.45)', background: '#000',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.45)',
+                }}
+              >
+                <ParticipantTile trackRef={t} style={{ flex: 1, minWidth: 0 }} />
+              </span>
+            ))}
+          </div>
         )}
-      </FocusLayoutContainer>
+        <style>{`
+          .cf-share-stage > .lk-participant-tile video { object-fit: contain !important; background: #000; }
+        `}</style>
+      </div>
     )
   }
 

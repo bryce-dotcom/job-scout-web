@@ -162,7 +162,10 @@ function GuestStage() {
   const selfIsOnStage = !share && remotes.length === 0
 
   return (
-    <div style={{ position: 'relative', height: '100%' }}>
+    <div className="cf-share-stage" style={{ position: 'relative', height: '100%' }}>
+      {/* contain, not cover: a shared screen cropped to fill the box
+          loses the edges of the thing you are being shown. */}
+      <style>{`.cf-share-stage .lk-participant-tile video { object-fit: ${share ? 'contain' : 'cover'} !important; background: #000; }`}</style>
       <GridLayout tracks={stage} style={{ height: '100%' }}>
         <ParticipantTile />
       </GridLayout>
