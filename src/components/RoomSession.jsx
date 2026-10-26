@@ -404,7 +404,19 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
               // construction instead: capture at 540p rather than 720p, so
               // there is simply less to send and nothing to renegotiate. A
               // dock-sized tile cannot tell the difference.
-              adaptiveStream: false,
+              // Adjust to SIZE: ask for the layer the tile on screen actually
+              // needs, so a 340px dock pulls h180 and a maximised window
+              // pulls h720. Without it, 720p is fetched even for a thumbnail.
+              //
+              // This is back on having been off since 10-23, and the honest
+              // reason it went off is that I changed TWO things at once when
+              // the audio went bad — this and the capture resolution — and
+              // then blamed this one. Picking a published layer is cheap;
+              // what is expensive is re-encoding, which is dynacast's job.
+              // So this returns and dynacast stays off, which separates the
+              // two for the first time. If the stutter comes back, this is
+              // the line to pull.
+              adaptiveStream: true,
               dynacast: false,
               // Screen share ships at 1080p FIFTEEN frames a second by
               // default, which is why a scrolling spreadsheet judders.
@@ -419,7 +431,18 @@ function RoomDock({ theme, slug, ticket, status, message, expanded, setExpanded,
                 // picture nobody can tell apart in a dock. Video is the thing
                 // that makes audio stutter on a domestic connection, and the
                 // cheapest fix is to send less of it.
-                resolution: VideoPresets.h540,
+                // 720p is the TOP layer, not the only one.
+                //
+                // Bryce, 2026-10-26: "the pixel is grainy, can it auto adjust
+                // the clarity according to the connection or the size?"
+                //
+                // It already adjusts to the CONNECTION — simulcast is on by
+                // default, so every camera publishes h180 and h360 alongside
+                // this, and the server forwards whichever layer the receiver
+                // can actually take. Capping capture at 540p did not make
+                // that smarter, it just removed the sharp layer, so a tile
+                // filling a maximised window had nothing good to show.
+                resolution: VideoPresets.h720,
                 // The camera we already proved opens, rather than whatever
                 // Windows calls "default".
                 ...(cameraId ? { deviceId: cameraId } : {}),

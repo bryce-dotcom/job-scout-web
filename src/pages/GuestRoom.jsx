@@ -70,10 +70,10 @@ export default function GuestRoom() {
           video={cameraId ? true : false}
           audio
           options={{
-            adaptiveStream: false,
+            adaptiveStream: true,
             dynacast: false,
             videoCaptureDefaults: {
-              resolution: VideoPresets.h540,
+              resolution: VideoPresets.h720,
               ...(cameraId ? { deviceId: cameraId } : {}),
             },
           }}
