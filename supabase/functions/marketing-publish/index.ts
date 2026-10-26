@@ -340,15 +340,23 @@ serve(async (req) => {
       const live: Record<string, unknown>[] = []
       try {
         const stale = new Date(Date.now() - 20 * 3600000).toISOString()
-        let liveQ = sb.from('marketing_posts').select('id, ayrshare_id, metrics_at').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null)
-          .or(`metrics_at.is.null,metrics_at.lt.${stale}`).order('posted_at', { ascending: false }).limit(12)
+        // By native post id, one call per network: the request-id form answers
+        // "Post not found" for every one of our ids (2026-10-26). Google Business
+        // has no per-post numbers at the vendor; X is not in the cached read.
+        const LIVE_PLATFORMS = new Set(['youtube', 'tiktok', 'instagram', 'facebook', 'linkedin', 'threads', 'pinterest', 'reddit'])
+        let liveQ = sb.from('marketing_posts').select('id, ayrshare_id, metrics_at, post_urls').eq('company_id', companyId).eq('status', 'posted').not('ayrshare_id', 'is', null)
+          .or(`metrics_at.is.null,metrics_at.lt.${stale}`).order('posted_at', { ascending: false }).limit(6)
         liveQ = brandId ? liveQ.eq('brand', brandId) : liveQ.is('brand', null)
         const { data: due } = await liveQ
         for (const p of due || []) {
-          const r = await up('GET', `/uploadposts/post-analytics/${encodeURIComponent(p.ayrshare_id)}`)
-          // What came back, kept on the reply: the cache fills only from these reads, so a silent miss here is the whole bug.
-          live.push({ post_id: p.id, ok: r.ok, status: r.status, platforms: Object.keys(r.data?.post_metrics || r.data?.posts || {}).slice(0, 6), error: r.ok ? null : upError(r.data), sample: JSON.stringify(r.data || '').slice(0, 240) })
-          if (!r.ok) console.warn('[marketing-publish] live analytics', p.id, upError(r.data))
+          for (const u of (p.post_urls || []) as any[]) {
+            if (!u?.id || u.status !== 'success' || !LIVE_PLATFORMS.has(String(u.platform))) continue
+            const lq = new URLSearchParams({ platform_post_id: String(u.id), platform: String(u.platform), user: username })
+            const r = await up('GET', `/uploadposts/post-analytics?${lq}`)
+            // What came back, kept on the reply: the cache fills only from these reads, so a silent miss here is the whole bug.
+            live.push({ post_id: p.id, platform: u.platform, ok: r.ok, status: r.status, error: r.ok ? null : upError(r.data), sample: JSON.stringify(r.data?.post?.metrics ?? r.data?.metrics ?? r.data ?? '').slice(0, 160) })
+            if (!r.ok) console.warn('[marketing-publish] live analytics', p.id, u.platform, upError(r.data))
+          }
         }
       } catch (e) { console.warn('[marketing-publish] live analytics pass failed (non-fatal):', (e as Error)?.message) }
 
