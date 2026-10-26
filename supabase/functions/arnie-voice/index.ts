@@ -71,7 +71,8 @@ Deno.serve(async (req) => {
   // ── A question, from the Shortcut ───────────────────────────────────────
   if (!looksLikeVoiceKey(voiceKey)) return spoken('This shortcut has no voice key. Make one in JobScout, under Arnie, Settings.', true)
   const [k] = await get(`arnie_voice_keys?select=id,company_id,employee_id,uses_today,uses_day,revoked_at&key_hash=eq.${await hashVoiceKey(voiceKey)}&limit=1`)
-  if (!k || k.revoked_at) return spoken('That voice key has been turned off. Make a new one in JobScout, under Arnie, Settings.', true)
+  if (!k) return spoken('JobScout does not know that voice key. Check it was pasted whole, or make a new one under Arnie, Settings.', true)
+  if (k.revoked_at) return spoken('That voice key has been turned off. Make a new one in JobScout, under Arnie, Settings.', true)
   const [emp] = await get(`employees?select=${EMP_SEL}&id=eq.${k.employee_id}&company_id=eq.${k.company_id}&active=eq.true&limit=1`)
   if (!emp) return spoken('That voice key belongs to someone who is no longer active in JobScout.', true)
 

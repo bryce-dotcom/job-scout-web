@@ -42,7 +42,8 @@ describe('the wiring', () => {
   it('a Shortcut has no login: the gateway lets it through and the key decides', () => {
     expect(read('supabase/config.toml')).toMatch(/\[functions\.arnie-voice\]\nverify_jwt = false/)
     expect(fn).toMatch(/key_hash=eq\.\$\{await hashVoiceKey\(voiceKey\)\}/)
-    expect(fn).toMatch(/if \(!k \|\| k\.revoked_at\)/)
+    expect(fn).toMatch(/if \(!k\) return spoken\('JobScout does not know that voice key/)
+    expect(fn).toMatch(/if \(k\.revoked_at\) return spoken\('That voice key has been turned off/)
     expect(fn).toMatch(/active=eq\.true/)
   })
   it('the key actions need the person signed in, and act only on their own keys', () => {
