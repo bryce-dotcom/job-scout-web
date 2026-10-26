@@ -68,6 +68,19 @@ describe('buildRunPayload', () => {
 const here = dirname(fileURLToPath(import.meta.url))
 describe('the page', () => {
   const payroll = readFileSync(resolve(here, '../..', 'src/pages/Payroll.jsx'), 'utf8')
+  it('pays the people on the run, not the whole active list, so one side of the house can be run alone', () => {
+    // Oct 2026: Gusto paid the W-2 people for two periods, nobody paid the
+    // contractors; a run for everyone would have paid the W-2 wages twice.
+    expect(payroll).toMatch(/const \[runScope, setRunScope\] = useState\('all'\)/)
+    expect(payroll).toMatch(/const runEmployees = runScope === 'w2'/)
+    const run = payroll.slice(payroll.indexOf('const handleRunPayroll = async'), payroll.indexOf('const cardStyle = {'))
+    expect(run).toMatch(/const paystubs = runEmployees\.map/)
+    expect(run).toMatch(/employees: runEmployees,/)
+    expect(run).not.toMatch(/activeEmployees/)
+    expect(payroll).toMatch(/employees: runEmployees, employeePayData: runPayData/)   // the guards see the same people
+    expect(payroll).toMatch(/Who is on this run\?/)
+  })
+
   it('runs payroll through the one function and no longer writes the pieces itself', () => {
     expect(payroll).toMatch(/supabase\.rpc\('process_payroll_run', \{ p: payload \}\)/)
     const run = payroll.slice(payroll.indexOf('const handleRunPayroll = async'), payroll.indexOf('const cardStyle = {'))

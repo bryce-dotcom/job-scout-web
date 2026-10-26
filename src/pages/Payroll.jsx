@@ -538,6 +538,11 @@ export default function Payroll() {
   // open of the modal, never remembered.
   const [guardAck, setGuardAck] = useState({ duplicate: false, warnings: false })
   const [payMethod, setPayMethod] = useState('check')
+  // Who this run pays: everyone, as always; or one side of the house when
+  // the other side was paid elsewhere. Oct 2026: Gusto paid HHH's W-2 people
+  // for two periods while nobody paid the contractors, and running the
+  // period for everyone would have paid the W-2 wages twice.
+  const [runScope, setRunScope] = useState('all')   // 'all' | 'w2' | '1099'
   // Bryce, 2026-10-10: "as good as Gusto." Gusto's employees get their stub on
   // payday. Email is on by default; text needs the company's Twilio.
   const [sendStubs, setSendStubs] = useState({ email: true, sms: false })
@@ -1715,7 +1720,13 @@ export default function Payroll() {
   // the file carries 19 grandfathered conditional hooks — a 20th is the
   // white screen the ship guard exists to stop. One pass over a few dozen
   // employees is nothing next to what this page does per render.
-  const runTotals = summarizePayrollRun(employeePayData)
+  // The people on THIS run (runScope), and their pay. Everything the run
+  // writes, checks or sums reads these two, never the whole active list.
+  const runEmployees = runScope === 'w2' ? activeEmployees.filter(e => e.tax_classification !== '1099')
+    : runScope === '1099' ? activeEmployees.filter(e => e.tax_classification === '1099')
+      : activeEmployees
+  const runPayData = runScope === 'all' ? employeePayData : Object.fromEntries(runEmployees.map(e => [e.id, employeePayData[e.id]]).filter(([, d]) => d))
+  const runTotals = summarizePayrollRun(runPayData)
 
   const totalCommissions = useMemo(() =>
     Object.values(employeePayData).reduce((sum, d) => sum + d.commissionPay, 0),
@@ -1774,18 +1785,18 @@ export default function Payroll() {
   // Only the people with something to pay this period can block the run. A
   // row with no pay type and no hours (a login, a vendor typed in as a
   // person) is listed on the Payroll setup page, not in front of Process.
-  const payableIds = new Set(activeEmployees.filter(e => {
+  const payableIds = new Set(runEmployees.filter(e => {
     const d = employeePayData[e.id]
     return d && ((d.grossPay || 0) > 0 || ((d.regularHours || 0) + (d.overtimeHours || 0) + (d.ptoHours || 0)) > 0)
   }).map(e => e.id))
   const setupProblems = payrollSetupProblems({
-    company, payrollConfig, employees: activeEmployees,
+    company, payrollConfig, employees: runEmployees,
     w4Acknowledged: payrollConfig.w4_acknowledged || {},
     payableIds,
   })
   const periodStartStr = localDateStr(periodStart), periodEndStr = localDateStr(periodEnd)
   const runGuards = payrollRunGuards({
-    employees: activeEmployees, employeePayData,
+    employees: runEmployees, employeePayData: runPayData,
     periodPunches: timeEntries, openPunches: openEntries,
     priorRuns,
     periodStart: periodStartStr, periodEnd: periodEndStr,
@@ -1799,7 +1810,7 @@ export default function Payroll() {
     repCommissions,
   })
   const hardBlocks = runGuards.blocks.filter(b => !(b.overridable && guardAck.duplicate))
-  const canProcess = setupProblems.length === 0 && hardBlocks.length === 0 && (runGuards.warnings.length === 0 || guardAck.warnings)
+  const canProcess = runEmployees.length > 0 && setupProblems.length === 0 && hardBlocks.length === 0 && (runGuards.warnings.length === 0 || guardAck.warnings)
 
   // A missing W-4 is allowed (withhold as single, the IRS rule) once a
   // person has said so for that employee. Remembered in payroll_config.
@@ -2197,7 +2208,7 @@ export default function Payroll() {
     setRunningPayroll(true)
     const payDate = runPayDate
     try {
-      const paystubs = activeEmployees.map(emp => {
+      const paystubs = runEmployees.map(emp => {
         const data = employeePayData[emp.id]
         const t = data?.tax || {}
         return {
@@ -2246,7 +2257,7 @@ export default function Payroll() {
       //    nothing is paid twice next run and no stub exists without its run.
       //    Salary-or-commission: the rows weighed are settled by outcome.
       const settle = []
-      for (const emp of activeEmployees) {
+      for (const emp of runEmployees) {
         if (!paysGreaterOf(emp)) continue
         const data = calculateFullPay(emp)
         const rows = data?.weighedCommissionRows
@@ -2258,19 +2269,19 @@ export default function Payroll() {
         companyId,
         periodStart, periodEnd, payDate,
         createdBy: user?.id, paidBy: adminEmp?.id || null,
-        totalGross: totalPayroll,
-        employees: activeEmployees,
+        totalGross: runEmployees.reduce((s, e) => s + (employeePayData[e.id]?.grossPay || 0), 0),
+        employees: runEmployees,
         payrollConfig,
         stubs: paystubs,
         ptoDaysFor: (id) => employeePayData[id]?.ptoDays || 0,
         settle,
         // The commission rows the engine paid (earned in the period, not held).
-        paidCommissionRows: activeEmployees.reduce((acc, emp) => {
+        paidCommissionRows: runEmployees.reduce((acc, emp) => {
           const rows = employeePayData[emp.id]?.paidCommissionRows
           if (rows) { acc.rep.push(...(rows.rep || [])); acc.lead.push(...(rows.lead || [])) }
           return acc
         }, { rep: [], lead: [] }),
-        liabilities: aggregateTaxLiabilities({ companyId, payrollRunId: null, periodStart, periodEnd, payDate, employees: activeEmployees, employeePayData, company }),
+        liabilities: aggregateTaxLiabilities({ companyId, payrollRunId: null, periodStart, periodEnd, payDate, employees: runEmployees, employeePayData, company }),
       })
       const { data: result, error: runError } = await supabase.rpc('process_payroll_run', { p: payload })
       if (runError) throw runError
@@ -2293,7 +2304,7 @@ export default function Payroll() {
       //    what was computed and the ledgers it was looking at. Exceptions
       //    first, in the message below and in a notice to every HR user. A
       //    payroll is not done until this says zero.
-      const report = postflightReport({ payload, result, employees: activeEmployees, ledgerBonuses, repCommissions, leadCommissions, priorRuns })
+      const report = postflightReport({ payload, result, employees: runEmployees, ledgerBonuses, repCommissions, leadCommissions, priorRuns })
       const reportNote = '\n\nReconciliation: ' + (report.exceptions.length ? `${report.exceptions.length} exception(s)\n  • ${report.exceptions.join('\n  • ')}` : 'no exceptions')
       try {
         const hr = employees.filter(e => e.active !== false && (e.has_hr_access || e.is_admin))
@@ -5488,7 +5499,7 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                 textAlign: 'center', marginBottom: '20px'
               }}>
                 <div style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '4px' }}>
-                  {activeEmployees.length} Employees
+                  {runEmployees.length} {runScope === '1099' ? 'Contractors' : 'Employees'}{runScope === 'w2' ? ' (W-2 only)' : runScope === '1099' ? ' (1099 only)' : ''}
                 </div>
                 <div style={{ fontSize: '32px', fontWeight: '700', color: '#22c55e' }}>{fmt(runTotals.totalCost)}</div>
                 <div style={{ fontSize: '13px', color: theme.textMuted }}>Total cost, including employer payroll tax</div>
@@ -5515,6 +5526,31 @@ To pay through JobScout instead, cancel and use "Add to payroll".`)) handleBonus
                   ))}
                 </div>
               </div>
+
+              {/* Who is on this run. Everyone is the default and the normal
+                  case. One side only is for a period the other side was paid
+                  for elsewhere (Oct 2026: Gusto paid the W-2 people for two
+                  periods and nobody paid the contractors); running everyone
+                  would pay the W-2 wages twice. The count, the totals, the
+                  gate and the guards above all follow this choice. */}
+              {activeEmployees.some(e => e.tax_classification === '1099') && activeEmployees.some(e => e.tax_classification !== '1099') && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>Who is on this run?</div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[['all', 'Everyone'], ['w2', 'W-2 employees only'], ['1099', 'Contractors (1099) only']].map(([value, label]) => (
+                      <label key={value} style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '8px 12px', border: `1px solid ${runScope === value ? theme.accent : theme.border}`, borderRadius: '10px', cursor: 'pointer', fontSize: '13px', color: theme.text, backgroundColor: runScope === value ? theme.accentBg || 'rgba(90,99,73,0.08)' : 'transparent' }}>
+                        <input type="radio" name="runScope" value={value} checked={runScope === value} onChange={() => setRunScope(value)} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {runScope !== 'all' && (
+                    <div style={{ fontSize: '12px', color: '#b45309', marginTop: '8px', lineHeight: 1.4 }}>
+                      Only for a period the {runScope === 'w2' ? 'contractors' : 'W-2 employees'} were already paid for some other way. The {runScope === 'w2' ? 'contractors' : 'W-2 employees'} get no stub from this run and their hours, salary and commissions stay owed.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* How will you pay? Neither option moves money from here: checks
                   are written by hand; direct deposit is the ACH file the Inbox
