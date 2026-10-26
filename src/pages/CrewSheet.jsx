@@ -113,7 +113,7 @@ export default function CrewSheet() {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0 }}>
                   <a href={`/jobs/${j.id}`} style={{ fontSize: 17, fontWeight: 700, color: theme.text, textDecoration: 'none' }}>{j.title}</a>
-                  <div style={{ fontSize: 13, color: theme.textMuted }}>{j.job_id} · {j.status}</div>
+                  <div style={{ fontSize: 13, color: theme.textMuted }}>{[j.job_id, j.status].filter(Boolean).join(' · ')}</div>
                 </div>
                 <div style={{ fontSize: 13, color: theme.textSecondary, textAlign: isMobile ? 'left' : 'right' }}>
                   <div><b>{j.day ? new Date(`${j.day}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }) : ''}</b>{j.all_day ? ' · all day' : <> {at(j.start, { hour: 'numeric', minute: '2-digit' })}{j.end ? `–${at(j.end, { hour: 'numeric', minute: '2-digit' })}` : ''}</>}</div>
