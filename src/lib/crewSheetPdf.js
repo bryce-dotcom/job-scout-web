@@ -108,7 +108,10 @@ export function generateCrewSheetPdf(sheet, { company = '' } = {}) {
     const colW = W / 3, top = y, ends = []
     y = top; label('WHEN & WHO')
     y += 4.4; doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-    para(`${day(j.start, tz)} ${time(j.start, tz)}${j.end ? `–${time(j.end, tz)}` : ''}`, margin, colW - 4)
+    // A day with no time is a date, not 6 pm the evening before.
+    para(j.all_day && j.day
+      ? `${new Date(`${j.day}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })} · all day`
+      : `${day(j.start, tz)} ${time(j.start, tz)}${j.end ? `–${time(j.end, tz)}` : ''}`, margin, colW - 4)
     para(j.crew.length ? j.crew.join(', ') : 'No crew assigned', margin, colW - 4)
     if (j.lead) para(`Lead: ${j.lead}`, margin, colW - 4)
     ends.push(y)

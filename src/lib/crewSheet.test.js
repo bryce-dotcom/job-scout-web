@@ -149,3 +149,15 @@ describe('the wiring', () => {
     expect(read('supabase/functions/_shared/crewSheetData.ts')).toMatch(/import \{ parseCrew, isOnCrew \} from '\.\/crewRoster\.ts'/)
   })
 })
+
+// A stored midnight UTC is a date, not 6 pm the evening before (demo jobs, 2026-10-26).
+import { scheduleDay, isDateOnly } from '../../supabase/functions/_shared/crewSheetData.ts'
+describe('the day a job is on', () => {
+  it('a date-only schedule stays on its own day; a real time is read in the zone', () => {
+    expect(isDateOnly('2026-08-19T00:00:00+00:00')).toBe(true)
+    expect(scheduleDay('2026-08-19T00:00:00+00:00', 'America/Denver')).toBe('2026-08-19')
+    expect(scheduleDay('2026-10-26T15:30:00+00:00', 'America/Denver')).toBe('2026-10-26')
+    expect(scheduleDay('2026-10-27T03:30:00+00:00', 'America/Denver')).toBe('2026-10-26')
+    expect(scheduleDay(null, 'America/Denver')).toBe(null)
+  })
+})

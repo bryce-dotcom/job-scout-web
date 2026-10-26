@@ -116,7 +116,7 @@ export default function CrewSheet() {
                   <div style={{ fontSize: 13, color: theme.textMuted }}>{j.job_id} · {j.status}</div>
                 </div>
                 <div style={{ fontSize: 13, color: theme.textSecondary, textAlign: isMobile ? 'left' : 'right' }}>
-                  <div><b>{at(j.start, { weekday: 'short', month: 'short', day: 'numeric' })}</b> {at(j.start, { hour: 'numeric', minute: '2-digit' })}{j.end ? `–${at(j.end, { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
+                  <div><b>{j.day ? new Date(`${j.day}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }) : ''}</b>{j.all_day ? ' · all day' : <> {at(j.start, { hour: 'numeric', minute: '2-digit' })}{j.end ? `–${at(j.end, { hour: 'numeric', minute: '2-digit' })}` : ''}</>}</div>
                   <div>{j.crew.length ? j.crew.join(', ') : <span style={{ color: '#9a3b2e' }}>No crew assigned</span>}</div>
                 </div>
               </div>

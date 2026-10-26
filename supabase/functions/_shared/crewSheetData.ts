@@ -35,14 +35,38 @@ export type SheetOpts = {
   crew?: string | null
 }
 
+/**
+ * The calendar day a schedule value falls on. A stored midnight UTC is a DATE
+ * with no time (the demo's jobs, and any job scheduled by day): read in the
+ * company's zone it would be 6 pm the evening before, and the job would drop
+ * off its own day. Anything else is a real time, read in the zone.
+ */
+export function scheduleDay(iso: unknown, tz: string): string | null {
+  const s = String(iso || '')
+  if (!s) return null
+  if (isDateOnly(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d)
+}
+export const isDateOnly = (iso: unknown) => /T00:00:00(\.0+)?(\+00(:?00)?|Z)$/.test(String(iso || ''))
+
 export async function loadCrewSheet(get: Get, companyId: number, o: SheetOpts) {
-  const start = dayStartUtc(o.from, o.tz).toISOString()
-  const next = new Date(Date.parse(`${o.to}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
-  const end = dayStartUtc(next, o.tz).toISOString()
+  // A day either side, then each job is placed on its own calendar days.
+  const before = new Date(Date.parse(`${o.from}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+  const after = new Date(Date.parse(`${o.to}T12:00:00Z`) + 2 * 86_400_000).toISOString().slice(0, 10)
+  const start = dayStartUtc(before, o.tz).toISOString()
+  const end = dayStartUtc(after, o.tz).toISOString()
 
   // Jobs on the schedule in the range: starting in it, or running through it.
   let jobs = await get(`jobs?select=id,job_id,job_title,status,business_unit,customer_id,customer_name,business_name,job_address,start_date,end_date,assigned_team,job_lead_id,salesperson_id,phone,email,allotted_time_hours,quote_id,lead_id,details,parts_status&company_id=eq.${companyId}&start_date=lt.${end}&or=(end_date.gte.${start},and(end_date.is.null,start_date.gte.${start}))&status=not.in.${CLOSED}&order=start_date&limit=200`)
-  jobs = (Array.isArray(jobs) ? jobs : []).filter((j) => !DONE.test(String(j.status || '').trim()))
+  jobs = (Array.isArray(jobs) ? jobs : [])
+    .filter((j) => !DONE.test(String(j.status || '').trim()))
+    .filter((j) => {
+      const s = scheduleDay(j.start_date, o.tz)
+      const e = scheduleDay(j.end_date, o.tz)
+      const last = e && s && e >= s ? e : s
+      return !!s && s <= o.to && !!last && last >= o.from
+    })
   if (o.onlyFor) jobs = jobs.filter((j) => isOnCrew(j.assigned_team, o.onlyFor))
   if (o.crew) jobs = jobs.filter((j) => isOnCrew(j.assigned_team, { name: o.crew }))
   const base = { from: o.from, to: o.to, tz: o.tz, reach: { ladderMaxFt: LADDER_MAX_FT, scissorMaxFt: SCISSOR_MAX_FT } }
@@ -108,6 +132,8 @@ export async function loadCrewSheet(get: Get, companyId: number, o: SheetOpts) {
       id: j.id, job_id: j.job_id, title: j.job_title, status: j.status, business_unit: j.business_unit,
       customer: j.business_name || j.customer_name, address: j.job_address,
       start: j.start_date, end: j.end_date, crew, lead: name(j.job_lead_id), sales: name(j.salesperson_id),
+      // A day with no time: show the date alone, never "6:00 PM the day before".
+      day: scheduleDay(j.start_date, o.tz), all_day: isDateOnly(j.start_date),
       contact: { name: cust?.name || null, phone: j.phone || cust?.phone || null, email: j.email || cust?.email || null },
       details: j.details || null,
       lines: out,
