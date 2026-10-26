@@ -92,7 +92,9 @@ export default function ArnieVoiceShortcut({ name = 'Jenny' }) {
             <li><b>Dictate Text</b> — Stop Listening: <i>After Pause</i>.</li>
             <li><b>Get Contents of URL</b> — paste the address below; tap <i>Show More</i>: Method <b>POST</b>; Headers: add <b>x-voice-key</b> = your key; Request Body <b>JSON</b>: add <b>text</b> = <i>Dictated Text</i>.</li>
             <li><b>Get Dictionary Value</b> — Get <b>Value</b> for <b>say</b> in <i>Contents of URL</i>.</li>
-            <li><b>If</b> <i>Dictionary Value</i> <b>has no value</b> → <b>Stop This Shortcut</b>; Otherwise → <b>Speak Text</b> <i>Dictionary Value</i> (turn on <i>Wait Until Finished</i>).</li>
+            <li><b>Speak Text</b> — <i>Dictionary Value</i> (turn on <i>Wait Until Finished</i>).</li>
+            <li><b>Get Dictionary Value</b> — Get <b>Value</b> for <b>end</b> in <i>Contents of URL</i>.</li>
+            <li><b>If</b> <i>Dictionary Value</i> <b>is</b> <b>yes</b> → <b>Stop This Shortcut</b>.</li>
           </ol>
         </li>
         <li>Shortcut details (ⓘ): turn on <b>Allow Running When Locked</b>.</li>

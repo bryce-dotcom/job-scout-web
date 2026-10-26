@@ -4,7 +4,7 @@
 // and POSTs it here with the person's voice key; it reads `say` aloud and
 // listens again, until they say thanks or go quiet.
 //
-//   POST  x-voice-key: jsv_…   { text }            → { say, done }
+//   POST  x-voice-key: jsv_…   { text }            → { say, end: 'yes'|'no', done }
 //   POST  (signed in, the app) { action: 'create_key', label? } → { key, hint }   (shown ONCE)
 //                              { action: 'list_keys' }          → { keys }
 //                              { action: 'revoke_key', id }     → { ok }
@@ -30,7 +30,9 @@ const cors = {
 }
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
 // A Shortcut speaks whatever comes back, so a failure is still a sentence.
-const spoken = (say: string, done = false) => json({ say, done })
+// `end` is the word "yes" or "no", not a boolean or an empty `say`: a Shortcut
+// can test a word for certain, and an empty text is not reliably "no value".
+const spoken = (say: string, done = false) => json({ say, done, end: done ? 'yes' : 'no' })
 
 const URL_ = Deno.env.get('SUPABASE_URL')!
 const KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -82,7 +84,7 @@ Deno.serve(async (req) => {
   await write(`arnie_voice_keys?id=eq.${k.id}`, 'PATCH', { uses_today: uses + 1, uses_day: today, last_used_at: new Date().toISOString() })
 
   const said = String(body.text || '').replace(/\s+/g, ' ').trim().slice(0, 2000)
-  if (isGoodbye(said)) return spoken('', true)
+  if (isGoodbye(said)) return spoken('Okay.', true)
 
   try {
     // The conversation: theirs from the last 15 minutes, or a new one.

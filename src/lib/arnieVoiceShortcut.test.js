@@ -59,6 +59,11 @@ describe('the wiring', () => {
     expect(fn).toMatch(/write\('ai_sessions', 'POST'[\s\S]{0,300}voice: true/)
     expect(fn).toMatch(/write\('ai_messages', 'POST'/)
   })
+  it('the end of a conversation is the word "yes", which a Shortcut can test for certain', () => {
+    expect(fn).toMatch(/json\(\{ say, done, end: done \? 'yes' : 'no' \}\)/)
+    expect(fn).toMatch(/if \(isGoodbye\(said\)\) return spoken\('Okay\.', true\)/)
+    expect(read('src/pages/agents/arnie/ArnieVoiceShortcut.jsx')).toMatch(/<b>If<\/b> <i>Dictionary Value<\/i> <b>is<\/b> <b>yes<\/b> → <b>Stop This Shortcut<\/b>/)
+  })
   it('a daily cap so a looping Shortcut cannot run up a bill', () => {
     expect(fn).toMatch(/if \(uses >= VOICE_DAILY_CAP\)/)
   })
