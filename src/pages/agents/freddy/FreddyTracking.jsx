@@ -8,7 +8,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   MapPin, RefreshCw, Truck, Fuel, Battery, Clock,
-  Navigation, Settings, AlertTriangle, Gauge
+  Navigation, AlertTriangle, Gauge
 } from 'lucide-react'
 
 const defaultTheme = {
@@ -281,7 +281,9 @@ export default function FreddyTracking() {
     marginBottom: '16px', boxShadow: theme.shadow
   }
 
-  // No auth token -- show setup prompt
+  // Nothing reporting yet. Not a configuration mistake the user can fix on a
+  // settings screen — there is no account to connect, only a tracker that has
+  // not been fitted or paired yet.
   if (!authToken) {
     return (
       <div style={{ padding: isMobile ? '16px' : '24px', maxWidth: '900px', margin: '0 auto' }}>
@@ -291,20 +293,13 @@ export default function FreddyTracking() {
         }}>
           <MapPin size={48} style={{ color: theme.textMuted, marginBottom: '16px' }} />
           <h2 style={{ fontSize: '18px', fontWeight: '700', color: theme.text, margin: '0 0 8px' }}>
-            GPS Tracking Not Configured
+            No Trackers Reporting Yet
           </h2>
-          <p style={{ fontSize: '14px', color: theme.textMuted, margin: '0 0 20px', maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto' }}>
-            Connect your Watchdog GPS account to start tracking your fleet vehicles in real time.
+          <p style={{ fontSize: '14px', color: theme.textMuted, margin: '0 0 20px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+            Live tracking shows up here once a Moto Watchdog tracker is fitted to one of your vehicles
+            and paired to it. There is no account to connect — send us the serial of each tracker and
+            the vehicle it is on, and we'll pair it.
           </p>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            padding: '10px 20px', borderRadius: '8px',
-            background: theme.accentBg, color: theme.accent,
-            fontSize: '14px', fontWeight: '600'
-          }}>
-            <Settings size={16} />
-            Go to Settings tab to configure
-          </div>
         </div>
       </div>
     )

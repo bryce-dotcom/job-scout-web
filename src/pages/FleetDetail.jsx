@@ -12,7 +12,7 @@ import { useFleetLifecycle } from '../hooks/useFleetLifecycle'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { supabase } from '../lib/supabase'
-import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, ShieldAlert, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink, Lock } from 'lucide-react'
+import { ArrowLeft, Truck, Wrench, Calendar, Plus, AlertTriangle, ShieldAlert, DollarSign, Clock, Settings, MapPin, Wifi, WifiOff, Fuel, Battery, Gauge, Link2, Unlink } from 'lucide-react'
 import { localDateStr, parseLocalDate } from '../lib/localDate'
 
 // Light theme fallback
@@ -98,21 +98,31 @@ export default function FleetDetail() {
 
   // Fetch GPS devices and live data
   const freddyAgent = getCompanyAgent('freddy-fleet')
-  const authToken = freddyAgent?.settings?.watchdog_auth_token
-  const trackerSlots = freddyAgent?.settings?.tracker_slots || 0
   const linkedDevices = freddyAgent?.settings?.linked_devices || []
 
+  // No token gate. This used to read settings.watchdog_auth_token and bail
+  // when it was empty — which it is for every company in production, because
+  // the field that wrote it never did anything. The effect of the gate was
+  // that the whole GPS section below never rendered and no tracker could be
+  // linked, including on assets that already had one and were reporting.
+  //
+  // watchdog-proxy resolves credentials server-side from the caller's company
+  // (tenant's own partner token, else the platform token, else the mirror) and
+  // ignores any token in the body, so there is nothing for the browser to
+  // hold. Ask for the devices and let it answer or refuse.
+  const canUseGps = hasAgent('freddy-fleet')
+
   useEffect(() => {
-    if (!authToken) return
+    if (!canUseGps) return
     fetchWatchdogDevices()
-  }, [authToken])
+  }, [canUseGps])
 
   const fetchWatchdogDevices = async () => {
-    if (!authToken) return
+    if (!canUseGps) return
     setGpsLoading(true)
     try {
       const { data, error } = await supabase.functions.invoke('watchdog-proxy', {
-        body: { action: 'devices', auth_token: authToken }
+        body: { action: 'devices' }
       })
       if (!error && data) {
         const devices = Array.isArray(data) ? data : data?.devices || data?.data || []
@@ -127,7 +137,7 @@ export default function FleetDetail() {
 
   // Fetch live GPS data for this asset's linked device
   useEffect(() => {
-    if (!authToken || !fleet.length) return
+    if (!canUseGps || !fleet.length) return
     const currentAsset = fleet.find(a => a.id === parseInt(id))
     if (!currentAsset?.gps_device_id) return
 
@@ -140,11 +150,6 @@ export default function FleetDetail() {
 
   const handleLinkDevice = async (deviceId) => {
     if (!deviceId) return
-    // Check tracker slot limit
-    if (linkedDevices.length >= trackerSlots) {
-      alert(`All ${trackerSlots} tracker slots are in use. Purchase more slots in Freddy Settings ($8/mo each).`)
-      return
-    }
     setLinkingDevice(true)
     try {
       // Update fleet record with GPS device ID
@@ -570,7 +575,7 @@ export default function FleetDetail() {
       </div>
 
       {/* GPS Tracking Section */}
-      {hasAgent('freddy-fleet') && authToken && (
+      {canUseGps && (
         <div style={{
           backgroundColor: theme.bgCard,
           borderRadius: '12px',
@@ -584,7 +589,7 @@ export default function FleetDetail() {
               <h2 style={{ fontSize: '16px', fontWeight: '700', color: theme.text, margin: 0 }}>GPS Tracking</h2>
             </div>
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
-              {linkedDevices.length}/{trackerSlots} slots used
+              {asset.gps_device_id ? 'Tracker linked' : 'No tracker linked'}
             </div>
           </div>
 
@@ -669,27 +674,14 @@ export default function FleetDetail() {
           ) : (
             /* Not linked — show device picker */
             <div>
-              {linkedDevices.length >= trackerSlots ? (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  padding: '16px', background: 'rgba(245,158,11,0.08)',
-                  borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)'
-                }}>
-                  <Lock size={20} style={{ color: '#f59e0b' }} />
-                  <div>
-                    <div style={{ fontWeight: '600', color: theme.text, fontSize: '14px' }}>All tracker slots used</div>
-                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                      Purchase more slots in Freddy Settings ($8/mo each) to link this vehicle.
-                    </div>
-                  </div>
-                </div>
-              ) : gpsLoading ? (
+              {gpsLoading ? (
                 <div style={{ textAlign: 'center', padding: '16px', color: theme.textMuted }}>
                   Loading available devices...
                 </div>
               ) : watchdogDevices.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '16px', color: theme.textMuted, fontSize: '14px' }}>
-                  No GPS devices found. Make sure your Moto Watchdog trackers are set up.
+                  No tracker available to link. Moto Watchdog trackers are registered and paired to a
+                  vehicle by JobScout when they are fitted — send us the serial and we'll connect it.
                 </div>
               ) : (
                 <div>
