@@ -47,6 +47,7 @@ const KIND_WORDS = {
   computer: 'described work on their computer he never did',
   figures: 'gave figures no lookup returned',
   guess: 'said an amount could not be read, then gave one anyway',
+  absence: 'said something was not in JobScout, or that he did not have it, before looking',
 }
 
 const APP = 'https://jobscout.appsannex.com'
@@ -70,7 +71,8 @@ function scoreboardOf({ since, messages = [], lastMessages = [], events = [], la
   return [
     { what: 'Times someone told him he was wrong', now: pushbacksOf(messages).length, before: pushbacksOf(lastMessages).length, better: 'down' },
     { what: '"That\'s wrong" taps under a reply', now: flags(messages), before: flags(lastMessages), better: 'down' },
-    { what: 'Claims the fact-check caught', now: events.length, before: lastEvents.length, better: 'down' },
+    { what: 'Claims the fact-check caught', now: events.filter((e) => e.kind !== 'gap').length, before: lastEvents.filter((e) => e.kind !== 'gap').length, better: 'down' },
+    { what: 'Questions he had no lookup for yet', now: events.filter((e) => e.kind === 'gap').length, before: lastEvents.filter((e) => e.kind === 'gap').length, better: 'down' },
     { what: 'Rules taught', now: week(rules), before: lastWeek(rules), better: 'up', note: `${rules.filter((r) => r.active).length} active` },
     { what: 'Lessons waiting for an admin', now: lessons.length, before: null },
     { what: 'Rules he follows in his nightly test', now: ran.filter((t) => t.last_passed === true).length, before: null, note: ran.length ? `of ${ran.length} tested` : 'none tested yet' },
@@ -121,7 +123,9 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
   const when = (iso) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) } catch { return iso } }
   const who = (email) => String(email || 'someone').split('@')[0].replace(/^./, (c) => c.toUpperCase())
 
-  const caught = events.map((e) => ({ when: e.created_at, who: e.employee_email, kind: e.kind, shown: !!e.shown, said: e.said, reply: e.reply }))
+  const caught = events.filter((e) => e.kind !== 'gap').map((e) => ({ when: e.created_at, who: e.employee_email, kind: e.kind, shown: !!e.shown, said: e.said, reply: e.reply }))
+  // "I can't look that up yet": not his mistake — a lookup to build.
+  const gaps = events.filter((e) => e.kind === 'gap').map((e) => ({ when: e.created_at, who: e.employee_email, said: e.said, reply: e.reply }))
 
   const unverified = [], gaveUp = []
   const pushback = pushbacksOf(messages)
@@ -138,7 +142,7 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
 
   const failed = failures.reduce((acc, f) => { const k = f.error_kind || 'other'; acc[k] = (acc[k] || 0) + 1; return acc }, {})
   const failedTotal = Object.values(failed).reduce((a, b) => a + b, 0)
-  const toLook = caught.length + unverified.length + pushback.length + gaveUp.length + failedTotal + broken.length
+  const toLook = caught.length + unverified.length + pushback.length + gaveUp.length + failedTotal + broken.length + gaps.length
 
   const people = new Set(messages.filter((m) => m.role === 'user').map((m) => m.email))
   const replies = messages.filter((m) => m.role === 'assistant').length
@@ -169,6 +173,7 @@ function buildReview({ companyName, tz = 'America/Denver', since, events = [], m
     // this is where a later change that undid it shows up.
     + section('Rules he broke in his nightly test', broken, (r) => `<b>${esc(clip(r.rule, 220))}</b><br><span style="color:#7d8a7f">Asked ${quote(r.question, 160)}${r.fails_in_a_row > 1 ? ` — failed ${r.fails_in_a_row} nights running` : ''}. ${esc(clip(r.why, 200))}</span>`)
     + (toLook ? `<p><b>${toLook} thing${toLook === 1 ? '' : 's'} worth a look.</b> Each one is a place someone may have been told something that was not true, or got nothing back.</p>` : '<p><b>Nothing to look at this week.</b> No caught claims, no unchecked figures, no pushback, no blank replies.</p>')
+    + section('Asked for something he cannot look up yet', gaps, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 160)} — a lookup to build, so the next answer is not "I can't look that up yet".`)
     + section('Caught by the fact-check', caught, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — he ${esc(KIND_WORDS[r.kind] || r.kind)}${r.shown ? ' <b>and they saw it before he took it back</b>' : ' (caught before they saw it)'}: ${quote(r.reply, 200)}`)
     + section('Figures he never looked up', unverified, (r) => `${esc(when(r.when))}, ${esc(who(r.who))} asked ${quote(r.said, 140)} — his answer had figures and the receipt says no lookups: ${quote(r.text, 220)}`)
     + section('Someone said he was wrong', pushback, (r) => `${esc(when(r.when))}, ${esc(who(r.who))}: ${quote(r.said, 160)}<br><span style="color:#7d8a7f">His reply before that: ${quote(r.prevText, 180)} — ${r.prevReceipt ? `receipt: ${esc(r.prevReceipt)}` : 'no receipt (before receipts, or the app was old)'}</span>`)

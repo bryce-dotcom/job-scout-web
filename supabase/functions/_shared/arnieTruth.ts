@@ -165,7 +165,26 @@ export function blamesTheApp(text: string): boolean {
     || /\b(the )?(app|feature|page|card|ui) (is|seems|appears) broken\b/i.test(t)
 }
 
-export type Fabrication = 'computer' | 'card' | 'figures' | 'email' | 'guess'
+export type Fabrication = 'computer' | 'card' | 'figures' | 'email' | 'guess' | 'absence'
+
+/**
+ * "It isn't in JobScout" — said about something that is. Bryce, 2026-10-27:
+ * asked whether a $15,000 pole barn was safe, Jenny said "I don't have your
+ * bank balance" and that payroll and cost of sales "aren't in it", with Books
+ * holding all three. A statement about what the SYSTEM lacks is a claim about
+ * their data, and it is only true once every lookup that could hold it has
+ * come back empty. Narrow on purpose: about JobScout or the app or the books,
+ * not "there are no overdue invoices".
+ */
+const ABSENCE = [
+  /\b(?:isn'?t|is not|aren'?t|are not)\s+(?:in|tracked in|logged in|recorded in|kept in|stored in|entered in)\s+(?:jobscout|the system|the app|it)\b/i,
+  /\b(?:jobscout|the system|the app)\s+(?:doesn'?t|does not|can'?t|cannot)\s+(?:have|track|record|keep|show|hold)\b/i,
+  /\bi\s+(?:don'?t|do not)\s+have\s+(?:your|the|any)\s+(?:bank|cash|balance|payroll|p&l|profit|costs?|expenses?|margin|books|financials?)\b/i,
+  /\btoo thin to be (?:your|the) real\b/i,
+]
+export function claimsAbsence(text: string): boolean {
+  return String(text || '').split(/(?<=[.!?\n])\s+/).some((s) => ABSENCE.some((re) => re.test(s)))
+}
 
 // ── Figures nobody looked up ────────────────────────────────────────────
 //
@@ -353,6 +372,16 @@ export function correctionFor(kind: Fabrication, seen = false, detail: string[] 
       'Then do one of these two things, and nothing else:',
       '1. CALL the query tool that answers it and give the real figures from its result.',
       '2. If no tool you have can answer it, say so in one line — never estimate, round up from a guess, or fill a breakdown with plausible numbers.',
+    ].join('\n')
+  }
+  if (kind === 'absence') {
+    return [
+      'STOP. You told them something is not in JobScout, or that you do not have it. That is a claim about THEIR data, and it is only true once every lookup that could hold it has come back empty.',
+      ...opensWith,
+      detail.length
+        ? `Then look now with the lookups that could hold it — you have ${detail.join(', ')} — and answer from what they return.`
+        : 'Then look now with every lookup that could hold it, and answer from what they return.',
+      'If none of your lookups can reach it, say exactly "I can\'t look that up yet" and what they can open in the app instead — never that it is not in JobScout.',
     ].join('\n')
   }
   if (kind === 'guess') {

@@ -7,7 +7,7 @@ import { proposeRecordChange } from '../_shared/arnieRecordPropose.ts'
 import { bulkTargetsSentence, BULK_MAX, proposeBulkChange } from '../_shared/arnieBulk.ts'
 import { createTargetsSentence, proposeCreate } from '../_shared/arnieCreate.ts'
 import { nearbyPlaces, validCoords, matchWord } from '../_shared/places.ts'
-import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
+import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, claimsAbsence, CARD_TOOLS as PROPOSE_TOOLS, type Fabrication } from '../_shared/arnieTruth.ts'
 import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
 import { findRepeat, repeatNote } from '../_shared/arnieRepeats.ts'
 import { loadCrewSheet } from '../_shared/crewSheetData.ts'
@@ -2578,6 +2578,20 @@ function jsonError(msg: string, status: number, extra?: Record<string, unknown>)
 // accepts no identity but a real session — no service key, no named employee.
 // Passing it explicitly keeps it visible at every hop instead of riding along
 // inside an identity object that gets logged and copied.
+/**
+ * Frankie's books lookups that Arnie carries too. Not her sales, estimates,
+ * invoices, payments, leads, inventory or time clock: Arnie has his own of
+ * those, and two tools for one question — "sold" counted two ways — is how
+ * "sold" ended up with three definitions.
+ */
+export const BOOKS_TOOLS = new Set([
+  'query_bank_balances', 'query_bank_transactions', 'query_pnl', 'query_payroll_runs', 'query_bills_and_pos',
+  'query_liabilities', 'query_job_profitability', 'query_backlog', 'query_fleet', 'query_bonuses',
+  'query_utility_incentives', 'query_table',
+])
+/** The books lookups this person may use — Frankie's own clearance decides. */
+const booksToolsFor = (caller: Caller) => frankieToolsFor(caller).filter((t: any) => BOOKS_TOOLS.has(t?.name))
+
 /** Callers whose turn is a lesson test — see lesson_test in the handler. */
 const lookupOnly = new WeakSet<object>()
 /** A note for this turn decided before it starts (a repeated question). */
@@ -2623,7 +2637,14 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
   // A lesson test may only look things up: no card, email, text, routine or
   // computer step — offered nothing else, and refused if it asks anyway.
   const onlyLook = lookupOnly.has(caller as unknown as object)
-  const all = toolsFor(caller.role, cards, { ownSession: !!bearer })
+  // THE BOOKS (Bryce, 2026-10-27: "if the user has permissions or access to
+  // anything in jobscout then so should Arnie/Jenny"). Frankie's lookups —
+  // bank balances, the bank feed, P&L, payroll runs, bills, loans, job
+  // profitability, backlog, fleet, bonuses — with Frankie's own clearance,
+  // checked again inside every one (frankieTools accessFor). An owner asked
+  // Arnie whether a $15,000 pole barn was safe and got "I don't have your bank
+  // balance" while Books had it.
+  const all = [...toolsFor(caller.role, cards, { ownSession: !!bearer }), ...booksToolsFor(caller)]
   return {
     model,
     effort: chosen?.effort,
@@ -2634,7 +2655,9 @@ function agentSetup(agent: Agent, caller: Caller, cards: string[], messages: any
     tools: onlyLook ? all.filter((t: any) => isLookup(t?.name)) : all,
     exec: (name: string, input: any) => onlyLook && !isLookup(name)
       ? Promise.resolve({ refused: 'This is a lesson test: it may only look things up.' })
-      : execTool(name, input, caller, messages, bearer, coords),
+      : BOOKS_TOOLS.has(name)
+        ? execFrankieTool(name, input, caller, rest)
+        : execTool(name, input, caller, messages, bearer, coords),
     tangled: 'Sorry boss, I got tangled up trying to look that up. Try asking me a different way.',
   }
 }
@@ -3252,6 +3275,26 @@ function guessedAmountsOf(text: string, convo: any[]): string[] {
   } catch { return [] }
 }
 
+/** The lookups that could hold money or records — named in an "absence" correction. */
+function lookupsThatHold(setup: { tools: any[] }): string[] {
+  const names = (setup?.tools || []).map((t: any) => String(t?.name || ''))
+  const books = names.filter((n) => BOOKS_TOOLS.has(n))
+  return books.length ? books : names.filter((n) => /^query_/.test(n)).slice(0, 12)
+}
+
+/**
+ * "I can't look that up yet" — he had no tool for it. Not a mistake of his: a
+ * gap in what he can reach, kept so Monday's review lists what to build next.
+ */
+function logGap(caller: Caller, said = '', reply = '') {
+  if (lookupOnly.has(caller as unknown as object)) return
+  fetch(`${SUPABASE_URL}/rest/v1/arnie_review_events`, {
+    method: 'POST',
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ company_id: caller.companyId ?? null, employee_email: caller.email || null, kind: 'gap', shown: true, said: String(said).slice(0, 1000), reply: String(reply).slice(0, 2000) }),
+  }).catch(() => {})
+}
+
 function logFabrication(kind: Fabrication, caller: Caller, said = '', reply = '', shown = false) {
   console.warn(`[arnie-truth] caught a ${kind} claim with no tool call — company ${caller.companyId}, ${caller.email}`)
   // A lesson test is not a person: its result is kept with the test, not
@@ -3313,7 +3356,11 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         if (!claim && untraced.length) claim = 'figures'
         const guessed = claim ? [] : guessedAmountsOf(text, convo)
         if (!claim && guessed.length) claim = 'guess'
-        const detail = claim === 'guess' ? guessed : untraced
+        // "It isn't in JobScout" about something that is (Bryce's pole barn, 2026-10-27).
+        if (!claim && claimsAbsence(text)) claim = 'absence'
+        const detail = claim === 'guess' ? guessed : claim === 'absence' ? lookupsThatHold(setup) : untraced
+        // "I can't look that up yet" is a missing tool — kept for Monday's review.
+        if (!claim && /can['’]t look that up yet/i.test(text)) logGap(caller, lastUserText(messages), text)
         if (claim) {
           corrections++
           logFabrication(claim, caller, lastUserText(messages), text, false)
@@ -3516,7 +3563,11 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               // A total he said he could not read, given anyway (eval, 2026-10-22).
               const guessed = claim ? [] : guessedAmountsOf(text, convo)
               if (!claim && guessed.length) claim = 'guess'
-              const detail = claim === 'guess' ? guessed : untraced
+              // "It isn't in JobScout" about something that is (Bryce's pole barn, 2026-10-27).
+              if (!claim && claimsAbsence(text)) claim = 'absence'
+              const detail = claim === 'guess' ? guessed : claim === 'absence' ? lookupsThatHold(setup) : untraced
+              // "I can't look that up yet" is a missing tool — kept for Monday's review.
+              if (!claim && /can['’]t look that up yet/i.test(text)) logGap(caller, lastUserText(messages), text)
               if (claim && hold) {
                 // Held, so never shown: it is replaced by what he writes next,
                 // and there is nothing for him to take back.
