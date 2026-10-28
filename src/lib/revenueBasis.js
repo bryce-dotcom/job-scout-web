@@ -16,12 +16,12 @@
 import { isLegacyNetShape } from './arHelpers'
 import { isPayrollBankRow } from './payrollBooks'
 import { isLoanTxn, loanInterestInRange } from './loanMatch'
+import { incentiveReceivedAt, collectedIncentives, isCashPayment, isUnlinkedExpense } from '../../supabase/functions/_shared/cashBasis.ts'
 
 export const BASIS_CASH = 'cash'
 export const BASIS_ACCRUAL = 'accrual'
 
 const num = (v) => parseFloat(v) || 0
-const isCollected = (p) => (p.status || 'Completed') !== 'Refunded' && (p.status || '') !== 'Voided'
 
 // Customer-net of an invoice = gross minus the total deduction (utility
 // incentive + project discount + deposit credit). Legacy-net invoices already
@@ -35,34 +35,14 @@ export function invoiceNet(inv) {
   return isLegacyNetShape(gross, disc) ? gross : Math.max(0, gross - disc)
 }
 
-// When the utility's money arrived. paid_at is the receipt date the office
-// records when it marks the incentive paid (and can correct afterwards).
-//
-// This used to read updated_at, and that was a landmine: ANY edit to the row
-// re-dated the revenue. On 2026-09-10 a data fix named the utility on all 28
-// rows, and every incentive collected since March — $432,847.96 — moved into
-// September's cash revenue on the dashboard. The date money arrived is a fact
-// about the money, not about the last time someone touched the record.
-//
-// updated_at remains only as the fallback for a row marked Paid before paid_at
-// existed. The same rule was open-coded on the Dashboard twice and in Books
-// once; they all call this now.
-export function incentiveReceivedAt(u) {
-  return u?.paid_at || u?.updated_at || u?.created_at || null
-}
-
-// Collected utility incentives that arrived inside the period.
-export function collectedIncentives(utilityInvoices = [], inRange = () => true) {
-  return (utilityInvoices || [])
-    .filter(i => i.payment_status === 'Paid' && inRange(incentiveReceivedAt(i)))
-    .reduce((s, i) => s + num(i.amount ?? i.incentive_amount), 0)
-}
+// When the utility's money arrived, collected incentives, which payments are
+// cash and which manual expenses are not already a bank row live in
+// _shared/cashBasis.ts — one copy, shared with Frankie's and Arnie's query_pnl.
+export { incentiveReceivedAt, collectedIncentives }
 
 export function cashRevenue({ payments = [], leadPayments = [], utilityInvoices = [] }, inRange) {
-  // Trade-credit applications reduce an invoice balance but are NOT cash — they
-  // draw down credit HHH already holds with a trade partner. Excluding them here
-  // keeps cash revenue from being overstated.
-  const pay = (payments || []).filter(p => isCollected(p) && p.method !== 'Trade Credit' && inRange(p.date || p.created_at)).reduce((s, p) => s + num(p.amount), 0)
+  // Trade credit, refunds and voids are not cash (isCashPayment).
+  const pay = (payments || []).filter(p => isCashPayment(p) && inRange(p.date || p.created_at)).reduce((s, p) => s + num(p.amount), 0)
   const dep = (leadPayments || []).filter(d => inRange(d.date_created || d.created_at)).reduce((s, d) => s + num(d.amount), 0)
   const inc = collectedIncentives(utilityInvoices, inRange)
   return pay + dep + inc
@@ -86,7 +66,7 @@ export function computeRevenue(basis, data, inRange) {
 // manual + all-bank together double-counted reconciled expenses.
 export function cashExpenses({ expenses = [], plaidTransactions = [] }, inRange) {
   const bank = (plaidTransactions || []).filter(t => t.amount > 0 && !t.is_transfer && inRange(t.date)).reduce((s, t) => s + num(t.amount), 0)
-  const manualUnlinked = (expenses || []).filter(e => !e.plaid_transaction_id && inRange(e.date || e.created_at)).reduce((s, e) => s + num(e.amount), 0)
+  const manualUnlinked = (expenses || []).filter(e => isUnlinkedExpense(e) && inRange(e.date || e.created_at)).reduce((s, e) => s + num(e.amount), 0)
   return bank + manualUnlinked
 }
 

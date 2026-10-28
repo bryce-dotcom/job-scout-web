@@ -17,6 +17,7 @@ import type { Caller } from './auth.ts'
 import { costingJobId, displayCategory } from './transferRule.ts'
 import { isMaterialSpend, materialCostOf, bonusCostByJob, jobHoursFromPunches } from './jobCostRules.ts'
 import { costRatesByEmployee } from './laborRate.ts'
+import { collectedIncentives, incentiveReceivedAt, isCashPayment, isUnlinkedExpense } from './cashBasis.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -383,17 +384,29 @@ async function bankTransactions(r: Rest, co: string, input: any) {
 
 async function pnl(r: Rest, co: string, input: any) {
   const start = clean(input?.start_date), end = clean(input?.end_date)
-  const [pays, plaid, manual] = await Promise.all([
-    readAll(r, `payments?${co}&select=amount,date&date=gte.${start}&date=lte.${end}`),
+  // Money in is the Books rule (_shared/cashBasis): customer payments that are
+  // cash, deposits taken on leads, and utility incentives on the day they
+  // arrived. This tool once counted payments alone and missed every incentive.
+  const [pays, deposits, incentives, plaid, manual] = await Promise.all([
+    readAll(r, `payments?${co}&select=amount,date,status,method&date=gte.${start}&date=lte.${end}`),
+    readAll(r, `lead_payments?${co}&select=amount,date_created,created_at&or=(date_created.gte.${start},created_at.gte.${start})`),
+    readAll(r, `utility_invoices?${co}&select=amount,incentive_amount,payment_status,paid_at,updated_at,created_at&payment_status=eq.Paid`),
     readAll(r, `plaid_transactions?${co}&select=${PLAID_SELECT}&amount=gt.0&is_transfer=eq.false&date=gte.${start}&date=lte.${end}`),
-    readAll(r, `expenses?${co}&select=amount,date,tax_category&date=gte.${start}&date=lte.${end}`, 2000),
+    readAll(r, `expenses?${co}&select=amount,date,tax_category,plaid_transaction_id&date=gte.${start}&date=lte.${end}`, 2000),
   ])
+  const day = (d: any) => String(d || '').slice(0, 10)
+  const inRange = (d: any) => !!d && day(d) >= start && day(d) <= end
   const month = (d: string) => String(d).slice(0, 7)
-  const acc = () => ({ revenue: 0, deductible: 0, non_deductible: 0, by_line: {} as Record<string, number> })
+  const acc = () => ({ revenue: 0, customers: 0, incentives: 0, deductible: 0, non_deductible: 0, by_line: {} as Record<string, number> })
   const total = acc()
   const months: Record<string, ReturnType<typeof acc>> = {}
   const bucket = (d: string) => input?.by_month ? (months[month(d)] ||= acc()) : null
-  for (const p of pays) { const v = num(p.amount); total.revenue += v; const b = bucket(p.date); if (b) b.revenue += v }
+  const addIn = (kind: 'customers' | 'incentives', v: number, d: string) => {
+    for (const t of [total, bucket(d)].filter(Boolean) as ReturnType<typeof acc>[]) { t.revenue += v; t[kind] += v }
+  }
+  for (const p of pays) if (isCashPayment(p)) addIn('customers', num(p.amount), p.date)
+  for (const d of deposits) { const at = d.date_created || d.created_at; if (inRange(at)) addIn('customers', num(d.amount), day(at)) }
+  for (const u of incentives) { const at = incentiveReceivedAt(u); if (inRange(at)) addIn('incentives', collectedIncentives([u]), day(at)) }
   const addOut = (line: string, v: number, d: string) => {
     const targets = [total, bucket(d)].filter(Boolean) as ReturnType<typeof acc>[]
     for (const t of targets) {
@@ -402,9 +415,11 @@ async function pnl(r: Rest, co: string, input: any) {
     }
   }
   for (const t of plaid) addOut(taxLineOf(t), num(t.amount), t.date)
-  for (const e of manual) { const v = num(e.amount); if (v > 0) addOut(e.tax_category || 'Manual expense', v, e.date) }
+  // A receipt linked to a bank row IS that bank row — only unlinked ones add.
+  for (const e of manual) { const v = num(e.amount); if (v > 0 && isUnlinkedExpense(e)) addOut(e.tax_category || 'Manual expense', v, e.date) }
   const fmt = (b: ReturnType<typeof acc>) => ({
-    revenue: money(b.revenue), deductible_expenses: money(b.deductible), net_profit: money(b.revenue - b.deductible),
+    revenue: money(b.revenue), revenue_from_customers: money(b.customers), utility_incentives_collected: money(b.incentives),
+    deductible_expenses: money(b.deductible), net_profit: money(b.revenue - b.deductible),
     non_deductible_money_out: money(b.non_deductible),
     by_tax_line: Object.fromEntries(Object.entries(b.by_line).sort((x, y) => y[1] - x[1]).slice(0, 20)),
   })
@@ -412,7 +427,7 @@ async function pnl(r: Rest, co: string, input: any) {
     period: `${start} to ${end}`,
     ...fmt(total),
     ...(input?.by_month ? { months: Object.fromEntries(Object.entries(months).sort().map(([k, v]) => [k, fmt(v)])) } : {}),
-    scope: 'Cash basis: revenue = payments received, expenses = bank debits and logged expenses by tax line. Non-deductible money out is owner draws, card payments, loan principal and unreviewed transfers — not an expense, does not reduce profit.',
+    scope: 'Cash basis, the same rule as Books: revenue = customer payments and lead deposits received + utility incentives collected (on the day they arrived); expenses = bank debits by tax line + logged expenses that are not already linked to a bank row. A card payment from checking stands in for what was bought on a card that is not connected. Non-deductible money out is owner draws, card payments, loan principal and unreviewed transfers — not an expense, does not reduce profit.',
   }
 }
 
