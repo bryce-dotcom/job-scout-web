@@ -491,6 +491,57 @@ describe('override commission', () => {
   })
 })
 
+describe("scoping to one person does not hand them somebody else's utility row", () => {
+  // The scope filter used to run BEFORE the utility and processor rows were
+  // built, so computeRepRows(data, A) returned A's sales rows plus EVERY rep's
+  // utility and processor rows. Payroll passes no id, so the app never saw it;
+  // resync-rep-commissions.mjs does, and its report credited Damien with
+  // $8,223.84 of Doug's utility commission on job 23549. With --write that row
+  // would have been inserted for Doug a second time, because the existing rows
+  // are read scoped to the one employee and so could not see it. Nothing
+  // reached the DB — 71 utility rows, 0 duplicates. This keeps it that way.
+  const pct = { commission_services_rate: 10, commission_services_type: 'percent' }
+  const TWO = () => ({
+    employees: [
+      { id: 5, is_commission: true, ...pct },
+      { id: 6, is_commission: true, ...pct },
+      { id: 7, commission_processor_rate: 1, commission_processor_type: 'percent' },
+    ],
+    jobs: [{ id: 1, salesperson_id: 5 }, { id: 2, salesperson_id: 6 }],
+    invoices: [], payments: [], leads: [],
+    utilityInvoices: [
+      { id: 50, job_id: 1, payment_status: 'Paid', incentive_amount: 1000, paid_at: '2026-10-01', processor_id: 7 },
+      { id: 51, job_id: 2, payment_status: 'Paid', incentive_amount: 2000, paid_at: '2026-10-02', processor_id: 7 },
+    ],
+    payrollConfig: {},
+  })
+
+  it('gives each rep only the utility row for the job they own', () => {
+    expect(computeRepRows(TWO(), 5).map((r) => [r.employee_id, r.job_id, r.amount]))
+      .toEqual([[5, 1, 100]])
+    expect(computeRepRows(TWO(), 6).map((r) => [r.employee_id, r.job_id, r.amount]))
+      .toEqual([[6, 2, 200]])
+  })
+
+  it('gives the processor their own rows and nobody else\'s', () => {
+    const rows = computeRepRows(TWO(), 7)
+    expect(rows.every((r) => r.employee_id === 7)).toBe(true)
+    expect(rows.map((r) => r.kind)).toEqual(['processor', 'processor'])
+  })
+
+  it('unscoped still returns everyone — the path Payroll actually uses', () => {
+    const all = computeRepRows(TWO())
+    expect(new Set(all.map((r) => r.employee_id))).toEqual(new Set([5, 6, 7]))
+    expect(all.length).toBe(4)
+  })
+
+  it('no scoped row ever belongs to another employee, for any id', () => {
+    for (const id of [5, 6, 7]) {
+      for (const r of computeRepRows(TWO(), id)) expect(r.employee_id).toBe(id)
+    }
+  })
+})
+
 describe('a hand-made commission is not the engine to delete', () => {
   // 20 Oct 2026, mid payroll run. Dubois (job 23438) was invoiced $14,149 and
   // the customer had paid nothing; HHH's commission_trigger is

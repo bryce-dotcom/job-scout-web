@@ -103,9 +103,6 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
       }
     }
   }
-  if (onlyEmployeeId != null) {
-    for (let i = rows.length - 1; i >= 0; i--) if (rows[i].employee_id !== onlyEmployeeId) rows.splice(i, 1)
-  }
 
   // ── Utility + processor commissions — frozen when the utility invoice is
   //    PAID (earned_at = paid_at), keyed by the utility invoice. Mirrors the
@@ -147,6 +144,18 @@ export function computeRepRows({ employees = [], jobs = [], leads = [], invoices
         })
       }
     }
+  }
+  // Scoped LAST, after the utility and processor rows exist. It used to run
+  // before them, so computeRepRows(data, someone) returned that person's sales
+  // rows plus EVERY rep's utility and processor rows. Payroll passes no id so
+  // the app never saw it, but resync-rep-commissions.mjs does: its report
+  // credited one rep with another's utility commission (job 23549 printed
+  // $8,223.84 under Damien, which is Doug's), and --write would have inserted
+  // that row for its real owner a second time, since the existing rows are
+  // read scoped to one employee and so could not see it. No duplicate ever
+  // reached the DB.
+  if (onlyEmployeeId != null) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i].employee_id !== onlyEmployeeId) rows.splice(i, 1)
   }
   return rows
 }
