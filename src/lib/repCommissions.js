@@ -1,6 +1,6 @@
-import { buildLeadIndex, jobOwnedBy } from './jobOwnership'
-import { invoiceCustomerTotal } from './arHelpers'
-import { jobEarnsCommission } from './commissionEligibility'
+import { buildLeadIndex, jobOwnedBy } from './jobOwnership.js'
+import { invoiceCustomerTotal } from './arHelpers.js'
+import { jobEarnsCommission } from './commissionEligibility.js'
 // Rep (%) commission ledger — read/sync helpers for the frozen rep_commissions
 // table (P2). The amount of a rep's services/goods commission is snapshotted
 // per payment when earned and never recomputed, so Payroll and My Pay stop
