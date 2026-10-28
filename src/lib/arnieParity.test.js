@@ -86,3 +86,14 @@ describe('the gaps today', () => {
     ])
   })
 })
+
+describe('payroll is what leaves the bank (Bryce, 2026-10-28: "payroll is about 30-40k per pay period")', () => {
+  it('the rules say trust the bank over partial payroll runs, and never call it double-counting', () => {
+    const p = read('supabase/functions/_shared/arniePrompt.ts')
+    expect(p).toMatch(/What payroll really costs is what leaves the bank for it/)
+    expect(p).toMatch(/When the runs and the bank disagree, trust the bank, say the runs look partial, and never call the bank's figure double-counting/)
+    // Checks clear over days (Bryce, 2026-10-28): one payroll is everything that clears between pay dates, and uncleared checks are not spendable.
+    expect(p).toMatch(/A payroll does not leave the bank all at once/)
+    expect(p).toMatch(/minus what is still to clear from the LAST payroll/)
+  })
+})
