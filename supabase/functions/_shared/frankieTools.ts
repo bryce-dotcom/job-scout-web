@@ -18,6 +18,7 @@ import { costingJobId, displayCategory } from './transferRule.ts'
 import { isMaterialSpend, materialCostOf, bonusCostByJob, jobHoursFromPunches } from './jobCostRules.ts'
 import { costRatesByEmployee } from './laborRate.ts'
 import { collectedIncentives, incentiveReceivedAt, isCashPayment, isUnlinkedExpense } from './cashBasis.ts'
+import { payrollPeriodsFromBank } from './payrollFromBank.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -199,7 +200,7 @@ export const FRANKIE_TOOLS: any[] = [
   {
     name: 'query_payroll_runs',
     description:
-      'Completed payroll runs — pay date, period, gross wages, headcount — with totals. Use for "what did payroll cost in Q2", "how many people were on the last run". Admin and above.',
+      'Payroll: what each payroll cost at the bank, pay date to pay date (from_the_bank, with a typical payroll for planning the next one), and the payroll runs entered in JobScout — pay date, period, gross wages, headcount. The runs can cover only part of the team; the bank is the cost. Use for "what does payroll cost", "what is the next payroll", "what did payroll cost in Q2". Admin and above.',
     input_schema: {
       type: 'object',
       properties: { ...DATE_PROPS, limit: { type: 'integer', description: 'Runs to list (default 12, max 60)' } },
@@ -993,12 +994,26 @@ async function payrollRuns(r: Rest, co: string, input: any) {
   if (input?.end_date) p.append('pay_date', `lte.${clean(input.end_date)}`)
   const rows = (await readAll(r, `payroll_runs?${co}&${p}`, 500)).filter((x: any) => !x.status || x.status === 'completed' || x.status === 'paid')
   const limit = clamp(input?.limit, 12, 60)
+  // What each payroll cost at the bank, from one pay date to the next — the
+  // runs can cover only part of the team (_shared/payrollFromBank).
+  const today = new Date().toISOString().slice(0, 10)
+  const since = new Date(Date.now() - 150 * 86400000).toISOString().slice(0, 10)
+  const [recentRuns, bank] = await Promise.all([
+    readAll(r, `payroll_runs?${co}&select=pay_date,status&pay_date=gte.${since}&order=pay_date.asc`, 200),
+    readAll(r, `plaid_transactions?${co}&select=date,amount,is_transfer,name,merchant_name,user_category,ai_category,user_tax_category,ai_tax_category&amount=gt.0&is_transfer=eq.false&date=gte.${since}`),
+  ])
+  const payDates = recentRuns.filter((x: any) => x.status !== 'void' && x.status !== 'pending').map((x: any) => x.pay_date)
+  const fromBank = payrollPeriodsFromBank(bank, payDates, today)
   return {
+    from_the_bank: fromBank.periods.length ? {
+      ...fromBank,
+      scope: 'What left the bank for each payroll: payroll checks, wage drafts, tax deposits and payroll-service debits that cleared from that pay date up to the next. The newest period is still clearing. "typical" is the median of the recent complete periods — use it for the NEXT payroll, never one period alone.',
+    } : { note: 'No pay dates or no payroll lines in the bank feed in the last five months.' },
     runs: rows.length,
     gross_total: money(rows.reduce((s: number, x: any) => s + num(x.total_gross), 0)),
     avg_headcount: rows.length ? Math.round(rows.reduce((s: number, x: any) => s + num(x.employee_count), 0) / rows.length) : 0,
     list: rows.slice(0, limit).map((x: any) => ({ pay_date: x.pay_date, period: `${x.period_start} to ${x.period_end}`, gross: num(x.total_gross), people: num(x.employee_count) })),
-    scope: 'Completed payroll runs only. Gross wages; employer payroll taxes (about 7.65% FICA plus FUTA/SUI) come on top. No pay rates are included.',
+    scope: 'The runs list: completed payroll runs entered in JobScout, which can cover only part of the team — from_the_bank is what payroll really cost. Gross wages; employer payroll taxes (about 7.65% FICA plus FUTA/SUI) come on top. No pay rates are included.',
   }
 }
 

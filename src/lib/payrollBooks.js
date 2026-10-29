@@ -89,12 +89,9 @@ export function taxLiabilitySummary(liabilities = [], today = new Date()) {
 }
 
 // Bank rows that ARE payroll (net pay ACH, tax deposits). Used to avoid
-// double counting when payroll runs are also on the books.
-export function isPayrollBankRow(t) {
-  const cat = `${t?.user_category || ''} ${t?.ai_category || ''} ${t?.user_tax_category || ''} ${t?.ai_tax_category || ''}`.toLowerCase()
-  const name = `${t?.merchant_name || ''} ${t?.name || ''}`.toLowerCase()
-  return /payroll|salaries and wages|guaranteed payments|tax payment|eftps|irs usataxpymt|\bdwq\b|state tax/.test(cat) || /payroll|eftps|usataxpymt|gusto|adp\b|paychex/.test(name)
-}
+// double counting when payroll runs are also on the books. One copy in
+// _shared/payrollFromBank.ts, shared with Frankie's and Arnie's payroll lookup.
+export { isPayrollBankRow } from '../../supabase/functions/_shared/payrollFromBank.ts'
 
 /**
  * Journal lines for the runs paid in range (see journalExport): wages and

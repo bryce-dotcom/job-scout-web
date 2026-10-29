@@ -11,6 +11,7 @@ import { fabricationIn, correctionFor, untracedFigures, guessedAmounts, claimsAb
 import { isCorrection, correctionNote } from '../_shared/arnieLearning.ts'
 import { findRepeat, repeatNote } from '../_shared/arnieRepeats.ts'
 import { loadCrewSheet } from '../_shared/crewSheetData.ts'
+import { LOOKUP_TOOLS, LOOKUP_NAMES, runLookup } from '../_shared/arnieLookups.ts'
 import { VOICE_NOTE } from '../_shared/arnieVoice.ts'
 import { personaFor, safeDisplayName } from '../_shared/arniePersona.ts'
 import { appMapBlock, whoFromEmployee } from '../_shared/appMap.ts'
@@ -929,6 +930,8 @@ function toolsFor(role: string, cards: string[], opts: { ownSession?: boolean } 
   // security boundary.)
   if (opts.ownSession) offered.push(USE_COMPUTER_TOOL)
   offered.push(EMAIL_ME_TOOL)
+  // Pages Arnie could not read before (_shared/arnieLookups) — each checks its page's own gate when it runs.
+  offered.push(...LOOKUP_TOOLS)
   offered.push(...INBOX_TOOLS)
   return offered.filter((t: any) => {
     const needs = CARD_TOOLS[t.name]
@@ -1337,6 +1340,13 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
 
     if (name === 'query_crew') {
       return await crewDay({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, caller, { date: input?.date, timezone: input?.timezone })
+    }
+
+    if (LOOKUP_NAMES.has(name)) {
+      // One page each, with that page's filters and gate (_shared/arnieLookups).
+      const tz = await companyTz(companyId)
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
+      return await runLookup({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, name, input, { companyId, employeeId, level: caller.level, email, today })
     }
 
     if (name === 'query_crew_sheet') {

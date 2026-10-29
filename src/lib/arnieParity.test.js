@@ -11,8 +11,9 @@ const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 const appMap = read('supabase/functions/_shared/appMap.ts')
 const chat = read('supabase/functions/arnie-chat/index.ts')
 const frankie = read('supabase/functions/_shared/frankieTools.ts')
+const lookups = read('supabase/functions/_shared/arnieLookups.ts')
 const routes = [...appMap.matchAll(/route: '([^']+)', label:/g)].map((m) => m[1])
-const arnieTools = new Set([...chat.matchAll(/name: '(query_[a-z_]+)'/g)].map((m) => m[1]))
+const arnieTools = new Set([...(chat + lookups).matchAll(/name: '(query_[a-z_]+)'/g)].map((m) => m[1]))
 const books = new Set([...chat.match(/export const BOOKS_TOOLS = new Set\(\[([\s\S]*?)\]\)/)[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]))
 const frankieTools = new Set([...frankie.matchAll(/name: '(query_[a-z_]+)'/g)].map((m) => m[1]))
 
@@ -81,8 +82,7 @@ describe('"it isn\'t in JobScout" is caught', () => {
 describe('the gaps today', () => {
   it('are listed, so they can be built', () => {
     expect(parityGaps().map((g) => g.route).sort()).toEqual([
-      '/bookings', '/communications', '/company-map', '/document-rules', '/fixture-types', '/lighting-audits', '/marketing',
-      '/recurring', '/routes', '/services/upcoming', '/time-log', '/utility-programs', '/utility-providers',
+      '/bookings', '/company-map', '/document-rules', '/marketing', '/routes',
     ])
   })
 })
