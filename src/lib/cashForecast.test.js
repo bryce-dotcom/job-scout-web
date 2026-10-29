@@ -97,6 +97,24 @@ describe('buildForecast', () => {
     expect(f.closing).toBe(520)
   })
 
+  it('a Void utility incentive is not future cash; a Pending one still is', () => {
+    // Intercon paid HHH once, but the office had recorded the same incentive
+    // twice as phases and again as a consolidated final. Voiding the phases
+    // must not leave their money sitting in the forecast as expected inflow.
+    const f = buildForecast({
+      today, openingCash: 0,
+      utilityInvoices: [
+        { id: 143, utility_name: 'Intercon', customer_name: 'Phase 1', incentive_amount: 51176.73, payment_status: 'Void', submitted_at: '2026-09-01' },
+        { id: 145, utility_name: 'Intercon', customer_name: 'Final', incentive_amount: 96751, payment_status: 'Paid', submitted_at: '2026-09-01' },
+        { id: 150, utility_name: 'Intercon', customer_name: 'Still owed', incentive_amount: 1200, payment_status: 'Pending', submitted_at: '2026-09-01' },
+      ],
+    })
+    const inc = f.events.filter(e => e.kind === 'incentive')
+    expect(inc.map(e => e.ref)).toEqual([150])
+    expect(inc[0]).toMatchObject({ date: '2026-10-16', amount: 1200, confidence: 'estimate' })
+    expect(f.closing).toBe(1200)
+  })
+
   it('weekly buckets summarize the series', () => {
     const f = buildForecast({ today, openingCash: 1000 })
     const w = weeklyBuckets(f.series)

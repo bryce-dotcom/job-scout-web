@@ -149,7 +149,7 @@ serve(async (req) => {
     const [inv, pays, claims, loans, runs, stubs, liabs, rules, vendors, cats, confirmed, recent] = await Promise.all([
       sb.from('invoices').select('id, invoice_id, customer_id, amount, discount_applied, tax_amount, payment_status, invoice_date, due_date, created_at, invoice_type, customer:customers(name)').eq('company_id', company_id).not('payment_status', 'in', '("Paid","Void","Cancelled")').limit(3000),
       sb.from('payments').select('invoice_id, amount, status').eq('company_id', company_id).gte('date', histSince).limit(20000),
-      sb.from('utility_invoices').select('id, utility_name, amount, incentive_amount, payment_status, invoice_id, customer_name, job_description, source_transaction_id').eq('company_id', company_id).neq('payment_status', 'Paid').limit(1000),
+      sb.from('utility_invoices').select('id, utility_name, amount, incentive_amount, payment_status, invoice_id, customer_name, job_description, source_transaction_id').eq('company_id', company_id).not('payment_status', 'in', '("Paid","Void","Cancelled")').limit(1000),
       sb.from('liabilities').select('id, name, lender, monthly_payment, next_payment_amount, match_payee, status').eq('company_id', company_id),
       sb.from('payroll_runs').select('id, pay_date, total_gross, status').eq('company_id', company_id).gte('pay_date', histSince),
       sb.from('paystubs').select('payroll_run_id, net_pay').eq('company_id', company_id).gte('pay_date', histSince).limit(20000),

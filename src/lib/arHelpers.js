@@ -252,7 +252,11 @@ function existedBy(rec, day) {
   return !d || d <= day
 }
 
-function isVoided(rec) {
+// Void/Cancelled means the record should never have existed — a claim that
+// was duplicated or folded into another one. Distinct from Paid, which means
+// the money arrived. Exported so the pay and books surfaces stop each
+// writing their own version of it.
+export function isVoided(rec) {
   return rec?.payment_status === 'Void' || rec?.payment_status === 'Cancelled'
 }
 

@@ -165,7 +165,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
       ageBucket(inv.created_at),
       customerBalance(inv).toFixed(2),
     ]),
-    ...(utilityInvoices || []).filter(i => i.payment_status !== 'Paid').map(inv => [
+    ...(utilityInvoices || []).filter(i => isInvoiceOpen(i)).map(inv => [
       'Utility',
       inv.utility_invoice_id || inv.id,
       inv.customer_name || '',
@@ -264,7 +264,7 @@ async function buildCpaPackage({ from, to, invoices, utilityInvoices, plaidTrans
   const income = taxTxns.filter(t => parseFloat(t.amount) < 0).reduce((s, t) => s + Math.abs(parseFloat(t.amount) || 0), 0)
   const expensesTotal = taxTxns.filter(t => parseFloat(t.amount) > 0).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0)
   const customerAR = totalCustomerAR(invoices || [], payments || [])
-  const utilityAR = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
+  const utilityAR = (utilityInvoices || []).filter(i => isInvoiceOpen(i)).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
   const pl = [
     `PROFIT & LOSS SUMMARY`,
     `Period: ${from} to ${to}`,
@@ -1457,7 +1457,7 @@ export default function Books() {
     return acc
   }, {})
 
-  const pendingIncentives = (utilityInvoices || []).filter(i => i.payment_status !== 'Paid' && utilityMatchesBu(i))
+  const pendingIncentives = (utilityInvoices || []).filter(i => isInvoiceOpen(i) && utilityMatchesBu(i))
   const collectedIncentives = (utilityInvoices || []).filter(i => i.payment_status === 'Paid' && utilityMatchesBu(i))
   const pendingIncentiveTotal = pendingIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
   const collectedIncentiveTotal = collectedIncentives.reduce((s, i) => s + (parseFloat(i.amount || i.incentive_amount) || 0), 0)
@@ -4531,7 +4531,7 @@ export default function Books() {
                     const payIdx = paymentsByInvoiceIndex(payments || [])
                     const unpaidInvoices = (invoices || []).filter(inv => isInvoiceOpen(inv) && inv.invoice_type !== 'deposit' && matchesBu(inv.business_unit))
                     const customerAR = unpaidInvoices.reduce((s, i) => s + invoiceBalance(i, payIdx), 0)
-                    const unpaidUtility = (utilityInvoices || []).filter(inv => inv.payment_status !== 'Paid' && utilityMatchesBu(inv))
+                    const unpaidUtility = (utilityInvoices || []).filter(inv => isInvoiceOpen(inv) && utilityMatchesBu(inv))
                     const utilityAR = unpaidUtility.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

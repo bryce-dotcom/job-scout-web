@@ -78,3 +78,45 @@ describe('calculateInvoiceCommissions — the customer share, not the gross', ()
     expect(r.pending).toBeCloseTo(85, 2)
   })
 })
+
+// ── a voided claim is not pay ────────────────────────────────────────────────
+// Intercon paid HHH once for the Fairfield project, but the office had recorded
+// the same incentive twice as phases (utility invoices 143 and 149) and a third
+// time as a consolidated final (145). Voiding a duplicate has to take its
+// commission with it: a voided row is not Paid, so it fell through to the
+// pending bucket and carried $9,334.87 of commission nobody would ever be paid.
+describe('calculateInvoiceCommissions — a voided utility claim earns nothing', () => {
+  const rep = { id: 17, is_commission: true, commission_services_rate: 5, commission_services_type: 'percent' }
+  const job = { id: 23593, salesperson_id: 17, job_title: 'Intercon Phase 1' }
+  const period = { periodStartStr: '2026-10-16', periodEndStr: '2026-10-31', payrollConfig: { commission_trigger: 'payment_received' } }
+  const base = { employee: rep, jobs: [job], invoices: [], inPeriodPayments: [], allPaymentsByInvoiceId: new Map(), ...period }
+  const claim = { id: 143, job_id: 23593, utility_name: 'Intercon', incentive_amount: 51176.73 }
+
+  it('an open claim is pending commission; the same claim voided is nothing at all', () => {
+    const open = calculateInvoiceCommissions({ ...base, utilityInvoices: [{ ...claim, payment_status: 'Pending' }] })
+    expect(open.pending).toBeCloseTo(51176.73 * 0.05, 2)
+
+    for (const dead of ['Void', 'Cancelled']) {
+      const r = calculateInvoiceCommissions({ ...base, utilityInvoices: [{ ...claim, payment_status: dead }] })
+      expect(r.pending, `${dead} still earned`).toBe(0)
+      expect(r.available, `${dead} still earned`).toBe(0)
+      expect(r.details).toEqual([])
+    }
+  })
+
+  it('a claim the utility really paid in the period still earns — the rule only drops voids', () => {
+    const paid = calculateInvoiceCommissions({ ...base, utilityInvoices: [{ ...claim, payment_status: 'Paid', paid_at: '2026-10-26T00:00:00Z' }] })
+    expect(paid.available).toBeCloseTo(51176.73 * 0.05, 2)
+    expect(paid.pending).toBe(0)
+  })
+
+  it('the processor earns nothing on a voided claim either', () => {
+    const processor = { id: 15, is_commission: true, commission_processor_rate: 1, commission_processor_type: 'percent' }
+    const pBase = { ...base, employee: processor, jobs: [] }
+    const open = calculateInvoiceCommissions({ ...pBase, utilityInvoices: [{ ...claim, payment_status: 'Pending', processor_id: 15 }] })
+    expect(open.pending).toBeCloseTo(511.77, 2)
+    const voided = calculateInvoiceCommissions({ ...pBase, utilityInvoices: [{ ...claim, payment_status: 'Void', processor_id: 15 }] })
+    expect(voided.pending).toBe(0)
+    expect(voided.details).toEqual([])
+  })
+})

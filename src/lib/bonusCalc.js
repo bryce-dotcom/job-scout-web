@@ -7,7 +7,7 @@
 // Node's ESM loader on Vercel, which does not. Without it the cron dies with
 // 'Cannot find module' on every run while the frontend works fine.
 import { verificationRequiredFor } from './verificationPolicy.js'
-import { invoiceCustomerTotal } from './arHelpers.js'
+import { invoiceCustomerTotal, isVoided } from './arHelpers.js'
 import { jobEarnsCommission } from './commissionEligibility.js'
 import { jobHoursFromPunches } from '../../supabase/functions/_shared/jobCostRules.ts'
 
@@ -235,6 +235,10 @@ export function calculateInvoiceCommissions({
 
     const job = empJobs.find(j => j.id === u.job_id)
     const jobLabel = job?.job_title || job?.customer_name || u.customer_name || 'Utility incentive'
+    // A voided claim was never owed, so it earns nothing. Without this it
+    // falls through to the !isPaid branch below and shows up as PENDING
+    // commission on a duplicate record nobody will ever be paid for.
+    if (isVoided(u)) return
     const isPaid = u.payment_status === 'Paid'
     const paidAtStr = (u.paid_at || '').split('T')[0]
     const paidInPeriod = isPaid && periodStartStr && periodEndStr &&
@@ -289,6 +293,8 @@ export function calculateInvoiceCommissions({
       if (earnedAmount <= 0) return
       const job = (jobs || []).find(j => j.id === u.job_id)
       const jobLabel = job?.job_title || job?.customer_name || u.customer_name || 'Utility incentive'
+      // Same rule as the rep block above: voided earns nothing.
+      if (isVoided(u)) return
       const isPaid = u.payment_status === 'Paid'
       const paidAtStr = (u.paid_at || '').split('T')[0]
       const paidInPeriod = isPaid && periodStartStr && periodEndStr &&

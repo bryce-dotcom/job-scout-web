@@ -57,7 +57,11 @@ export function buildForecast({
     push(expected, bal, `${inv.invoice_id || `Invoice ${inv.id}`}${inv.customer?.name ? ` — ${inv.customer.name}` : ''}`, 'invoice', overdue ? 'overdue' : 'likely', { ref: inv.id })
   }
   for (const u of utilityInvoices || []) {
-    if (u.payment_status === 'Paid') continue
+    // Paid means the money arrived; Void means it was never owed. A utility
+    // record that got consolidated into another one must stop projecting cash
+    // that is not coming, so this uses the same rule the customer invoices
+    // above use rather than a second definition of "still open".
+    if (!isInvoiceOpen(u)) continue
     const amt = num(u.incentive_amount) || num(u.amount)
     if (!(amt > 0)) continue
     // Utilities pay in their own time; six weeks from submission is the working assumption.
