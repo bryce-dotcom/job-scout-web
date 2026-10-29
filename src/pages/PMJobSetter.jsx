@@ -1832,7 +1832,20 @@ export default function PMJobSetter() {
         // total FROM these rows and then discarded them, so every
         // auto-invoice landed with no line items — which is why the
         // in-scope / out-of-scope split had nothing to render on them.
-        await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: newInvoice.id })
+        // Same gap as Invoices.jsx: a job priced by hand has no job_lines, so
+        // without summaryFor the auto-invoice landed with no lines even though
+        // its amount was right. jobTotal above already falls back to
+        // jobs.job_total when there are no lines, so the summary line always
+        // equals what this invoice was raised for.
+        await writeInvoiceLines(supabase, jobLines, {
+          companyId,
+          invoiceId: newInvoice.id,
+          summaryFor: {
+            description: jobForInvoice.job_title || jobForInvoice.job_id || 'Services',
+            total: jobTotal,
+            manual: jobForInvoice.job_total_source === 'manual',
+          },
+        })
         // The job's invoice_status follows from the insert above — the
         // sync_job_invoice_status trigger derives it from the invoices table.
       }

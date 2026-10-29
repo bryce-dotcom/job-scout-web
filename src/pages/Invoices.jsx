@@ -355,7 +355,24 @@ export default function Invoices() {
           .select('item_id, description, item_name, quantity, price, discount, total, labor_cost, in_utility_scope, notes, item:products_services(name)')
           .eq('job_id', formData.job_id)
           .order('id', { ascending: true })
-        await writeInvoiceLines(supabase, jobLines, { companyId, invoiceId: data.id })
+        // A job priced by hand keeps its total on jobs.job_total with no
+        // job_lines behind it, and that is the common shape here — 842 of a
+        // 1,000-job sample of HHH's priced jobs. Without summaryFor those
+        // invoices land with no lines at all, which is what Doug meant by
+        // "the price is not getting carried through to invoicing". summaryFor
+        // is how writeInvoiceLines bills a total that has no lines of its
+        // own; JobDetail and FieldScout already pass it and this path did
+        // not. The total is the invoice's own amount, so the line it writes
+        // always sums to what was billed above.
+        await writeInvoiceLines(supabase, jobLines, {
+          companyId,
+          invoiceId: data.id,
+          summaryFor: {
+            description: formData.job_description || linkedJob?.job_title || 'Services',
+            total: Number(formData.amount) || 0,
+            manual: linkedJob?.job_total_source === 'manual',
+          },
+        })
       } catch (err) {
         console.error('Invoices.jsx: failed to copy job lines into invoice_lines', err)
       }
