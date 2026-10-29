@@ -3285,6 +3285,14 @@ function guessedAmountsOf(text: string, convo: any[]): string[] {
   } catch { return [] }
 }
 
+/** What this turn's tools returned, as text — a gap a tool reported may be repeated. */
+function toolSaidOf(convo: any[]): string {
+  try {
+    return convo.flatMap((m: any) => Array.isArray(m?.content) ? m.content.filter((b: any) => b?.type === 'tool_result') : [])
+      .map((b: any) => typeof b.content === 'string' ? b.content : JSON.stringify(b.content)).join('\n')
+  } catch { return '' }
+}
+
 /** The lookups that could hold money or records — named in an "absence" correction. */
 function lookupsThatHold(setup: { tools: any[] }): string[] {
   const names = (setup?.tools || []).map((t: any) => String(t?.name || ''))
@@ -3335,7 +3343,11 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
   const askedBefore = turnNote.get(caller as unknown as object) || ''
   // 5 tool rounds, or 12 once he is working on their computer: opening Gmail
   // alone is look, ctrl+l, type, enter, look — the old cap ran out mid-task.
-  for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5); i++) {
+  // A truth-check correction is an EXTRA round, not one of those: a false
+  // alarm on the last round used to throw a good answer away for "tangled"
+  // (Cole's 4pm scoreboard, 2026-10-28).
+  for (let i = 0; i < (used.has('use_my_computer') ? 12 : 5) + corrections; i++) {
+    const last = i === 4 + corrections && !used.has('use_my_computer')
     const ai = await callAnthropic(
       { feature: setup.feature, companyId: companyId ?? null },
       {
@@ -3343,8 +3355,8 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         max_tokens: setup.maxTokens,
         ...((setup as any).effort && isNewModel(setup.model) ? { output_config: { effort: (setup as any).effort } } : {}),
         system: cachedSystem(systemPrompt || '', rulesEnd.get(caller as unknown as object)),
-        ...(includeTools ? { tools: cachedTools(setup.tools), ...(i === 4 && !used.has('use_my_computer') ? { tool_choice: { type: 'none' } } : {}) } : {}),
-        messages: cachedMessages(withNote(convo, notes(learnNote, askedBefore, i === 4 && !used.has('use_my_computer') ? LAST_LOOKUP_NOTE : ''))),
+        ...(includeTools ? { tools: cachedTools(setup.tools), ...(last ? { tool_choice: { type: 'none' } } : {}) } : {}),
+        messages: cachedMessages(withNote(convo, notes(learnNote, askedBefore, last ? LAST_LOOKUP_NOTE : ''))),
       },
     )
     if (!ai.ok) {
@@ -3367,7 +3379,7 @@ async function callWithTools(messages: any[], systemPrompt: string, caller: Call
         const guessed = claim ? [] : guessedAmountsOf(text, convo)
         if (!claim && guessed.length) claim = 'guess'
         // "It isn't in JobScout" about something that is (Bryce's pole barn, 2026-10-27).
-        if (!claim && claimsAbsence(text)) claim = 'absence'
+        if (!claim && claimsAbsence(text, toolSaidOf(convo))) claim = 'absence'
         const detail = claim === 'guess' ? guessed : claim === 'absence' ? lookupsThatHold(setup) : untraced
         // "I can't look that up yet" is a missing tool — kept for Monday's review.
         if (!claim && /can['’]t look that up yet/i.test(text)) logGap(caller, lastUserText(messages), text)
@@ -3434,14 +3446,15 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
         const computerAsk = setup.tools.some((t: any) => t?.name === 'use_my_computer')
           && COMPUTER_ASK.test(lastUserText(messages))
         let shownAny = false
-        const outOfSteps = (round: number) => used.has('use_my_computer') && round === 11
-        const lastLookup = (round: number) => !used.has('use_my_computer') && round === 4
+        // A correction round is extra, not one of the budget (see callWithTools).
+        const outOfSteps = (round: number) => used.has('use_my_computer') && round === 11 + corrections
+        const lastLookup = (round: number) => !used.has('use_my_computer') && round === 4 + corrections
         // SHORT ANSWERS by default (Bryce, 2026-10-20: "most people just want
         // her to haul ass"). In brief mode every round is held, and a round
         // that only looks something up has its "Let me check…" dropped rather
         // than shown — the answer arrives alone. Computer work keeps its steps.
         const brief = agent === 'arnie' && caller.employeeId != null && (await detailFor(caller.employeeId)) !== 'detailed'
-        for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5); round++) {
+        for (let round = 0; round < (used.has('use_my_computer') ? 12 : 5) + corrections; round++) {
           const hold = computerAsk || used.has('use_my_computer') || brief
           let pending = ''
           // A new round's first words start a new paragraph, streamed or held:
@@ -3574,7 +3587,7 @@ async function streamWithTools(messages: any[], systemPrompt: string, caller: Ca
               const guessed = claim ? [] : guessedAmountsOf(text, convo)
               if (!claim && guessed.length) claim = 'guess'
               // "It isn't in JobScout" about something that is (Bryce's pole barn, 2026-10-27).
-              if (!claim && claimsAbsence(text)) claim = 'absence'
+              if (!claim && claimsAbsence(text, toolSaidOf(convo))) claim = 'absence'
               const detail = claim === 'guess' ? guessed : claim === 'absence' ? lookupsThatHold(setup) : untraced
               // "I can't look that up yet" is a missing tool — kept for Monday's review.
               if (!claim && /can['’]t look that up yet/i.test(text)) logGap(caller, lastUserText(messages), text)

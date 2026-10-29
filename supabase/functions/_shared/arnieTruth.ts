@@ -115,8 +115,27 @@ export function claimsACard(text: string): boolean {
   if (/\b(drafted|ready|created|set up) and waiting\b|\bwaiting for your (approval|ok|sign ?off)\b/i.test(t)) return true
   if (/\b(there it is|there you go|here it is)\b[^.!?\n]{0,30}\bcard\b/i.test(t)) return true
   if (/\bshould be (on|in front of|up on) (you|your screen|the screen)\b/i.test(t)) return true
-  if (/\b(the |your |that |this )?(estimate|quote|lead|job|invoice|expense|appointment|rule|routine)\b[^.!?\n]{0,25}\b(is|has been|was) (created|added|saved|made|sitting|in jobscout|live)\b/i.test(t)) return true
+  for (const m of t.matchAll(/\b(the |your |that |this )?(estimate|quote|lead|job|invoice|expense|appointment|rule|routine)\b[^.!?\n]{0,25}\b(is|has been|was) (created|added|saved|made|sitting|in jobscout|live)\b/gi)) {
+    if (!reportsActivity(t, m)) return true
+  }
   return false
+}
+
+/**
+ * "1 lead was created today", "one draft estimate was created today" — a
+ * report of what the DATA shows, not a claim that he made something. Cole's
+ * 4pm scoreboard, 2026-10-28: its whole subject is estimates created, so the
+ * claim pattern above fired on an honest count, the retry was caught again,
+ * and the turn ran out of rounds into "I got tangled up". A counted subject,
+ * or a "was created" pinned to when or by whom, is a report.
+ */
+function reportsActivity(t: string, m: RegExpMatchArray): boolean {
+  const before = t.slice(Math.max(0, (m.index ?? 0) - 24), m.index ?? 0)
+  const counted = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|no|none of the|only)\s+([a-z-]+\s+)?$/i
+  if (!m[1] && counted.test(before)) return true
+  if (m[3].toLowerCase() !== 'was') return false
+  const after = t.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 30)
+  return /^\s*(today|yesterday|this (morning|afternoon|week|month)|last \w+|on \w+|at \d|in [A-Z][a-z]+|since|by [A-Z])/.test(after)
 }
 
 /**
@@ -182,8 +201,38 @@ const ABSENCE = [
   /\bi\s+(?:don'?t|do not)\s+have\s+(?:your|the|any)\s+(?:bank|cash|balance|payroll|p&l|profit|costs?|expenses?|margin|books|financials?)\b/i,
   /\btoo thin to be (?:your|the) real\b/i,
 ]
-export function claimsAbsence(text: string): boolean {
-  return String(text || '').split(/(?<=[.!?\n])\s+/).some((s) => ABSENCE.some((re) => re.test(s)))
+/**
+ * `toolSaid` is what this turn's tools returned. Repeating a gap a TOOL
+ * reported is honest, not a claim about their data: query_rep_goals says
+ * "JobScout does not record attendance", its description tells her to pass
+ * that on, and Cole's 4pm scoreboard on 2026-10-28 was stopped for doing
+ * exactly that (then ran out of rounds into "I got tangled up"). The gap is
+ * excused only when the tool's own absence statement is about the same thing.
+ */
+export function claimsAbsence(text: string, toolSaid = ''): boolean {
+  const told = absencesIn(String(toolSaid || ''))
+  return String(text || '').split(/(?<=[.!?\n])\s+/).some((s) => ABSENCE.some((re) => {
+    const m = s.match(re)
+    if (!m) return false
+    const about = absenceObject(s, m)
+    return !told.some((t) => about.some((w) => t.includes(w)))
+  }))
+}
+
+// Words that say "missing", not WHAT is missing — never enough to match on.
+const ABSENCE_FILLER = new Set(('jobscout system does doesn record track tracked have keep kept show hold logged recorded stored entered ' +
+  'cannot your this that them they there from with since because unless which what when come comes counted counts the and any isn aren').split(' '))
+/** What an absence statement says is missing: the words beside the match. */
+function absenceObject(s: string, m: RegExpMatchArray): string[] {
+  const at = m.index ?? 0
+  const near = s.slice(Math.max(0, at - 30), at) + ' ' + m[0] + ' ' + s.slice(at + m[0].length, at + m[0].length + 30)
+  return (near.toLowerCase().match(/[a-z]{4,}/g) || []).filter((w) => !ABSENCE_FILLER.has(w))
+}
+function absencesIn(toolSaid: string): string[][] {
+  if (!toolSaid) return []
+  // Tool results arrive as JSON: an escaped newline would glue "\nJobScout" into one word.
+  const plain = toolSaid.replace(/\\[nrt]/g, ' ').replace(/\\"/g, '"')
+  return ABSENCE.flatMap((re) => [...plain.matchAll(new RegExp(re.source, 'gi'))].map((m) => absenceObject(plain, m)))
 }
 
 // ── Figures nobody looked up ────────────────────────────────────────────

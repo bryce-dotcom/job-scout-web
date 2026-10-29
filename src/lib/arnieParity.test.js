@@ -71,7 +71,7 @@ describe('"it isn\'t in JobScout" is caught', () => {
     expect(c).toMatch(/"I can't look that up yet"/)
   })
   it('both reply paths check it; a gap is kept for Monday', () => {
-    expect(chat.match(/if \(!claim && claimsAbsence\(text\)\) claim = 'absence'/g)).toHaveLength(2)
+    expect(chat.match(/if \(!claim && claimsAbsence\(text, toolSaidOf\(convo\)\)\) claim = 'absence'/g)).toHaveLength(2)
     expect(chat.match(/logGap\(caller, lastUserText\(messages\), text\)/g)).toHaveLength(2)
     const review = read('api/cron/arnie-review.js')
     expect(review).toMatch(/section\('Asked for something he cannot look up yet', gaps/)

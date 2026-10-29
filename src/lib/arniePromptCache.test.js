@@ -40,13 +40,14 @@ describe('prompt caching', () => {
     // A correction's note and a repeated question's note ride first (the
     // learning loop, 2026-10-23); the last-round note after them.
     expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, outOfSteps\(round\) \? LAST_STEP_NOTE : lastLookup\(round\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
-    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, i === 4 && !used\.has\('use_my_computer'\) \? LAST_LOOKUP_NOTE : ''\)\)\)/)
+    expect(chat).toMatch(/messages: cachedMessages\(withNote\(convo, notes\(learnNote, askedBefore, last \? LAST_LOOKUP_NOTE : ''\)\)\)/)
   })
   it('the last lookup round must answer, and a reply is never blank (live test, 2026-10-21)', () => {
     const s = chat.slice(chat.indexOf('async function streamWithTools'))
     expect(s).toMatch(/const lastLookup = \(round: number\) => !used\.has\('use_my_computer'\) && round === 4/)
     expect(s).toMatch(/if \(!shownAny\) send\('text', \{ delta: setup\.tangled \}\)\n\s+send\('receipt', \{ text: receiptFor\(turnCalls\) \}\)\n\s+send\('done', \{\}\)/)
-    expect(chat).toMatch(/i === 4 && !used\.has\('use_my_computer'\) \? \{ tool_choice: \{ type: 'none' \} \}/)
+    // `last` = round 4 plus any correction rounds (Cole's tangled 4pm, 2026-10-28).
+    expect(chat).toMatch(/\.\.\.\(last \? \{ tool_choice: \{ type: 'none' \} \} : \{\}\)/)
     expect(chat).toMatch(/never fill it in\.'/)
   })
   it('the prompt builder records where its rules end, and both paths use it', () => {
