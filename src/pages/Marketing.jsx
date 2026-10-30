@@ -16,7 +16,7 @@ import { uploadCapture, captureThumb, backfillVideoPosters } from '../lib/market
 import ScoutLoader from '../components/ScoutLoader'
 import ProspectResearchDrawer from '../components/ProspectResearchDrawer'
 import CampaignsTab, { CampaignPerformance, SuppressionsCard } from './marketing/CampaignsTab'
-import { WebsiteCard, GoogleListingCard, NumbersBlocks } from './marketing/NumbersCards'
+import { WebsiteCard, GoogleListingCard, NumbersBlocks, ReviewAskCard } from './marketing/NumbersCards'
 import { renderEdit, renderStoryboard, normalizeStoryboard, totalSeconds, defaultTrim, canEditVideo, ASPECTS, MAX_RESULT_SECONDS } from '../lib/videoEdit'
 import { MOODS, renderMusicBed, decodeTrack } from '../lib/musicBed'
 import {
@@ -505,6 +505,8 @@ export default function Marketing() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <WebsiteCard theme={theme} companyId={companyId} isManager={isManager} website={brandKit?.links?.website || companyLinks.website || company?.website || ''} />
               <GoogleListingCard theme={theme} companyId={companyId} isManager={isManager} invoke={invoke} />
+              <ReviewAskCard theme={theme} companyId={companyId} isManager={isManager} invoke={invoke}
+                reviewLink={brandKit?.links?.review || companyLinks.google_review_url || (companyLinks.google_place_id ? `https://search.google.com/local/writereview?placeid=${companyLinks.google_place_id}` : '')} />
             </div>
           </div>
           <SuppressionsCard theme={theme} companyId={companyId} isManager={isManager} />

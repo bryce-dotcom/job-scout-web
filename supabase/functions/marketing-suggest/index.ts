@@ -52,10 +52,42 @@ async function emailDigest(sb: any, companyId: number, made: number, painted: nu
     const n = made === 1 ? '1 post drafted' : `${made} posts drafted`
     const sub = painted ? `${n} from yesterday's work, ${painted} with an AI picture` : `${n} from yesterday's work`
     const list = titles.slice(0, 6).map((t) => `<li style="margin:4px 0">${String(t).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] || c))}…</li>`).join('')
+    // The numbers that make money, in the same email: campaigns this week,
+    // the website this month, the Google listing, review requests sent.
+    let numbers = ''
+    try {
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+      const m0 = new Date(); m0.setUTCDate(1); m0.setUTCHours(0, 0, 0, 0)
+      const m1 = new Date(m0); m1.setUTCMonth(m1.getUTCMonth() - 1)
+      const [{ data: ev }, { data: members }, { data: hits }, { data: g }, { count: asks }] = await Promise.all([
+        sb.from('campaign_events').select('kind, member_id').eq('company_id', companyId).gte('at', weekAgo).in('kind', ['sent', 'replied']).limit(5000),
+        sb.from('campaign_members').select('lead_id').eq('company_id', companyId).not('lead_id', 'is', null).limit(5000),
+        sb.from('site_hits').select('at').eq('company_id', companyId).gte('at', m1.toISOString()).limit(20000),
+        sb.from('marketing_metrics_daily').select('day, metrics').eq('company_id', companyId).eq('source', 'google').order('day', { ascending: false }).limit(40),
+        sb.from('review_asks').select('id', { count: 'exact', head: true }).eq('company_id', companyId).not('sent_at', 'is', null).gte('sent_at', m0.toISOString()),
+      ])
+      const sent = (ev || []).filter((e: any) => e.kind === 'sent').length
+      const replied = new Set((ev || []).filter((e: any) => e.kind === 'replied').map((e: any) => e.member_id)).size
+      let booked = 0
+      const leadIds = [...new Set((members || []).map((m: any) => m.lead_id))]
+      if (leadIds.length) {
+        const { data: ls } = await sb.from('leads').select('id, status, appointment_id, converted_at').eq('company_id', companyId).in('id', leadIds.slice(0, 500))
+        booked = (ls || []).filter((l: any) => l.appointment_id || l.converted_at || ['Appointment Set', 'Qualified', 'Quote Sent', 'Negotiation', 'Won'].includes(l.status)).length
+      }
+      const thisMonth = (hits || []).filter((h: any) => new Date(h.at) >= m0).length
+      const lastMonth = (hits || []).length - thisMonth
+      const latest = g?.[0]?.metrics, before = (g || []).find((r: any) => new Date(r.day) <= new Date(Date.now() - 30 * 86400000))?.metrics
+      const lines: string[] = []
+      if (sent || replied) lines.push(`Campaigns this week: <b>${sent}</b> sent, <b>${replied}</b> replied, <b>${booked}</b> booked so far.`)
+      if (hits?.length) lines.push(`Website this month: <b>${thisMonth}</b> visits${lastMonth ? ` (last month ${lastMonth})` : ''}.`)
+      if (latest) lines.push(`Google listing: <b>${latest.rating ?? '–'} ★</b>, ${latest.reviews ?? 0} reviews${before?.reviews != null && latest.reviews != null && latest.reviews !== before.reviews ? ` (${latest.reviews > before.reviews ? '+' : ''}${latest.reviews - before.reviews} in 30 days)` : ''}.`)
+      if (Number(asks)) lines.push(`Review requests sent this month: <b>${asks}</b>.`)
+      if (lines.length) numbers = `<div style="margin:14px 0 0;padding:10px 12px;background:#f7f5ef;border-radius:8px;font-size:13px;color:#2c3530">${lines.map((l) => `<div style="margin:3px 0">${l}</div>`).join('')}</div>`
+    } catch (e) { console.warn('[marketing-suggest] digest numbers', (e as Error)?.message) }
     const html = repEmailShell(`${made} waiting in Marketing`, `
       <p style="margin:0 0 10px">Overnight, JobScout drafted <b>${n}</b> from finished jobs and photos the crew sent in${painted ? `, including <b>${painted}</b> with a picture the AI painted because nobody photographed the job (it is labelled; swap a real one in if you have it)` : ''}.</p>
       <ul style="margin:0 0 6px 18px;padding:0;color:#4d5a52">${list}</ul>
-      <p style="margin:10px 0 0;color:#7d8a7f;font-size:13px">Read, edit and approve in Marketing. Every edit teaches the next draft.</p>`,
+      <p style="margin:10px 0 0;color:#7d8a7f;font-size:13px">Read, edit and approve in Marketing. Every edit teaches the next draft.</p>${numbers}`,
       appLink('/marketing'), 'Open Marketing')
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },

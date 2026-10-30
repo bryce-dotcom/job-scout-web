@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../lib/toast'
 import { sourceLabel } from '../../lib/utm'
-import { Globe, Star, Copy, Check, Search, RefreshCw, ExternalLink } from 'lucide-react'
+import { Globe, Star, Copy, Check, Search, RefreshCw, ExternalLink, MessageSquareHeart } from 'lucide-react'
 
 // The numbers the Marketing page did not have: the company's own website,
 // counted by a snippet they paste once, and the Google listing's rating and
@@ -194,6 +194,98 @@ export function NumbersBlocks({ theme, isMobile, companyId, invoke, postsById = 
             </div>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+const REVIEW_KEY = 'marketing_review_ask'
+const REVIEW_DEFAULTS = {
+  subject: 'How did we do, {{first_name}}?',
+  text: 'Hi {{first_name}}, thanks for having {{our_company}} out. If we did right by you, a quick Google review helps a small company more than you would think. It takes a minute:',
+  delay_hours: 3,
+}
+const parseSetting = (v) => { if (v == null) return null; if (typeof v === 'object') return v; try { return JSON.parse(v) } catch { return null } }
+
+/**
+ * Setup: ask every finished job's customer for a review. One switch, the
+ * wording, and when. The campaign tick sends it — a text if the customer
+ * said yes to texts, else an email — once per job, never twice in 90 days
+ * to the same customer, with the company's review link.
+ */
+export function ReviewAskCard({ theme, companyId, isManager, invoke, reviewLink }) {
+  const [rowId, setRowId] = useState(null)
+  const [cfg, setCfg] = useState({ enabled: false, ...REVIEW_DEFAULTS })
+  const [saved, setSaved] = useState(true)
+  const [asks, setAsks] = useState(null)
+  const [testing, setTesting] = useState(false)
+  const load = useCallback(async () => {
+    const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0)
+    const [{ data: rows }, { count }] = await Promise.all([
+      supabase.from('settings').select('id, value').eq('company_id', companyId).eq('key', REVIEW_KEY).limit(1),
+      supabase.from('review_asks').select('id', { count: 'exact', head: true }).eq('company_id', companyId).not('sent_at', 'is', null).gte('sent_at', m0.toISOString()),
+    ])
+    const r = rows?.[0]
+    if (r) { setRowId(r.id); setCfg({ enabled: false, ...REVIEW_DEFAULTS, ...(parseSetting(r.value) || {}) }) }
+    setAsks(count || 0)
+  }, [companyId])
+  useEffect(() => { load() }, [load])
+  const set = (patch) => { setCfg((c) => ({ ...c, ...patch })); setSaved(false) }
+  const save = async (next = cfg) => {
+    const value = JSON.stringify(next)
+    const { error } = rowId
+      ? await supabase.from('settings').update({ value }).eq('id', rowId).eq('company_id', companyId)
+      : await supabase.from('settings').insert({ company_id: companyId, key: REVIEW_KEY, value }).select('id').maybeSingle().then((r) => { if (r.data?.id) setRowId(r.data.id); return r })
+    if (error) { toast.error(error.message); return }
+    setSaved(true)
+  }
+  const toggle = async (on) => {
+    if (on && !reviewLink) { toast.error('Link your Google listing first (the card above), so the message has somewhere to send people.'); return }
+    const next = { ...cfg, enabled: on }
+    setCfg(next); await save(next)
+    toast.success(on ? 'On. Finished jobs get a review request from the next tick.' : 'Off.')
+  }
+  const test = async () => {
+    setTesting(true)
+    const r = await invoke('marketing-campaign', { action: 'test', campaign: { id: 0, touches: [{ day: 0, kind: 'email', subject: cfg.subject, body: `${cfg.text}\n\n${reviewLink || 'https://example.com/your-review-link'}` }] }, index: 0 })
+    setTesting(false)
+    if (!r.ok) { toast.error(r.error || 'Could not send the test'); return }
+    toast.success(`Sent to ${r.to}.`)
+  }
+  return (
+    <div style={card(theme)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <MessageSquareHeart size={16} color={MKT} />
+        <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, flex: 1 }}>Ask for a review after every finished job</div>
+        {isManager && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.text, cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfg.enabled === true} onChange={(e) => toggle(e.target.checked)} style={{ width: 18, height: 18 }} /> {cfg.enabled ? 'On' : 'Off'}
+          </label>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: theme.textMuted }}>
+        A text if the customer said yes to texts, otherwise an email, with your Google review link. Once per job, never twice in 90 days to the same person, 8am to 7pm.
+        {asks != null && asks > 0 ? <> <b style={{ color: theme.text }}>{asks}</b> sent this month.</> : ''}
+        {!reviewLink && <span style={{ color: '#b45309' }}> No review link yet: link your Google listing above, or put one in the brand kit's links.</span>}
+      </div>
+      {isManager && (
+        <>
+          <input style={input(theme)} value={cfg.subject} onChange={(e) => set({ subject: e.target.value })} placeholder={REVIEW_DEFAULTS.subject} />
+          <textarea style={{ ...input(theme), minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }} value={cfg.text} onChange={(e) => set({ text: e.target.value })} placeholder={REVIEW_DEFAULTS.text} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: theme.textMuted }}>
+            <span>Send</span>
+            <select style={{ ...input(theme), width: 'auto', minHeight: 36, padding: '6px 10px' }} value={cfg.delay_hours} onChange={(e) => set({ delay_hours: Number(e.target.value) })}>
+              <option value={1}>an hour after the job is marked done</option>
+              <option value={3}>a few hours after</option>
+              <option value={18}>the next morning</option>
+              <option value={48}>two days later</option>
+            </select>
+            <span>The link goes at the end. Fields: {'{{first_name}} {{our_company}}'}.</span>
+            <span style={{ flex: 1 }} />
+            <button type="button" style={{ ...ghost(theme), minHeight: 32, padding: '4px 10px', fontSize: 12 }} onClick={test} disabled={testing}>{testing ? 'Sending…' : 'Send me a test'}</button>
+            {!saved && <button type="button" style={{ ...primary(), minHeight: 32, padding: '4px 12px', fontSize: 12 }} onClick={() => save()}>Save</button>}
+          </div>
+        </>
       )}
     </div>
   )

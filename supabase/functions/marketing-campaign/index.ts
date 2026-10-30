@@ -26,7 +26,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveCaller, isServiceCaller } from '../_shared/auth.ts'
 import { callAnthropic } from '../_shared/anthropic.ts'
-import { brandKey, brandsFrom, managerIds } from '../_shared/marketing.ts'
+import { brandKey, brandsFrom, managerIds, brandForUnit } from '../_shared/marketing.ts'
 import { campaignReplyAddress } from '../_shared/replyToken.ts'
 import { tagLinks, campaignTags } from '../_shared/utm.ts'
 
@@ -108,7 +108,121 @@ async function companyFacts(sb: any, companyId: number, brandId: string | null) 
   const name = kit.company_name || brand?.name || co?.company_name || 'Our company'
   const addressLine = [co?.address, [co?.city, co?.state].filter(Boolean).join(', '), co?.zip].filter(Boolean).join(' · ')
   const footer = `${name}${addressLine ? ' · ' + addressLine : ''}${co?.phone ? ' · ' + co.phone : ''}`
-  return { co, kit, brand, name, footer, timezone: co?.timezone || 'America/Denver' }
+  return { co, kit, brand, brands, name, footer, timezone: co?.timezone || 'America/Denver' }
+}
+
+// ── Review requests ──────────────────────────────────────────────────────
+// After a job is finished, one message to the customer with the review
+// link: a text if they said yes to texts, else an email. Once per job, no
+// more than once per customer in 90 days, inside quiet hours and the daily
+// cap, never to a suppressed address. The company's wording lives in
+// settings marketing_review_ask; the send goes through the same helpers as
+// a campaign touch, so the unsubscribe link, tags and footer are the same.
+export const REVIEW_DEFAULTS = {
+  subject: 'How did we do, {{first_name}}?',
+  text: 'Hi {{first_name}}, thanks for having {{our_company}} out. If we did right by you, a quick Google review helps a small company more than you would think. It takes a minute:',
+  delay_hours: 3,
+}
+const REVIEW_CAMPAIGN_NAME = 'Review requests'
+
+function reviewLinkFor(facts: Awaited<ReturnType<typeof companyFacts>>, googlePlaceId: string | null, reviewUrlSetting: string | null): string | null {
+  const fromKit = String((facts.kit?.links as any)?.review || '').trim()
+  if (/^https?:\/\//.test(fromKit)) return fromKit
+  const fromSetting = String(reviewUrlSetting || '').replace(/^"|"$/g, '').trim()
+  if (/^https?:\/\//.test(fromSetting)) return fromSetting
+  if (googlePlaceId) return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(googlePlaceId)}`
+  return null
+}
+
+async function reviewAsksPass(sb: any, env: { url: string; key: string; resend: string; replySecret: string; inboundDomain: string }) {
+  const out = { companies: 0, sent: 0, skipped: 0, failed: 0, no_link: 0 }
+  const { data: rows } = await sb.from('settings').select('company_id, value').eq('key', 'marketing_review_ask')
+  const now = new Date()
+  for (const row of rows || []) {
+    const cfg = parseJsonSetting(row.value) || {}
+    if (cfg.enabled !== true) continue
+    const companyId = Number(row.company_id)
+    out.companies += 1
+    try {
+      const delayMs = Math.max(0, Number(cfg.delay_hours ?? REVIEW_DEFAULTS.delay_hours)) * 3600000
+      const since = new Date(now.getTime() - 3 * 86400000).toISOString()
+      const until = new Date(now.getTime() - delayMs).toISOString()
+      const { data: jobs } = await sb.from('jobs').select('id, customer_id, business_unit, job_title, service_type, completed_at')
+        .eq('company_id', companyId).not('customer_id', 'is', null).gte('completed_at', since).lte('completed_at', until).order('completed_at', { ascending: true }).limit(25)
+      if (!jobs?.length) continue
+      const jobIds = jobs.map((j: any) => j.id)
+      const { data: asked } = await sb.from('review_asks').select('job_id, customer_id, sent_at, created_at').eq('company_id', companyId)
+        .or(`job_id.in.(${jobIds.join(',')}),sent_at.gte.${new Date(now.getTime() - 90 * 86400000).toISOString()}`)
+      const askedJobs = new Set((asked || []).filter((a: any) => a.sent_at || (now.getTime() - new Date(a.created_at).getTime()) < 86400000).map((a: any) => a.job_id))
+      const askedCustomers = new Set((asked || []).filter((a: any) => a.sent_at).map((a: any) => a.customer_id))
+      const { data: co } = await sb.from('companies').select('google_place_id, timezone').eq('id', companyId).maybeSingle()
+      const { data: urlRow } = await sb.from('settings').select('value').eq('company_id', companyId).eq('key', 'google_review_url').limit(1).maybeSingle()
+      const hour = localHour(co?.timezone, now)
+      if (hour < QUIET_FROM || hour >= QUIET_TO) { out.skipped += jobs.length; continue }
+      const { count: sentToday } = await sb.from('campaign_events').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('kind', 'sent').gte('at', new Date(now.getTime() - 86400000).toISOString())
+      let budget = DAILY_CAP - (Number(sentToday) || 0)
+      const sup = await suppressedSet(sb, companyId)
+      const factsByBrand = new Map<string, Awaited<ReturnType<typeof companyFacts>>>()
+      let campaign: any = null
+      const subject = String(cfg.subject || REVIEW_DEFAULTS.subject)
+      const text = String(cfg.text || REVIEW_DEFAULTS.text)
+
+      for (const job of jobs) {
+        if (askedJobs.has(job.id) || askedCustomers.has(job.customer_id)) { out.skipped += 1; continue }
+        if (budget <= 0) { out.skipped += 1; continue }
+        const { data: cust } = await sb.from('customers').select('id, name, business_name, email, phone, sms_consent').eq('id', job.customer_id).maybeSingle()
+        if (!cust) { out.skipped += 1; continue }
+        const base = await (async () => {
+          if (!factsByBrand.has('')) factsByBrand.set('', await companyFacts(sb, companyId, null))
+          return factsByBrand.get('')!
+        })()
+        const brandId = brandForUnit(base.brands || [], job.business_unit) || ''
+        if (!factsByBrand.has(brandId)) factsByBrand.set(brandId, await companyFacts(sb, companyId, brandId || null))
+        const facts = factsByBrand.get(brandId)!
+        const link = reviewLinkFor(facts, co?.google_place_id || null, urlRow?.value ?? null)
+        if (!link) { out.no_link += 1; continue }
+        const email = lower(cust.email)
+        const phone = digitsOf(cust.phone || '')
+        const viaText = !!phone && cust.sms_consent === true
+        const viaEmail = !viaText && !!email && validEmail(email) && !sup.has(email)
+        if (!viaText && !viaEmail) { out.skipped += 1; await sb.from('review_asks').upsert({ company_id: companyId, job_id: job.id, customer_id: cust.id, channel: null, error: 'no channel: no consented phone, no usable email' }, { onConflict: 'company_id,job_id', ignoreDuplicates: true }); continue }
+        if (!campaign) {
+          const { data: found } = await sb.from('marketing_campaigns').select('id').eq('company_id', companyId).eq('name', REVIEW_CAMPAIGN_NAME).limit(1).maybeSingle()
+          if (found) campaign = found
+          else {
+            const { data: made } = await sb.from('marketing_campaigns').insert({ company_id: companyId, name: REVIEW_CAMPAIGN_NAME, audience: { kind: 'reviews' }, touches: [{ day: 0, kind: 'email', subject, body: text }], stop_on_reply: true, status: 'running', started_at: now.toISOString() }).select('id').maybeSingle()
+            campaign = made
+          }
+        }
+        if (!campaign) { out.failed += 1; continue }
+        const { data: member } = await sb.from('campaign_members').upsert(
+          { company_id: companyId, campaign_id: campaign.id, customer_id: cust.id, email: email || `no-email+c${cust.id}@invalid.local`, name: cust.name || cust.business_name || null, token: randomToken(), touch_index: 1, next_at: null, state: 'done' },
+          { onConflict: 'campaign_id,email' },
+        ).select('id, token, email, name').maybeSingle()
+        if (!member) { out.failed += 1; continue }
+        await sb.from('review_asks').upsert({ company_id: companyId, job_id: job.id, customer_id: cust.id, member_id: member.id, channel: viaText ? 'text' : 'email' }, { onConflict: 'company_id,job_id', ignoreDuplicates: true })
+        const vars = { name: cust.name || cust.business_name || '', company: cust.business_name || '', our_company: facts.name }
+        let result: { ok: boolean; error?: string }
+        if (viaText) {
+          let message = `${mergeText(text, vars)}\n${link}`.slice(0, TEXT_MAX)
+          if (!/\bSTOP\b/i.test(message)) message = `${message}\n${STOP_LINE}`
+          result = await sendText(env, companyId, '+' + phone, message, cust.id)
+        } else {
+          result = await sendOne(env, facts, { ...member, company: cust.business_name || '', touch_index: 0 }, { day: 0, kind: 'email', subject, body: `${text}\n\n${link}` }, campaign.id)
+        }
+        if (result.ok) {
+          budget -= 1; out.sent += 1
+          await sb.from('review_asks').update({ sent_at: now.toISOString(), error: null }).eq('company_id', companyId).eq('job_id', job.id)
+          await sb.from('campaign_events').insert({ company_id: companyId, campaign_id: campaign.id, member_id: member.id, kind: 'sent', touch_index: 0, meta: { review: true, job_id: job.id, channel: viaText ? 'text' : 'email' } })
+        } else {
+          out.failed += 1
+          await sb.from('review_asks').update({ error: String(result.error || 'send failed').slice(0, 200) }).eq('company_id', companyId).eq('job_id', job.id)
+          await sb.from('campaign_events').insert({ company_id: companyId, campaign_id: campaign.id, member_id: member.id, kind: 'failed', touch_index: 0, meta: { review: true, job_id: job.id, error: result.error } })
+        }
+      }
+    } catch (e) { console.warn('[marketing-campaign] review pass', companyId, (e as Error)?.message); out.failed += 1 }
+  }
+  return out
 }
 
 // ── Audiences → people ─────────────────────────────────────────────────
@@ -466,7 +580,8 @@ serve(async (req) => {
       if (!ours) return json({ ok: false, error: 'Not for callers.' }, 403)
       if (!env.resend) return json({ ok: false, error: 'RESEND_API_KEY is not set.' }, 500)
       const out = await runTick(sb, env)
-      return json({ ok: true, ...out })
+      const reviews = await reviewAsksPass(sb, env)
+      return json({ ok: true, ...out, reviews })
     }
 
     // ── A person ──
