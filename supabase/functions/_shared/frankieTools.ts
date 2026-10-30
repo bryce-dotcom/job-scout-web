@@ -19,6 +19,8 @@ import { isMaterialSpend, materialCostOf, bonusCostByJob, jobHoursFromPunches } 
 import { costRatesByEmployee } from './laborRate.ts'
 import { collectedIncentives, incentiveReceivedAt, isCashPayment, isUnlinkedExpense } from './cashBasis.ts'
 import { payrollPeriodsFromBank } from './payrollFromBank.ts'
+import { soldReport } from './soldReport.ts'
+import { NOT_SOLD_STATUSES } from './soldRule.ts'
 
 // Frankie's answers carry money decisions and he is low volume; Arnie stays
 // on Sonnet. Opus 5 thinks by default — the non-streaming loop passes its
@@ -214,7 +216,7 @@ export const FRANKIE_TOOLS: any[] = [
   {
     name: 'query_sales',
     description:
-      'Sales Won — what the Dashboard tiles and the Sales Performance page show: the contract value of jobs CREATED in a date range, cancelled and archived excluded, unpriced jobs counted at $0. ' +
+      'Sales Won — what the Dashboard tiles, the Sales Performance page and Jenny show: the contract value of jobs CREATED in a date range, cancelled and archived excluded, unpriced jobs counted at $0, plus estimates the customer approved that are not a job yet; by rep. ' +
       'This is booked work, not cash; use query_payments or query_pnl for cash. Use for "how much have we sold this year", "what did we book in Q2", "the dashboard says $2.2M", sales by month, the biggest jobs sold.',
     input_schema: {
       type: 'object',
@@ -486,35 +488,12 @@ async function invoices(r: Rest, co: string, input: any) {
   }
 }
 
-// Mirrors src/lib/soldTotals.js — the one "sold" rule in the app. Change
-// both or neither.
-const NOT_SOLD = new Set(['Archived', 'Cancelled', 'Canceled', 'Void', 'Voided'])
+// The one "sold" rule (_shared/soldRule.ts via _shared/soldReport.ts) — the
+// same figure as the Dashboard, Sales Performance and Jenny's query_sold.
+const NOT_SOLD = NOT_SOLD_STATUSES
 async function sales(r: Rest, co: string, input: any) {
-  const p = new URLSearchParams({ select: 'id,job_id,job_title,status,job_total,created_at,customer_id', order: 'created_at.desc' })
-  if (input?.start_date) p.append('created_at', `gte.${clean(input.start_date)}`)
-  if (input?.end_date) p.append('created_at', `lt.${clean(input.end_date)}T23:59:59.999`)
-  const rows = (await readAll(r, `jobs?${co}&${p}`)).filter((j: any) => j.created_at && !NOT_SOLD.has(j.status))
-  const val = (j: any) => { const n = Number(j.job_total); return Number.isFinite(n) && n > 0 ? n : 0 }
-  const total = money(rows.reduce((s: number, j: any) => s + val(j), 0))
-  const unpriced = rows.filter((j: any) => val(j) === 0).length
-  const names: Record<number, string> = {}
-  const cids = [...new Set(rows.map((j: any) => j.customer_id).filter(Boolean))].slice(0, 300)
-  if (cids.length) for (const c of await readAll(r, `customers?${co}&select=id,name,business_name&id=in.(${cids.join(',')})`)) names[c.id] = c.business_name || c.name
-  const byStatus: Record<string, number> = {}
-  for (const j of rows) byStatus[j.status || 'no status'] = money((byStatus[j.status || 'no status'] || 0) + val(j))
-  const out: any = {
-    sold: total, jobs: rows.length, unpriced_jobs: unpriced, by_status: byStatus,
-    largest: [...rows].sort((a: any, b: any) => val(b) - val(a)).slice(0, clamp(input?.limit, 15, 100)).map((j: any) => ({
-      job: j.job_id || `#${j.id}`, title: j.job_title, customer: names[j.customer_id] || null, sold: val(j), created: String(j.created_at).slice(0, 10), status: j.status,
-    })),
-    scope: `Sold = contract value (job_total) of ${rows.length} job(s) created in the range, cancelled/archived excluded, ${unpriced} unpriced counted at $0. Same rule as the Dashboard's Sales Won tiles and the Sales Performance page. This is booked work, not cash collected.`,
-  }
-  if (input?.by_month) {
-    const bm: Record<string, { sold: number; jobs: number }> = {}
-    for (const j of rows) { const k = String(j.created_at).slice(0, 7); bm[k] = bm[k] || { sold: 0, jobs: 0 }; bm[k].sold = money(bm[k].sold + val(j)); bm[k].jobs++ }
-    out.by_month = Object.fromEntries(Object.entries(bm).sort(([a], [b]) => a.localeCompare(b)))
-  }
-  return out
+  const companyId = Number(co.replace('company_id=eq.', ''))
+  return await soldReport(r, companyId, { start: clean(input?.start_date) || null, end: clean(input?.end_date) || null, byMonth: !!input?.by_month, limit: input?.limit })
 }
 
 const DELIVERED = new Set(['Completed', 'Job Complete', 'Verified Complete', 'Post Inspection (Req)', 'Invoiced', 'Paid', 'Closed', 'Done'])

@@ -39,6 +39,7 @@ import { accountSummary } from "../_shared/arnieAccount.ts";
 import { eosOverview } from "../_shared/arnieEos.ts";
 import { analyseFixturePhoto, lightingCatalogue } from "../_shared/arnieLighting.ts";
 import { closedDeals } from "../_shared/arnieClosed.ts";
+import { soldReport } from "../_shared/soldReport.ts";
 import { crewDay } from '../_shared/arnieDispatch.ts'
 import { FRANKIE_MODEL, FRANKIE_MAX_TOKENS, frankieToolsFor, execFrankieTool } from '../_shared/frankieTools.ts'
 
@@ -468,6 +469,20 @@ const TOOLS = [
         low_stock_only: { type: 'boolean' },
         location: { type: 'string' },
         search: { type: 'string', description: 'Search by name' },
+      },
+    },
+  },
+  {
+    name: 'query_sold',
+    description: "How much the company has SOLD in a period — the Dashboard's Sales Won and the Sales Performance page, to the cent: every job created in the period at its contract value (cancelled/archived out; recurring visits and jobs with no estimate included) plus estimates the customer approved that are not a job yet, broken down by rep (one rep per deal). Use for \"where are we at sales-wise\", \"how much have we sold this month\", \"how much has Christopher sold\", sales by rep or month, \"the dashboard says $X\". Booked work, not cash. ADMIN+ only.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: { type: 'string', description: 'YYYY-MM-DD, local day, inclusive' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD, local day, inclusive' },
+        salesperson_id: { type: 'integer', description: 'Only this rep, if they asked about one person' },
+        by_month: { type: 'boolean', description: 'Also break it down by month' },
+        limit: { type: 'integer', description: 'How many of the largest deals to list (default 15)' },
       },
     },
   },
@@ -1949,6 +1964,14 @@ async function execTool(name: string, input: any, caller: Caller, messages: any[
         ...(items.length > 50 ? { note: `Showing the first 50 of ${items.length}.` } : {}),
         ...(got.truncated ? { WARNING: `Read ${got.rows.length} of ${got.total} inventory rows — this count is a floor, not a total.` } : {}),
       }
+    }
+
+    if (name === 'query_sold') {
+      if (!isAdmin) return { restricted: 'Admin access required for sales figures.' }
+      return await soldReport({ url: SUPABASE_URL, key: SUPABASE_SERVICE_ROLE_KEY }, companyId as number, {
+        start: input?.start_date, end: input?.end_date, salespersonId: input?.salesperson_id, byMonth: !!input?.by_month, limit: input?.limit,
+        tz: await companyTz(companyId as number),
+      })
     }
 
     if (name === 'query_closed') {

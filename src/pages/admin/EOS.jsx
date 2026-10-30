@@ -6,7 +6,8 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { toast } from '../../lib/toast'
 import HelpBadge from '../../components/HelpBadge'
 import { deliveredJobsInRange, sumJobTotal } from '../../lib/jobMetrics'
-import { soldJobsInRange, soldValue } from '../../lib/soldTotals'
+import { soldJobsInRange, soldValue, soldRowsOf } from '../../lib/soldTotals'
+import { useApprovedNotAJobYet } from '../../hooks/useApprovedNotAJobYet'
 import { arAsOf } from '../../lib/arHelpers'
 import { getWeekRange } from '../../lib/eosWeek'
 import { mergeJobHourSources } from '../../lib/jobHours'
@@ -116,7 +117,9 @@ export const AUTO_SOURCES = {
     // to the report's total. Add a Dollar Amount Sold with no unit set to see
     // the company figure the report shows.
     compute: (d, s, e, sd, ed, ent) =>
-      soldJobsInRange(filterByEntity(d.jobs, ent), { start: s, end: e })
+      // Plus approved estimates not made into a job yet (no business unit, so
+      // they count in the company figure only).
+      soldJobsInRange(filterByEntity(soldRowsOf(d.jobs, d.approvedNotAJobYet), ent), { start: s, end: e })
         .reduce((sum, j) => sum + soldValue(j), 0),
   },
   leads_created: {
@@ -2986,9 +2989,10 @@ export default function EOS() {
     // each job was worth rather than how long it took.
     overheadPctOfRevenue: overheadRate.pctOfRevenue,
   }).rows), [jobs, costing, payments, invoices, plaidTransactions, expenses, timeClock, employees, company, overheadRate])
+  const approvedNotAJobYet = useApprovedNotAJobYet(companyId, quotes, jobs)
   const storeData = useMemo(() => ({
-    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz,
-  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz])
+    jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz, approvedNotAJobYet,
+  }), [jobs, leads, invoices, utilityInvoices, payments, appointments, timeLogs, hourEntries, expenses, plaidTransactions, quotes, leadPayments, submittals, loggedSubmittals, jobStatuses, jobCostIndex, tz, approvedNotAJobYet])
 
   // Build entity list from service types + business units (deduplicated)
   const entities = useMemo(() => {

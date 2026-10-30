@@ -88,3 +88,12 @@ describe('the trigger books the next visit on any finish (migration 202610301200
     expect(sql).toMatch(/AND customer_id = NEW\.customer_id[\s\S]{0,200}AND btrim\(COALESCE\(job_title, ''\)\) = btrim\(COALESCE\(NEW\.job_title, ''\)\)/)
   })
 })
+
+describe('the next visit keeps its price (migration 20261030140000)', () => {
+  it('job_total and where it came from are copied with the lines', () => {
+    const sql = read('supabase/migrations/20261030140000_recurring_visit_keeps_its_price.sql')
+    expect(sql).toMatch(/recurrence_landing,\s+job_total, job_total_source,\s+source_system, created_at, updated_at\s+\)/)
+    expect(sql).toMatch(/recurrence_end_date, recurrence_landing,\s+job_total, job_total_source,\s+'recurrence_spawn'/)
+    expect(sql).toMatch(/WHILE v_next_ts::date < current_date/)
+  })
+})

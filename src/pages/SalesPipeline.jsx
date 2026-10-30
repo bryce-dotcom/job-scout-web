@@ -20,7 +20,7 @@ import FollowUpStrip from '../components/FollowUpStrip'
 import { buildLeadIndex, primaryOwnerId, leadForJob, isUnattributed, jobOwnedBy } from '../lib/jobOwnership'
 import { deliveryStagesFrom, jobStatusId } from '../lib/pipelineStages'
 import { loadPipelineFilters, savePipelineFilters, resolveOwnerFilter, stashPipelineScroll, takePipelineScroll } from '../lib/pipelinePrefs'
-import { soldTotal, periodBounds } from '../lib/soldTotals'
+import { soldTotal, periodBounds, soldRowsOf, fetchApprovedNotAJobYet } from '../lib/soldTotals'
 import { countDueFromRows, dueKeysFromRows } from '../lib/followUpDue'
 import { pushStatus, enablePush, disablePush, PUSH_GRANTED, PUSH_UNSUPPORTED, PUSH_UNCONFIGURED, PUSH_DENIED } from '../lib/pushNotifications'
 import LiahonaMap from '../components/liahona/LiahonaMap'
@@ -348,13 +348,15 @@ export default function SalesPipeline() {
         }
         return out
       }
-      const [jobRows, leadRows] = await Promise.all([
-        page('jobs', 'id, job_total, status, created_at, salesperson_id, lead_id',
+      const [jobRows, leadRows, pending] = await Promise.all([
+        page('jobs', 'id, job_total, status, created_at, salesperson_id, lead_id, quote_id',
           (q) => (start ? q.gte('created_at', start) : q)),
         page('leads', 'id, salesperson_id, lead_owner_id, salesperson_ids'),
+        fetchApprovedNotAJobYet(supabase, companyId),
       ])
       const owner = (!canViewAll && user?.id) ? String(user.id) : ownerFilter
-      setSoldStat(soldTotal(jobRows || [], leadRows || [], {
+      // Approved estimates not turned into a job yet are sold too (lib/soldTotals).
+      setSoldStat(soldTotal(soldRowsOf(jobRows || [], pending), leadRows || [], {
         ownerId: owner === 'unassigned' ? null : owner, start, end,
       }))
     } catch (e) { /* leave the previous figure rather than showing a wrong one */ }

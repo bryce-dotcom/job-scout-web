@@ -18,6 +18,12 @@
 // is run under plain Node by the eval runner, which does not resolve
 // extensionless specifiers.
 import { buildLeadIndex, primaryOwnerId } from './jobOwnership.js'
+// What counts as sold — NOT_SOLD_STATUSES, isSoldJob, soldValue, and approved
+// estimates that are not a job yet — is one rule shared with the server
+// (Frankie's query_sales, Jenny's query_sold). Cancelled work is not sold work;
+// a job is worth its own job_total, never its estimate's amount. See the file.
+import { NOT_SOLD_STATUSES, isSoldJob, soldValue, soldRowsOf, approvedNotAJobYet, NOT_A_JOB_YET, madeInJobScout, APPROVED_ESTIMATES_SELECT } from '../../supabase/functions/_shared/soldRule.ts'
+export { NOT_SOLD_STATUSES, isSoldJob, soldValue, soldRowsOf, approvedNotAJobYet, NOT_A_JOB_YET, madeInJobScout, APPROVED_ESTIMATES_SELECT }
 
 /**
  * Cumulative sold in a window.
@@ -31,33 +37,6 @@ import { buildLeadIndex, primaryOwnerId } from './jobOwnership.js'
  * closed the deal. Dating by start_date (when the work is scheduled) is what
  * put deals in the wrong period before.
  */
-// Cancelled work is not sold work. These 10 of Cole's reached him only through
-// a catch-all lead (3011 alone carries 464 unrelated jobs), and counting
-// cancelled jobs as sales is how a rep's number stops meaning anything.
-export const NOT_SOLD_STATUSES = new Set(['Archived', 'Cancelled', 'Canceled', 'Void', 'Voided'])
-
-/** Is this job a sale at all? A row that exists because someone said yes, and
- *  has not since been cancelled. */
-export function isSoldJob(job) {
-  return !!job?.created_at && !NOT_SOLD_STATUSES.has(job.status)
-}
-
-/**
- * What a sold job is WORTH.
- *
- * Its own job_total and nothing else. There used to be a fallback to the
- * linked estimate's `quote_amount` when job_total was blank, so that a job
- * converted before pricing would not read $0 — but an estimate is an offer,
- * not a sale, and one approved HHH estimate carries $1,651,117.14 against a
- * job whose total is $16,299.20. A number that can be wrong by two orders of
- * magnitude is worse than a visible zero, so unpriced jobs count as $0 and
- * are REPORTED as unpriced instead (every caller of soldByRep gets the count).
- */
-export function soldValue(job) {
-  const n = Number(job?.job_total)
-  return Number.isFinite(n) && n > 0 ? n : 0
-}
-
 /** Every job sold in [start, end). The one filter — date by created_at, because
  *  a job exists only because someone closed the deal. */
 export function soldJobsInRange(jobs = [], { start = null, end = null } = {}) {
@@ -188,4 +167,26 @@ export function periodBounds(range, now = new Date()) {
   if (range === 'last90') return { start: new Date(now.getTime() - 90 * 86400000).toISOString(), end: null }
   if (range === 'all') return { start: null, end: null }
   return { start: new Date(y, 0, 1).toISOString(), end: null }
+}
+
+/**
+ * Approved estimates that are not a job yet, read for one company — the rows
+ * soldRowsOf adds to the jobs. Checks EVERY job (archived too) for one that
+ * points at the estimate, so a page holding only this month's jobs, or the
+ * store's live ones, still never counts a deal twice. Returns [] on any error:
+ * the jobs figure stands on its own.
+ */
+export async function fetchApprovedNotAJobYet(supabase, companyId) {
+  if (!supabase || !companyId) return []
+  try {
+    const { data: quotes, error } = await supabase.from('quotes').select(APPROVED_ESTIMATES_SELECT)
+      .eq('company_id', companyId).eq('status', 'Approved').is('job_id', null).limit(1000)
+    if (error || !quotes?.length) return []
+    const mine = quotes.filter(madeInJobScout)
+    if (!mine.length) return []
+    const { data: linked, error: e2 } = await supabase.from('jobs').select('quote_id')
+      .eq('company_id', companyId).in('quote_id', mine.map((q) => q.id))
+    if (e2) return []
+    return approvedNotAJobYet(mine, linked || [])
+  } catch { return [] }
 }

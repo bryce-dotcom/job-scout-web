@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, Users, FileText, DollarSign, ChevronRight, ChevronDown, AlertTriangle, Briefcase } from 'lucide-react'
 import { computeSalesFunnel, funnelWindow } from '../lib/salesFunnel'
-import { soldByRep, periodBounds } from '../lib/soldTotals'
+import { soldByRep, periodBounds, soldRowsOf, fetchApprovedNotAJobYet } from '../lib/soldTotals'
 import { isFieldTech } from '../lib/accessControl'
 
 // Why this page was rewritten (Cole, 2026-09-28: "he wants to know where his
@@ -90,16 +90,18 @@ export default function SalesPerformance() {
     }
     ;(async () => {
       try {
-        const [jobRows, leadRows] = await Promise.all([
+        const [jobRows, leadRows, pending] = await Promise.all([
           page('jobs', 'id, job_id, job_title, job_total, status, created_at, salesperson_id, lead_id, quote_id, customer_id, customers(name)',
             (q) => {
               let x = start ? q.gte('created_at', start) : q
               return end ? x.lt('created_at', end) : x
             }),
           page('leads', 'id, salesperson_id, lead_owner_id, salesperson_ids'),
+          // Approved estimates not turned into a job yet are sold too (lib/soldTotals).
+          fetchApprovedNotAJobYet(supabase, companyId),
         ])
         if (!alive) return
-        setJobs(jobRows)
+        setJobs(soldRowsOf(jobRows, pending))
         setLeads(leadRows)
       } catch (e) {
         // Say so rather than rendering a confident wrong total.
@@ -286,8 +288,9 @@ export default function SalesPerformance() {
       )}
 
       <p style={{ marginTop: 14, fontSize: 12, color: theme.textMuted, lineHeight: 1.6 }}>
-        Sold counts every job created in the window at its own job total, cancelled and archived work excluded — the one rule
-        in lib/soldTotals that the dashboard and the sales pipeline also use, so these three pages give the same answer.
+        Sold counts every job created in the window at its own job total, cancelled and archived work excluded, plus every
+        estimate the customer approved that has not been made into a job yet (marked "make it a job") — the one rule the
+        dashboard, the sales pipeline and Jenny also use, so they all give the same answer.
         A job with no price on it counts as $0 and is flagged, never valued from its estimate. Credit goes to the rep on the
         job, else the rep on its lead, one rep per deal, so the rows add up to the company total. Meetings, Estimates and
         Close&nbsp;% describe only the deals that went through an estimate.
@@ -318,7 +321,7 @@ function RepDetail({ rows, theme, navigate, isMobile }) {
           </thead>
           <tbody>
             {rows.map((j) => (
-              <tr key={j.id} onClick={() => navigate(`/jobs/${j.id}`)} style={{ cursor: 'pointer' }}>
+              <tr key={j.id ?? `est-${j.estimate_id}`} onClick={() => navigate(j.not_a_job_yet ? `/estimates/${j.estimate_id}` : `/jobs/${j.id}`)} style={{ cursor: 'pointer' }}>
                 <td style={{ ...dtd, whiteSpace: 'nowrap' }}>{shortDate(j.created_at)}</td>
                 <td style={{ ...dtd, color: theme.text }}>
                   <div style={{ fontWeight: 600 }}>{j.job_title || j.job_id || `#${j.id}`}</div>
@@ -328,6 +331,7 @@ function RepDetail({ rows, theme, navigate, isMobile }) {
                 <td style={{ ...dtd, whiteSpace: 'nowrap' }}>
                   {j.status || '—'}
                   {j.quote_id == null && <span style={{ marginLeft: 6, fontSize: 10, color: theme.textMuted }}>no estimate</span>}
+                  {j.not_a_job_yet && <span style={{ marginLeft: 6, fontSize: 10, color: '#b45309' }}>make it a job</span>}
                 </td>
                 <td style={{ ...dtd, textAlign: 'right', fontWeight: 700, color: Number(j.job_total) > 0 ? theme.text : '#eab308' }}>
                   {Number(j.job_total) > 0 ? money2(j.job_total) : 'unpriced'}

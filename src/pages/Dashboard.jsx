@@ -9,6 +9,8 @@ import MissedShiftSheet from '../components/MissedShiftSheet'
 import { checkCanClockIn } from '../lib/timeClock'
 import { canViewHR } from '../lib/accessControl'
 import { wonJobsInRange, deliveredJobsInRange, sumJobTotal, jobValue, getDeliveredStatusIds, isOpenJobStatus, startOfMonth, startOfYear, daysAgo } from '../lib/jobMetrics'
+import { soldRowsOf } from '../lib/soldTotals'
+import { useApprovedNotAJobYet } from '../hooks/useApprovedNotAJobYet'
 import { totalCustomerAR, totalUtilityAR } from '../lib/arHelpers'
 import { computeSalesFunnel, funnelTotals } from '../lib/salesFunnel'
 import { isOpenLead } from '../lib/leadDeliveryStatus'
@@ -71,7 +73,7 @@ const STAGE_COLORS = { 'New': '#3b82f6', 'Contacted': '#8b5cf6', 'Scheduled': '#
 
 // All available metric card definitions
 const METRIC_DEFS = [
-  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, regardless of current status. "Won" means the deal entered the work queue (estimate approved or job created directly). Pair with MTD Delivered for the delivery side. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
+  { id: 'mtdSalesWon', label: 'MTD Sales Won', icon: TrendingUp, color: '#16a34a', nav: '/pipeline', hint: 'Total $ value of jobs WON this month — counts every job whose created_at falls in the current month, except cancelled or archived ones, plus estimates the customer approved that have not been turned into a job yet. "Won" means the customer said yes (estimate approved or job created directly). Pair with MTD Delivered for the delivery side. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'mtdDelivered', label: 'MTD Delivered', icon: Briefcase, color: '#10b981', nav: '/jobs', hint: 'Total $ value of jobs DELIVERED this month — sums job_total for every job whose status moved into a delivered category (Completed, Verified Complete, Invoiced, etc.) this month. A deal can be Won in one month and Delivered in another, so this and MTD Sales Won are intentionally separate. The 90-Day Avg/mo is everything won in the trailing 90 days divided by three — a monthly run-rate, so it compares directly with the MTD figure above it rather than against a part-finished month.' },
   { id: 'activeLeads', label: 'Active Leads', icon: UserPlus, color: null, nav: '/leads', hint: 'Leads still in the sales funnel: not won, lost or closed, and not yet a job. A lead that converted carries one of your job statuses (Scheduled, Completed, Paid…) and is not counted here.' },
   { id: 'openJobs', label: 'Open Jobs', icon: Briefcase, color: null, nav: '/jobs', hint: 'Jobs in one of your open statuses (category = open in /settings): Chillin, Scheduled, In Progress, Need To Order, On Hold and so on. Delivered, cancelled and archived jobs are not counted.' },
@@ -137,6 +139,7 @@ export default function Dashboard() {
   const jobs = useStore((state) => state.jobs)
   const jobStatuses = useStore((state) => state.jobStatuses)
   const quotes = useStore((state) => state.quotes)
+  const approvedNotAJobYet = useApprovedNotAJobYet(companyId, quotes, jobs)
   const invoices = useStore((state) => state.invoices)
   const payments = useStore((state) => state.payments)
   const inventory = useStore((state) => state.inventory)
@@ -426,7 +429,10 @@ export default function Dashboard() {
   // DELIVERED = a job is in a status flagged category='delivered' in the
   //        company's settings (Completed, Verified Complete, etc.).
   //        Timestamp = jobs.last_status_change_at (set by DB trigger).
-  const mtdWonJobs = wonJobsInRange(jobs, firstOfMonth, null)
+  // Sold also counts estimates the customer approved that are not a job yet
+  // (lib/soldTotals — the same figure Jenny and Sales Performance give).
+  const soldRows = soldRowsOf(jobs, approvedNotAJobYet)
+  const mtdWonJobs = wonJobsInRange(soldRows, firstOfMonth, null)
   const mtdSalesWon = sumJobTotal(mtdWonJobs, quoteAmountById)
   const mtdDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfMonth, null)
   const completedJobsMTD = mtdDeliveredJobs.length
@@ -474,7 +480,7 @@ export default function Dashboard() {
   const lastMonthExpenses = computeExpenses(accountingBasis, { expenses, plaidTransactions, ...accrualBills, payroll: summarizePayroll(payrollData, isLastMonth), loanPayments: payrollData.loanPayments }, isLastMonth)
   const lastMonthNetIncome = lastMonthRevenue - lastMonthExpenses
   const lastMonthDeposits = (leadPayments || []).filter(d => isLastMonth(d.date_created || d.created_at)).reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0)
-  const lastMonthWonJobs = wonJobsInRange(jobs, firstOfLastMonth, firstOfMonth)
+  const lastMonthWonJobs = wonJobsInRange(soldRows, firstOfLastMonth, firstOfMonth)
   const lastMonthSalesWon = sumJobTotal(lastMonthWonJobs, quoteAmountById)
   const lastMonthDeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, firstOfLastMonth, firstOfMonth)
   const lastMonthDelivered = sumJobTotal(lastMonthDeliveredJobs, quoteAmountById)
@@ -493,7 +499,7 @@ export default function Dashboard() {
   const ytdNetIncome = ytdRevenue - ytdExpenses
 
   // YTD — same definitions as MTD, just a wider window.
-  const ytdWonJobs = wonJobsInRange(jobs, firstOfYear, null)
+  const ytdWonJobs = wonJobsInRange(soldRows, firstOfYear, null)
   const ytdSalesWon = sumJobTotal(ytdWonJobs, quoteAmountById)
 
   // ─── 90-day rolling average ─────────────────────────────────────────────
@@ -506,7 +512,7 @@ export default function Dashboard() {
   // Same definition of won as everything else on this card (wonJobsInRange +
   // sumJobTotal, lib/jobMetrics). "Sold" has had three competing meanings in
   // this codebase before and will not get a fourth here.
-  const win90WonJobs = wonJobsInRange(jobs, daysAgo(90), null)
+  const win90WonJobs = wonJobsInRange(soldRows, daysAgo(90), null)
   const avg90SalesWon = sumJobTotal(win90WonJobs, quoteAmountById) / 3
   const win90DeliveredJobs = deliveredJobsInRange(jobs, jobStatuses, daysAgo(90), null)
   const avg90Delivered = sumJobTotal(win90DeliveredJobs, quoteAmountById) / 3
@@ -650,7 +656,9 @@ export default function Dashboard() {
       case 'mtdSalesWon': return {
         title: 'Jobs won this month', total: formatCurrency(mtdSalesWon), page: '/pipeline',
         items: [...mtdWonJobs].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-          .map(j => ({ primary: j.job_title || j.job_id, secondary: formatDate(j.created_at), amount: formatCurrency(jobValue(j, quoteAmountById)), nav: `/jobs/${j.id}` })),
+          .map(j => j.not_a_job_yet
+            ? ({ primary: j.job_title || j.job_id || 'Approved estimate', secondary: `Approved estimate — not a job yet · ${formatDate(j.created_at)}`, amount: formatCurrency(jobValue(j, quoteAmountById)), nav: `/estimates/${j.estimate_id}` })
+            : ({ primary: j.job_title || j.job_id, secondary: formatDate(j.created_at), amount: formatCurrency(jobValue(j, quoteAmountById)), nav: `/jobs/${j.id}` })),
       }
       case 'mtdDelivered':
       case 'completedJobs': return {

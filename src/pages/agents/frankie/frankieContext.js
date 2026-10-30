@@ -29,7 +29,7 @@ import {
   expenseCategoryName, unifiedExpenses,
 } from './frankieFields.js'
 import { buildForecast } from '../../../lib/cashForecast'
-import { soldJobsInRange, soldValue } from '../../../lib/soldTotals.js'
+import { soldJobsInRange, soldValue, soldRowsOf, approvedNotAJobYet } from '../../../lib/soldTotals.js'
 import { bigPictureSections } from './frankieBigPicture.js'
 
 /**
@@ -54,7 +54,7 @@ export function salesSection({ jobs = [], now = new Date() } = {}) {
   }
   const mtd = win(m0, null), last = win(lastM0, m0), ytd = win(y0, null), all = win(null, null), avg90 = win(d90, null)
   const line = (label, w) => `- ${label}: ${money(w.total)} across ${w.rows.length} job${w.rows.length === 1 ? '' : 's'}${w.unpriced ? ` (${w.unpriced} unpriced, counted at $0)` : ''}\n`
-  let s = `### Sales Won — what the Dashboard tiles and the Sales Performance page show (contract value of jobs created in the window, cancelled and archived excluded; NOT cash)\n`
+  let s = `### Sales Won — what the Dashboard tiles and the Sales Performance page show (contract value of jobs created in the window, cancelled and archived excluded, plus estimates the customer approved that are not a job yet; NOT cash)\n`
   s += line('MTD Sales Won (this month)', mtd)
   s += line(`Last month`, last)
   s += `- 90-day average per month: ${money(avg90.total / 3)}\n`
@@ -323,7 +323,8 @@ export function buildFinancialContext(data = {}, now = new Date()) {
   context += `- Previous 30 days: $${revenuePrev30d.toFixed(2)}\n`
   context += `- Total collected (all time): $${payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0).toFixed(2)}\n\n`
 
-  context += salesSection({ jobs, now })
+  // Sold = jobs + approved estimates not made into a job yet (lib/soldTotals).
+  context += salesSection({ jobs: soldRowsOf(jobs, approvedNotAJobYet(data.quotes || [], jobs)), now })
 
   // Payment methods breakdown — actual column is `method`, not `payment_method`.
   const methodBreakdown = {}

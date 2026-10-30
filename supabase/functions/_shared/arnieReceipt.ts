@@ -15,7 +15,7 @@ export const RECEIPT_MARK = '⟦receipt⟧'
 
 const WORDS: Record<string, string> = {
   query_jobs: 'jobs', query_leads: 'leads', query_customers: 'customers', query_invoices: 'invoices',
-  query_payments: 'payments', query_revenue: 'revenue', query_quotes: 'estimates', query_closed: 'closed deals',
+  query_payments: 'payments', query_revenue: 'revenue', query_quotes: 'estimates', query_closed: 'closed deals', query_sold: 'sales',
   query_products: 'price book', query_lighting_products: 'lighting products', query_lighting_swap: 'lighting playbook',
   query_inventory: 'inventory', query_expenses: 'expenses', query_appointments: 'appointments',
   query_employees: 'employees', query_crew: 'crew', query_crew_sheet: 'crew sheet', query_recurring_jobs: 'recurring jobs', query_service_visits: 'service visits', query_time_log: 'time log', query_communications: 'communications log', query_lighting_audits: 'lighting audits', query_utility_programs: 'rebate programs', query_fixture_types: 'fixture types', query_bank_balances: 'bank balances', query_bank_transactions: 'bank feed', query_pnl: 'P&L', query_payroll_runs: 'payroll runs', query_bills_and_pos: 'bills', query_liabilities: 'loans', query_job_profitability: 'job profit', query_backlog: 'backlog', query_fleet: 'fleet', query_bonuses: 'bonuses', query_utility_incentives: 'utility incentives', query_table: 'ledger', query_time_clock: 'time clock', query_payroll: 'payroll',
