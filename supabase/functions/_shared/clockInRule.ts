@@ -14,7 +14,13 @@ const OFFICE_EXACT = new Set([
 ])
 const OFFICE_WORD = /\b(office|admin|owner|sales|setter|manager|estimator|dispatch|accounting|bookkeep|marketing|receptionist|executive|director)\b/i
 
-export interface ClockInSettings { overheadRoles?: string[]; jobRoles?: string[]; skillLevels?: { name?: string; weight?: number | string }[] }
+export interface ClockInSettings {
+  overheadRoles?: string[]
+  jobRoles?: string[]
+  skillLevels?: { name?: string; weight?: number | string }[]
+  /** Company-defined non-job work: Shop, Training, Meeting, Travel. */
+  overheadCodes?: (string | { name?: string })[]
+}
 
 export function isOfficeRole(role: unknown, s: ClockInSettings = {}): boolean {
   const r = norm(role)
@@ -39,21 +45,65 @@ export function mustClockToJob(employee: any, s: ClockInSettings = {}): boolean 
 
 export const OVERHEAD_PREFIX = 'Overhead — '
 
-export function clockInChoice({ jobId = null, employee = null, settings = {} }: { jobId?: unknown; employee?: any; settings?: ClockInSettings }) {
-  const id = jobId === '' || jobId == null ? null : Number(jobId)
-  if (id != null && Number.isFinite(id) && id > 0) return { ok: true as const, job_id: id, notes: null as string | null, overhead: false }
-  if (mustClockToJob(employee, settings)) {
-    return { ok: false as const, reason: 'Pick the job you are clocking in to. Your hours are charged to jobs; there is no overhead clock-in for your role.' }
+export function overheadCodeList(s: ClockInSettings = {}): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of s?.overheadCodes || []) {
+    const name = String((raw as any)?.name ?? raw ?? '').trim()
+    if (!name) continue
+    const key = norm(name)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(name)
   }
-  const role = String(employee?.role || 'Office').trim() || 'Office'
-  return { ok: true as const, job_id: null as number | null, notes: `${OVERHEAD_PREFIX}${role}`, overhead: true }
+  return out
 }
 
-/** The three settings rows the rule reads, for one company. */
+export function matchOverheadCode(code: unknown, s: ClockInSettings = {}): string | null {
+  const want = norm(code)
+  if (!want) return null
+  return overheadCodeList(s).find(c => norm(c) === want) || null
+}
+
+export function clockInChoice({ jobId = null, code = null, employee = null, settings = {} }: { jobId?: unknown; code?: unknown; employee?: any; settings?: ClockInSettings }) {
+  const id = jobId === '' || jobId == null ? null : Number(jobId)
+  if (id != null && Number.isFinite(id) && id > 0) {
+    return { ok: true as const, job_id: id, overhead_code: null as string | null, notes: null as string | null, overhead: false }
+  }
+
+  // Non-job time the company named — see src/lib/clockInJob.js for why.
+  const named = matchOverheadCode(code, settings)
+  if (named) {
+    return { ok: true as const, job_id: null as number | null, overhead_code: named as string | null, notes: `${OVERHEAD_PREFIX}${named}`, overhead: true }
+  }
+  if (code != null && String(code).trim()) {
+    const codes = overheadCodeList(settings)
+    return {
+      ok: false as const,
+      reason: codes.length
+        ? `"${String(code).trim()}" is not one of this company's overhead codes. Pick one of: ${codes.join(', ')}.`
+        : `"${String(code).trim()}" is not an overhead code. This company has not set any up — Settings → Employees → Overhead codes.`,
+    }
+  }
+
+  if (mustClockToJob(employee, settings)) {
+    const codes = overheadCodeList(settings)
+    return {
+      ok: false as const,
+      reason: codes.length
+        ? `Pick the job you are clocking in to, or the kind of work: ${codes.join(', ')}.`
+        : 'Pick the job you are clocking in to. Your hours are charged to jobs; there is no overhead clock-in for your role.',
+    }
+  }
+  const role = String(employee?.role || 'Office').trim() || 'Office'
+  return { ok: true as const, job_id: null as number | null, overhead_code: null as string | null, notes: `${OVERHEAD_PREFIX}${role}`, overhead: true }
+}
+
+/** The settings rows the rule reads, for one company. */
 export async function loadClockInSettings(r: { url: string; key: string }, companyId: number): Promise<ClockInSettings> {
-  const out: ClockInSettings = { overheadRoles: [], jobRoles: [], skillLevels: [] }
+  const out: ClockInSettings = { overheadRoles: [], jobRoles: [], skillLevels: [], overheadCodes: [] }
   try {
-    const res = await fetch(`${r.url}/rest/v1/settings?select=key,value&company_id=eq.${companyId}&key=in.(time_clock_overhead_roles,time_clock_job_roles,skill_levels)`, {
+    const res = await fetch(`${r.url}/rest/v1/settings?select=key,value&company_id=eq.${companyId}&key=in.(time_clock_overhead_roles,time_clock_job_roles,skill_levels,time_clock_overhead_codes)`, {
       headers: { apikey: r.key, Authorization: `Bearer ${r.key}` },
     })
     if (!res.ok) return out
@@ -64,6 +114,10 @@ export async function loadClockInSettings(r: { url: string; key: string }, compa
       if (row.key === 'time_clock_overhead_roles') out.overheadRoles = v.map(String)
       else if (row.key === 'time_clock_job_roles') out.jobRoles = v.map(String)
       else if (row.key === 'skill_levels') out.skillLevels = v
+      // Left as written: the list may be strings or { name } objects, and
+      // overheadCodeList is what normalizes either. String() here would turn
+      // an object into "[object Object]".
+      else if (row.key === 'time_clock_overhead_codes') out.overheadCodes = v
     }
   } catch { /* no settings, the defaults stand */ }
   return out

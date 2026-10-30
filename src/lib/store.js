@@ -1261,6 +1261,7 @@ export const useStore = create(
             // Clock-in rule (lib/clockInJob): which titles are overhead, which are forced onto jobs, and the bonus levels.
             timeClockOverheadRoles: parseSettingList(cached, 'time_clock_overhead_roles'),
             timeClockJobRoles: parseSettingList(cached, 'time_clock_job_roles'),
+            timeClockOverheadCodes: parseSettingList(cached, 'time_clock_overhead_codes'),
             skillLevels: parseSettingList(cached, 'skill_levels'),
             jobCalendars: parseSettingList(cached, 'job_calendars'),
             pipelineStages: parseSettingList(cached, 'pipeline_stages'),
@@ -1296,6 +1297,7 @@ export const useStore = create(
               employeeRoles: parseSettingList(data, 'employee_roles'),
               timeClockOverheadRoles: parseSettingList(data, 'time_clock_overhead_roles'),
               timeClockJobRoles: parseSettingList(data, 'time_clock_job_roles'),
+              timeClockOverheadCodes: parseSettingList(data, 'time_clock_overhead_codes'),
               skillLevels: parseSettingList(data, 'skill_levels'),
               jobCalendars: parseSettingList(data, 'job_calendars'),
               pipelineStages: parseSettingList(data, 'pipeline_stages'),

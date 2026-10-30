@@ -63,7 +63,7 @@ import { enabledWalletsFrom, walletByMethod, displayHandle, walletGuidance, wall
 import { qrDataUrl } from '../lib/qr'
 import { businessUnitFor, logoUrlFrom, portalUrlFor } from '../lib/invoiceSend'
 import { localDateStr } from '../lib/localDate'
-import { clockInChoice, mustClockToJob, clockInSettings } from '../lib/clockInJob'
+import { clockInChoice, mustClockToJob, clockInSettings, overheadCodeList } from '../lib/clockInJob'
 import { captureReceipt, loadExpenseCategories, receiptSummary, RECEIPT_ACCEPT } from '../lib/receiptReader'
 import { autoLinkReceipts } from '../lib/expenseMatch'
 import { SignedImg } from '../lib/storageUrl'
@@ -181,6 +181,9 @@ export default function FieldScout() {
   const [clockingOut, setClockingOut] = useState(false)
   const [gpsStatus, setGpsStatus] = useState(null) // null | 'capturing' | 'done' | 'failed'
   const [selectedJobId, setSelectedJobId] = useState('')
+  // Non-job work the company named — Shop, Training, a crew meeting. Empty
+  // unless they picked one, and a picked job always wins over it.
+  const [overheadCode, setOverheadCode] = useState('')
   const [jobSections, setJobSections] = useState({})
   const [sectionSaving, setSectionSaving] = useState(null)
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -325,6 +328,10 @@ export default function FieldScout() {
   // job's allotment and an "Overhead" button would be used for exactly that.
   const clockRule = clockInSettings(useStore.getState())
   const needsJob = mustClockToJob(currentEmployee, clockRule)
+  const overheadCodes = overheadCodeList(clockRule)
+  // A job beats a code, so the code only counts while no job is picked. One
+  // source for the button, its label and what gets written.
+  const activeCode = selectedJobId ? '' : overheadCode
 
   // Determine if user is a field role that requires Victor verification before clock-out
   const fieldRoles = ['field tech', 'installer', 'project manager', 'technician', 'foreman', 'crew lead']
@@ -1077,7 +1084,7 @@ export default function FieldScout() {
   // Clock in
   const handleClockIn = async (jobId, opts = {}) => {
     if (clockingIn) return
-    const choice = clockInChoice({ jobId, employee: currentEmployee, settings: clockInSettings(useStore.getState()) })
+    const choice = clockInChoice({ jobId, code: opts.code ?? null, employee: currentEmployee, settings: clockInSettings(useStore.getState()) })
     if (!choice.ok) { toast.error(choice.reason); return }
     jobId = choice.job_id
     setClockingIn(true)
@@ -1093,7 +1100,7 @@ export default function FieldScout() {
           // yesterday's shift is not in today's list and the banner said "no
           // action needed": Christopher spent five minutes looking for a
           // button that did not exist (02e30d0c). Ask, close it, clock in.
-          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null })
+          setMissedShift({ entry: gate.openShift, clockIn: true, jobId: jobId || null, code: choice.overhead_code })
         }
         // 'already_open' needs no message: that's a double-tap or a second
         // tab, and the user already appears clocked in.
@@ -1111,6 +1118,7 @@ export default function FieldScout() {
           company_id: companyId,
           employee_id: currentEmployee.id,
           job_id: jobId || null,
+          overhead_code: choice.overhead_code,
           notes: choice.notes,
           clock_in: new Date().toISOString(),
           clock_in_lat: lat,
@@ -1157,7 +1165,7 @@ export default function FieldScout() {
         // The open punch may be yesterday's, not a double-tap — same sheet.
         try {
           const again = await checkCanClockIn(companyId, currentEmployee?.id)
-          if (!again.ok && again.reason === 'stale_open') { setMissedShift({ entry: again.openShift, clockIn: true, jobId: jobId || null }); return }
+          if (!again.ok && again.reason === 'stale_open') { setMissedShift({ entry: again.openShift, clockIn: true, jobId: jobId || null, code: choice.overhead_code }); return }
         } catch { /* fall through to the message */ }
         alert(
           "You're already clocked in.\n\n" +
@@ -1240,6 +1248,10 @@ export default function FieldScout() {
         .from('time_clock')
         .update({
           job_id: newJobId,
+          // These hours are now charged to a job, so they are no longer
+          // overhead. Leaving a stale code here would count them twice:
+          // once against the job and once under the code.
+          overhead_code: null,
           notes: row?.notes ? `${row.notes}\n${stamp}` : stamp,
           adjusted_by: currentEmployee?.id || null,
           adjusted_at: new Date().toISOString(),
@@ -2324,10 +2336,12 @@ export default function FieldScout() {
           continueLabel={missedShift.clockIn ? 'Close it and clock in' : 'Close that shift'}
           onDismiss={() => setMissedShift(null)}
           onDone={async () => {
-            const { clockIn, jobId } = missedShift
+            const { clockIn, jobId, code } = missedShift
             setMissedShift(null)
             await fetchEntries()
-            if (clockIn) handleClockIn(jobId)
+            // Carry the code through: closing a stale shift must not quietly
+            // turn a Shop punch into a refused one.
+            if (clockIn) handleClockIn(jobId, { code: code || null })
             else toast.success('Shift closed — payroll will confirm the hours.')
           }}
         />
@@ -4213,19 +4227,54 @@ export default function FieldScout() {
                 on hours kept off a job's allotment, so the choice is the role's,
                 not the person's (lib/clockInJob). An office role's punch is
                 overhead on its own. */}
-            {!selectedJobId && (
+            {!selectedJobId && overheadCodes.length > 0 && (
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '6px' }}>
+                  Not on a job? Say what the work is:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {overheadCodes.map(c => {
+                    const on = activeCode === c
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => setOverheadCode(on ? '' : c)}
+                        style={{
+                          padding: '8px 12px',
+                          minHeight: '38px',
+                          borderRadius: '999px',
+                          border: `1px solid ${on ? '#16a34a' : theme.border}`,
+                          background: on ? 'rgba(34,197,94,0.14)' : theme.bgCard,
+                          color: on ? '#16a34a' : theme.text,
+                          fontSize: '13px',
+                          fontWeight: on ? '700' : '500',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {c}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {!selectedJobId && !activeCode && (
               <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>
-                {needsJob ? 'Your hours are charged to a job — pick the one you are starting.' : `No job picked: this punch is overhead (${currentEmployee?.role || 'Office'}).`}
+                {needsJob
+                  ? (overheadCodes.length
+                    ? 'Your hours are charged to a job — pick the one you are starting, or the kind of work above.'
+                    : 'Your hours are charged to a job — pick the one you are starting.')
+                  : `No job picked: this punch is overhead (${currentEmployee?.role || 'Office'}).`}
               </div>
             )}
             <button
-              onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null)}
-              disabled={clockingIn || (needsJob && !selectedJobId)}
+              onClick={() => handleClockIn(selectedJobId ? parseInt(selectedJobId) : null, { code: activeCode || null })}
+              disabled={clockingIn || (needsJob && !selectedJobId && !activeCode)}
               style={{
                 width: '100%',
                 padding: '18px',
                 height: '54px',
-                opacity: (needsJob && !selectedJobId) ? 0.55 : 1,
+                opacity: (needsJob && !selectedJobId && !activeCode) ? 0.55 : 1,
                 background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                 border: 'none',
                 borderRadius: '12px',
@@ -4240,7 +4289,11 @@ export default function FieldScout() {
               }}
             >
               <Play size={22} />
-              {clockingIn ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...') : (needsJob && !selectedJobId) ? 'Pick a job to clock in' : !selectedJobId ? 'Clock In — Overhead' : 'Clock In'}
+              {clockingIn
+                ? (gpsStatus === 'capturing' ? 'Capturing location...' : 'Starting...')
+                : activeCode ? `Clock In — ${activeCode}`
+                : (needsJob && !selectedJobId) ? (overheadCodes.length ? 'Pick a job, or the kind of work' : 'Pick a job to clock in')
+                : !selectedJobId ? 'Clock In — Overhead' : 'Clock In'}
             </button>
           </div>
         )

@@ -20,7 +20,7 @@ import RankBadge from '../components/RankBadge'
 import OnboardingPanel from '../components/OnboardingPanel'
 import { w9Status, contractorsMissingW9 } from '../lib/w9Status'
 import { fetchIdentityMap, mergeIdentity, splitIdentity, identityHasValues, identitySavePlan, saveIdentity } from '../lib/employeeIdentity'
-import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
+import EmployeeBenefitsPanel from '../components/EmployeeBenefitsPanel'
 import { SignedImg } from '../lib/storageUrl'
 
 // Role colors (OG DiX style)
@@ -189,6 +189,7 @@ export default function Employees() {
   const [accessLevels, setAccessLevels] = useState([])
   const [skillLevels, setSkillLevels] = useState([])
   const [newJobTitle, setNewJobTitle] = useState('')
+  const [newOverheadCode, setNewOverheadCode] = useState('')
   const [newAccessLevel, setNewAccessLevel] = useState({ name: '', description: '' })
   const [newSkillLevel, setNewSkillLevel] = useState('')
   const [newSkillWeight, setNewSkillWeight] = useState(1)
@@ -347,6 +348,42 @@ export default function Employees() {
     const updated = [...jobTitles, newJobTitle.trim()]
     saveJobTitles(updated)
     setNewJobTitle('')
+  }
+
+  // Overhead codes: the named places non-job time can go — Shop, Training,
+  // Crew Meeting, Travel. Requiring a job at clock-in keeps labour on the
+  // jobs that used it, but it left shop work and meetings nowhere, so crews
+  // either lost the hours or charged a job that never got the work. A code
+  // is attributed and reportable, and still carries no job_id, so it stays
+  // off job margin and out of the efficiency bonus allotment.
+  // Define none and clock-in behaves exactly as it did before.
+  const overheadCodes = useStore((state) => state.timeClockOverheadCodes) || []
+  const saveOverheadCodes = async (codes) => {
+    setSavingSettings(true)
+    await supabase.from('settings').upsert({
+      company_id: companyId,
+      key: 'time_clock_overhead_codes',
+      value: JSON.stringify(codes),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,key' })
+    await fetchSettingsStore?.()
+    setSavingSettings(false)
+  }
+  const addOverheadCode = () => {
+    const name = newOverheadCode.trim()
+    if (!name) return
+    // Case-insensitive, because "shop" and "Shop" would be two chips on the
+    // clock-in screen and one of them would never be picked.
+    if (overheadCodes.some(c => String(c?.name ?? c).trim().toLowerCase() === name.toLowerCase())) {
+      setNewOverheadCode('')
+      return
+    }
+    saveOverheadCodes([...overheadCodes, name])
+    setNewOverheadCode('')
+  }
+  const removeOverheadCode = (code) => {
+    const key = String(code?.name ?? code).trim().toLowerCase()
+    saveOverheadCodes(overheadCodes.filter(c => String(c?.name ?? c).trim().toLowerCase() !== key))
   }
 
   const removeJobTitle = (title) => {
@@ -3502,6 +3539,103 @@ export default function Employees() {
                         </button>
                       </div>
                     ))}
+                  </div>
+
+                  {/* Where non-job time goes. A title that clocks in to a job
+                      has nowhere to put shop work or a crew meeting, so people
+                      either lost the hours or charged a job that never got the
+                      work. These hours are attributed to the code and still
+                      carry no job, so they stay off job margin and out of the
+                      efficiency bonus allotment. Add none and clock-in behaves
+                      exactly as it did before. */}
+                  <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: `1px solid ${theme.border}` }}>
+                    <h4 style={{ fontSize: '15px', fontWeight: '600', color: theme.text, margin: '0 0 6px' }}>
+                      Overhead codes
+                    </h4>
+                    <p style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '14px' }}>
+                      Work that is not a job — Shop, Training, Crew Meeting, Travel. Anyone can clock
+                      in to one, and the hours stay off job costing. Leave this empty and everyone who
+                      clocks in to a job still has to pick one.
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                      <input
+                        type="text"
+                        value={newOverheadCode}
+                        onChange={(e) => setNewOverheadCode(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOverheadCode() } }}
+                        placeholder="e.g. Shop"
+                        style={{
+                          flex: 1,
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: `1px solid ${theme.border}`,
+                          backgroundColor: theme.bg,
+                          color: theme.text,
+                          fontSize: '14px',
+                        }}
+                      />
+                      <button
+                        onClick={addOverheadCode}
+                        disabled={savingSettings || !newOverheadCode.trim()}
+                        style={{
+                          padding: '10px 16px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          backgroundColor: theme.accent,
+                          color: '#fff',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: savingSettings || !newOverheadCode.trim() ? 'default' : 'pointer',
+                          opacity: savingSettings || !newOverheadCode.trim() ? 0.6 : 1,
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {overheadCodes.length === 0 ? (
+                      <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
+                        No overhead codes. Field crews must clock in to a job.
+                      </p>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {overheadCodes.map((code) => {
+                          const label = String(code?.name ?? code)
+                          return (
+                            <span
+                              key={label}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '6px 10px',
+                                borderRadius: '999px',
+                                border: `1px solid ${theme.border}`,
+                                backgroundColor: theme.bg,
+                                fontSize: '13px',
+                                color: theme.text,
+                              }}
+                            >
+                              {label}
+                              <button
+                                onClick={() => removeOverheadCode(code)}
+                                disabled={savingSettings}
+                                title={`Remove ${label}`}
+                                style={{
+                                  padding: 0,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: theme.textMuted,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

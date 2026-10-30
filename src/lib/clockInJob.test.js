@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clockInChoice, mustClockToJob, isOfficeRole, onBonus, isOverheadPunch, clockableJobs, clockInSettings } from './clockInJob'
+import { clockInChoice, mustClockToJob, isOfficeRole, onBonus, isOverheadPunch, clockableJobs, clockInSettings, overheadCodeList, matchOverheadCode } from './clockInJob'
 
 // HHH's roster, as the Employees page describes it.
 const tech = { id: 37, name: 'Cameron', role: 'Field Tech', skill_level: 'First Class' }
@@ -56,8 +56,8 @@ describe('whose hours belong on a job', () => {
 
 describe('what the punch carries', () => {
   it('a job, as a number or a string, for anyone', () => {
-    expect(clockInChoice({ jobId: 23522, employee: tech })).toEqual({ ok: true, job_id: 23522, notes: null, overhead: false })
-    expect(clockInChoice({ jobId: '23522', employee: office })).toEqual({ ok: true, job_id: 23522, notes: null, overhead: false })
+    expect(clockInChoice({ jobId: 23522, employee: tech })).toEqual({ ok: true, job_id: 23522, overhead_code: null, notes: null, overhead: false })
+    expect(clockInChoice({ jobId: '23522', employee: office })).toEqual({ ok: true, job_id: 23522, overhead_code: null, notes: null, overhead: false })
   })
   it('refuses a field punch with no job — there is no overhead button for them', () => {
     for (const e of [tech, installer, newTech, pmOnBonus, salesOnBonus, { role: 'Cleaner' }]) {
@@ -67,7 +67,7 @@ describe('what the punch carries', () => {
     }
   })
   it('an office role with no job is overhead on its own, labelled with the role', () => {
-    expect(clockInChoice({ employee: office })).toEqual({ ok: true, job_id: null, notes: 'Overhead — Office', overhead: true })
+    expect(clockInChoice({ employee: office })).toEqual({ ok: true, job_id: null, overhead_code: null, notes: 'Overhead — Office', overhead: true })
     expect(clockInChoice({ employee: pmOffBonus }).notes).toBe('Overhead — Project Manager')
   })
   it('a bad job id is treated as no job', () => {
@@ -80,8 +80,9 @@ describe('what the punch carries', () => {
     expect(isOverheadPunch({ job_id: 9, notes: 'Overhead — Office' })).toBe(false)
   })
   it('reads its settings off the store', () => {
-    expect(clockInSettings({ timeClockOverheadRoles: ['A'], timeClockJobRoles: ['B'], skillLevels: hhhLevels })).toEqual({ overheadRoles: ['A'], jobRoles: ['B'], skillLevels: hhhLevels })
-    expect(clockInSettings({})).toEqual({ overheadRoles: [], jobRoles: [], skillLevels: [] })
+    expect(clockInSettings({ timeClockOverheadRoles: ['A'], timeClockJobRoles: ['B'], skillLevels: hhhLevels, timeClockOverheadCodes: ['Shop'] }))
+      .toEqual({ overheadRoles: ['A'], jobRoles: ['B'], skillLevels: hhhLevels, overheadCodes: ['Shop'] })
+    expect(clockInSettings({})).toEqual({ overheadRoles: [], jobRoles: [], skillLevels: [], overheadCodes: [] })
   })
   it('offers only open jobs, newest first', () => {
     const jobs = [
@@ -91,5 +92,85 @@ describe('what the punch carries', () => {
       { id: 4, status: 'Cancelled', created_at: '2026-10-10' },
     ]
     expect(clockableJobs(jobs).map(j => j.id)).toEqual([3, 1])
+  })
+})
+
+describe('overhead codes — the named places non-job time can go', () => {
+  // Cameron, 2026-10-30: "I am no longer able to clock into “General”, this is
+  // helpful when working around the shop or mounds meetings." Requiring a job
+  // closed a real leak, but left shop work and crew meetings nowhere to go.
+  const codes = { overheadCodes: ['Shop', 'Training', 'Crew Meeting'], skillLevels: hhhLevels }
+
+  it('is nothing at all for a company that has defined no codes', () => {
+    const r = clockInChoice({ jobId: '', employee: tech, settings: { skillLevels: hhhLevels } })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/no overhead clock-in for your role/)
+  })
+
+  it('lets a field tech on the bonus punch to a code the company defined', () => {
+    expect(clockInChoice({ code: 'Shop', employee: tech, settings: codes }))
+      .toEqual({ ok: true, job_id: null, overhead_code: 'Shop', notes: 'Overhead — Shop', overhead: true })
+  })
+
+  it('keeps those hours off every job, which is why the rule can allow them', () => {
+    // jobHoursFromPunches skips rows with no job_id, so a code punch can never
+    // make a job come in under its allotment and inflate an efficiency bonus.
+    for (const c of ['Shop', 'Training', 'Crew Meeting']) {
+      expect(clockInChoice({ code: c, employee: tech, settings: codes }).job_id, c).toBe(null)
+    }
+  })
+
+  it('matches the company spelling loosely but stores the company spelling', () => {
+    expect(clockInChoice({ code: 'shop', employee: tech, settings: codes }).overhead_code).toBe('Shop')
+    expect(clockInChoice({ code: '  CREW MEETING ', employee: tech, settings: codes }).overhead_code).toBe('Crew Meeting')
+  })
+
+  it('refuses a code nobody defined instead of writing an untagged punch', () => {
+    const r = clockInChoice({ code: 'Sick Day', employee: tech, settings: codes })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/not one of this company's overhead codes/)
+    expect(r.reason).toMatch(/Shop, Training, Crew Meeting/)
+  })
+
+  it('refuses a code when the company set none up, and says where to set them', () => {
+    const r = clockInChoice({ code: 'Shop', employee: tech, settings: { skillLevels: hhhLevels } })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/has not set any up/)
+  })
+
+  it('a job always wins over a code', () => {
+    const r = clockInChoice({ jobId: 23522, code: 'Shop', employee: tech, settings: codes })
+    expect(r.job_id).toBe(23522)
+    expect(r.overhead_code).toBe(null)
+  })
+
+  it('lists the codes when it asks for a job, so the message is usable', () => {
+    const r = clockInChoice({ jobId: '', employee: tech, settings: codes })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/Shop, Training, Crew Meeting/)
+  })
+
+  it('reads a list of strings or of { name }, de-duped, blanks dropped', () => {
+    expect(overheadCodeList({ overheadCodes: ['Shop', { name: 'Training' }, 'shop', '', null, '   '] }))
+      .toEqual(['Shop', 'Training'])
+    expect(overheadCodeList({})).toEqual([])
+    expect(matchOverheadCode('training', { overheadCodes: [{ name: 'Training' }] })).toBe('Training')
+    expect(matchOverheadCode('', { overheadCodes: ['Shop'] })).toBe(null)
+    expect(matchOverheadCode('Shop', {})).toBe(null)
+  })
+
+  it('leaves an office role exactly as it was — role label, no code', () => {
+    const r = clockInChoice({ employee: office, settings: codes })
+    expect(r.overhead_code).toBe(null)
+    expect(r.notes).toBe('Overhead — Office')
+    expect(r.overhead).toBe(true)
+  })
+
+  it('still reads as deliberate when notes have been written over', () => {
+    // notes is free text — other paths append to it and payroll can retype
+    // it — so the column, not the prefix, is what a report may group by.
+    expect(isOverheadPunch({ job_id: null, overhead_code: 'Shop', notes: 'went to the shop' })).toBe(true)
+    expect(isOverheadPunch({ job_id: null, overhead_code: '   ' })).toBe(false)
+    expect(isOverheadPunch({ job_id: 14, overhead_code: 'Shop' })).toBe(false)
   })
 })
