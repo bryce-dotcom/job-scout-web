@@ -4,8 +4,11 @@ import { supabase } from '../lib/supabase'
 import { useStore } from '../lib/store'
 import { useTheme } from '../components/Layout'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { Repeat, Calendar, Wrench, ChevronRight, Users, Info, CreditCard } from 'lucide-react'
+import { Repeat, Calendar, Wrench, ChevronRight, Users, Info, CreditCard, AlertTriangle } from 'lucide-react'
 import MembershipsPanel from '../components/MembershipsPanel'
+import { localDateStr } from '../lib/localDate'
+// One rule for "next visit" and "stopped", shared with Jenny's query_recurring_jobs.
+import { seriesOf } from '../../supabase/functions/_shared/recurringSeries.ts'
 
 // Recurring Jobs — the "repeat engine" management surface. Lists every active
 // recurring series (jobs with a recurrence set), one row per chain, so an owner
@@ -30,7 +33,6 @@ const FREQ_LABEL = {
   'Every 6 Weeks': 'Every 6 weeks', Monthly: 'Monthly', 'Bi-Monthly': 'Every 2 months',
   Quarterly: 'Quarterly', 'Bi-Annually': 'Every 6 months', Annually: 'Yearly',
 }
-const TERMINAL = ['Completed', 'Job Complete', 'Verified Complete', 'Paid', 'Closed', 'Done', 'Cancelled', 'Archived']
 
 function freqLabel(r) { return FREQ_LABEL[r] || r }
 function fmtDate(d) {
@@ -58,7 +60,7 @@ export default function RecurringJobs() {
       setLoading(true)
       const { data } = await supabase
         .from('jobs')
-        .select('id, job_id, job_title, status, recurrence, recurrence_end_date, recurrence_landing, recurrence_parent_id, start_date, service_due_date, customer_name, business_name, business_unit')
+        .select('id, job_id, job_title, status, recurrence, recurrence_end_date, recurrence_landing, recurrence_parent_id, start_date, service_due_date, customer_id, customer_name, business_name, business_unit')
         .eq('company_id', companyId)
         .not('recurrence', 'is', null)
         .neq('recurrence', 'None')
@@ -66,24 +68,16 @@ export default function RecurringJobs() {
         .order('start_date', { ascending: true })
         .limit(1000)
       if (cancelled) return
-      // Collapse to one row per chain (root). Prefer the open (non-terminal)
-      // occurrence — that's the live "next" one — else keep the latest.
-      const byRoot = new Map()
-      ;(data || []).filter(j => j.recurrence && j.recurrence !== 'None').forEach(j => {
-        const root = j.recurrence_parent_id || j.id
-        const cur = byRoot.get(root)
-        if (!cur) { byRoot.set(root, j); return }
-        const jOpen = !TERMINAL.includes(j.status)
-        const curOpen = !TERMINAL.includes(cur.status)
-        if (jOpen && !curOpen) byRoot.set(root, j)
-      })
-      setRows([...byRoot.values()])
+      setRows(data || [])
       setLoading(false)
     })()
     return () => { cancelled = true }
   }, [companyId])
 
-  const active = useMemo(() => rows.filter(r => !TERMINAL.includes(r.status)), [rows])
+  // One row per series: its earliest visit not yet done. A series whose visits
+  // are all done has stopped — nothing will book the next one — so it is shown,
+  // not hidden.
+  const { open: active, stalled } = useMemo(() => seriesOf(rows, localDateStr(new Date())), [rows])
 
   const card = {
     background: theme.bgCard, border: `1px solid ${theme.border}`, borderLeft: `4px solid ${REC}`,
@@ -118,12 +112,12 @@ export default function RecurringJobs() {
       {/* How it works */}
       <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', background: theme.accentBg, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '11px 14px', margin: '14px 0 18px', fontSize: 13, color: theme.textSecondary }}>
         <Info size={16} style={{ color: theme.accent, marginTop: 1, flex: 'none' }} />
-        <div>Make any job repeat from its <strong>Repeat</strong> panel (on the job or when you schedule it). When a recurring job is marked <strong>Completed</strong>, the next one is created automatically — same crew and scope, no re-entry.</div>
+        <div>Make any job repeat from its <strong>Repeat</strong> panel (on the job or when you schedule it). When a visit is finished (<strong>Completed</strong>, Invoiced, Paid or Closed), the next one is created automatically — same crew and scope, no re-entry.</div>
       </div>
 
       {loading ? (
         <div style={{ color: theme.textMuted, fontSize: 14, padding: '30px 0', textAlign: 'center' }}>Loading…</div>
-      ) : active.length === 0 ? (
+      ) : active.length === 0 && stalled.length === 0 ? (
         // Empty state with guidance
         <div style={{ textAlign: 'center', padding: '40px 20px', border: `1.5px dashed ${theme.border}`, borderRadius: 16, background: theme.bgCard }}>
           <div style={{ width: 52, height: 52, borderRadius: 14, background: REC_BG, color: REC, display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
@@ -169,6 +163,33 @@ export default function RecurringJobs() {
               </div>
             )
           })}
+          {stalled.length > 0 && (<>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, fontSize: 12, color: '#b45309', fontFamily: 'ui-monospace, Menlo, monospace', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+              <AlertTriangle size={13} /> {stalled.length} stopped — nothing booked next
+            </div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginTop: -4 }}>Every visit in these is done and no next one exists. Book the next visit, or give the series an end date if the customer stopped.</div>
+            {stalled.map(j => {
+              const lastDate = fmtDate(j.start_date) || fmtDate(j.service_due_date)
+              return (
+                <div key={j.id} style={{ ...card, borderLeft: '4px solid #d97706' }} onClick={() => navigate(`/jobs/${j.id}`)}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <span style={pill(REC_BG, REC_DK)}><Repeat size={11} /> {freqLabel(j.recurrence)}</span>
+                      <span style={pill('rgba(217,119,6,0.12)', '#b45309')}><AlertTriangle size={11} /> No next visit</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {j.job_title || j.job_id || `Job #${j.id}`}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 2 }}>
+                      {(j.business_name || j.customer_name) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Users size={12} /> {j.business_name || j.customer_name}</span>}
+                      {lastDate && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Calendar size={12} /> last visit {lastDate} · {j.status}</span>}
+                    </div>
+                  </div>
+                  <ChevronRight size={18} style={{ color: theme.textMuted, flex: 'none' }} />
+                </div>
+              )
+            })}
+          </>)}
         </div>
       )}
       </>)}

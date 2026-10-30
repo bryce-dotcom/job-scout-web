@@ -57,6 +57,17 @@ describe('recurring jobs read the way the page reads them', () => {
     expect(out.series).toBe(2)
     expect(out.list.map((s) => [s.job, s.how_often, s.next_visit])).toEqual([['J-4', 'quarterly', '2026-11-02'], ['J-2', 'monthly', '2026-11-15']])
     expect((await runLookup(r, 'query_recurring_jobs', { due_within_days: 7 }, ctx())).series).toBe(1)
+    // A series with every visit done and nothing booked has stopped — listed, not hidden.
+    expect(out.stalled.list.map((s) => [s.job, s.last_visit])).toEqual([['J-3', '2026-08-01']])
+  })
+  it('an invoiced visit is done, and does not stand in for the next one', async () => {
+    tables.jobs = [
+      { id: 1, job_id: 'J-1', status: 'Invoiced', recurrence: 'Quarterly', start_date: '2026-07-02', customer_name: 'Fieldstone' },
+      { id: 2, job_id: 'J-2', status: 'Scheduled', recurrence: 'Quarterly', recurrence_parent_id: 1, start_date: '2026-10-22', customer_name: 'Fieldstone' },
+    ]
+    const out = await runLookup(r, 'query_recurring_jobs', {}, ctx())
+    expect(out.list.map((s) => s.job)).toEqual(['J-2'])
+    expect(out.overdue).toBe(1)
   })
 })
 

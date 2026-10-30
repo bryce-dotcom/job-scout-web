@@ -16,6 +16,7 @@
 import type { Rest } from './arnieConfig.ts'
 import { readRecordList, readAllRecords } from './arnieRest.ts'
 import { pageVisible, whoFromEmployee, type Who } from './appMap.ts'
+import { seriesOf, visitDay, FINISHED, CALLED_OFF } from './recurringSeries.ts'
 
 const num = (v: unknown) => parseFloat(v as string) || 0
 const money = (n: number) => Math.round(n * 100) / 100
@@ -44,7 +45,7 @@ export const LOOKUP_NAMES = new Set(Object.keys(PAGE_OF))
 export const LOOKUP_TOOLS = [
   {
     name: 'query_recurring_jobs',
-    description: 'The Recurring Jobs page: jobs that repeat (weekly, monthly, quarterly, yearly) — one line per series with the customer, how often, the next visit and when the series ends — and membership plans with who is on them. Use for "what recurring work do we have", "when is the Smith monthly next", "how many quarterly customers". Read only.',
+    description: 'The Recurring Jobs page: jobs that repeat (weekly, monthly, quarterly, yearly) — one line per series with the customer, how often, the next visit and when the series ends; series that have STOPPED (every visit done, nothing booked next); and membership plans with who is on them. Use for "what recurring work do we have", "when is the Smith monthly next", "how many quarterly customers", "which recurring jobs are stuck". Read only.',
     input_schema: { type: 'object', properties: {
       customer: { type: 'string', description: 'Only series for a customer whose name contains this' },
       due_within_days: { type: 'integer', description: 'Only series whose next visit is within this many days (overdue included)' },
@@ -142,29 +143,25 @@ export async function runLookup(r: Rest, name: string, input: any, ctx: LookupCt
 // recurrence_parent_id || id, the open occurrence preferred; finished series
 // hidden; the next visit is start_date, else service_due_date.
 const FREQ: Record<string, string> = { Daily: 'daily', Weekly: 'weekly', 'Bi-Weekly': 'every 2 weeks', 'Every 6 Weeks': 'every 6 weeks', Monthly: 'monthly', 'Bi-Monthly': 'every 2 months', Quarterly: 'quarterly', 'Bi-Annually': 'every 6 months', Annually: 'yearly' }
-const SERIES_DONE = ['Completed', 'Job Complete', 'Verified Complete', 'Paid', 'Closed', 'Done', 'Cancelled', 'Archived']
 
 async function recurringJobs(r: Rest, co: string, input: any, ctx: LookupCtx) {
   const [jobs, plans, members] = await Promise.all([
-    readAllRecords(r, `jobs?${co}&recurrence=not.is.null&recurrence=neq.None&status=neq.Archived&select=id,job_id,job_title,status,recurrence,recurrence_end_date,recurrence_parent_id,start_date,service_due_date,customer_name,business_name&order=start_date.asc`, 2000),
+    readAllRecords(r, `jobs?${co}&recurrence=not.is.null&recurrence=neq.None&status=neq.Archived&select=id,job_id,job_title,status,recurrence,recurrence_end_date,recurrence_parent_id,start_date,service_due_date,customer_id,customer_name,business_name&order=start_date.asc`, 2000),
     readRecordList(r, `membership_plans?${co}&select=*`),
     readRecordList(r, `customer_memberships?${co}&select=*,customer:customers!customer_id(name,business_name)`),
   ])
-  const chains = new Map<number, any>()
-  for (const j of jobs) {
-    const key = j.recurrence_parent_id || j.id
-    const held = chains.get(key)
-    const open = !SERIES_DONE.includes(j.status)
-    if (!held || (open && SERIES_DONE.includes(held.status))) chains.set(key, j)
-  }
-  let series = [...chains.values()].filter((j) => !SERIES_DONE.includes(j.status)).map((j) => {
-    const next = String(j.start_date || j.service_due_date || '').slice(0, 10) || null
-    return {
-      job: j.job_id || `#${j.id}`, job_id: j.id, customer: j.business_name || j.customer_name || null, title: j.job_title,
-      how_often: FREQ[j.recurrence] || j.recurrence, next_visit: next, status: j.status, ends: j.recurrence_end_date || 'no end date',
-    }
+  const { open, stalled: stopped } = seriesOf(jobs, ctx.today)
+  const line = (j: any) => ({
+    job: j.job_id || `#${j.id}`, job_id: j.id, customer: j.business_name || j.customer_name || null, title: j.job_title,
+    how_often: FREQ[j.recurrence] || j.recurrence, ends: j.recurrence_end_date || 'no end date',
   })
-  if (input?.customer) { const t = term(input.customer).toLowerCase(); series = series.filter((s) => String(s.customer || '').toLowerCase().includes(t)) }
+  let series = open.map((j: any) => ({ ...line(j), next_visit: visitDay(j), status: j.status }))
+  let stalled = stopped.map((j: any) => ({ ...line(j), last_visit: visitDay(j), last_status: j.status }))
+  if (input?.customer) {
+    const t = term(input.customer).toLowerCase()
+    const has = (s: any) => String(s.customer || '').toLowerCase().includes(t)
+    series = series.filter(has); stalled = stalled.filter(has)
+  }
   if (Number.isFinite(Number(input?.due_within_days)) && input?.due_within_days != null) {
     const until = addDays(ctx.today, Math.max(0, Math.round(Number(input.due_within_days))))
     series = series.filter((s) => s.next_visit && s.next_visit <= until)
@@ -174,12 +171,14 @@ async function recurringJobs(r: Rest, co: string, input: any, ctx: LookupCtx) {
   for (const s of series) byFreq[s.how_often] = (byFreq[s.how_often] || 0) + 1
   return {
     series: series.length, by_how_often: byFreq, list: series.slice(0, 60),
+    overdue: series.filter((s) => s.next_visit && s.next_visit < ctx.today).length,
+    stalled: stalled.length ? { count: stalled.length, list: stalled.slice(0, 60), means: 'Every visit in these series is finished and nothing is booked next, so the series has stopped. Booking the next visit (or setting an end date if the customer stopped) restarts or closes it.' } : 'none',
     memberships: plans.length ? {
       plans: plans.map((p: any) => ({ name: p.name || p.plan_name, price: p.price ?? p.amount ?? null, every: p.interval || p.billing_interval || null, active: p.active ?? null })),
       members: members.length,
       list: members.slice(0, 40).map((m: any) => ({ customer: m.customer?.business_name || m.customer?.name || null, status: m.status || null, plan_id: m.plan_id ?? m.membership_plan_id ?? null, started: m.start_date || m.created_at?.slice?.(0, 10) || null })),
     } : 'No membership plans set up.',
-    scope: 'Open recurring series only, one line per series (the next occurrence). next_visit is the scheduled start, else the service due date. The next job in a series is created when the current one is finished.',
+    scope: `One line per series. next_visit is the earliest visit not yet done (${FINISHED.join('/')} count as done; ${CALLED_OFF.join('/')} as called off) — a past next_visit is overdue or was done and never marked. The next visit is created when the current one is marked done.`,
   }
 }
 
